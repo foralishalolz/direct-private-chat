@@ -1,0 +1,25 @@
+
+"use client";
+import {useEffect,useState} from "react";
+import dynamic from "next/dynamic";
+import {BookHeart,Heart,MessageCircle,Search,SquarePen,Users,WifiOff,ChevronDown} from "lucide-react";
+import {useInbox} from "@/hooks/useInbox";
+import {label,title,time,type Profile} from "@/lib/types";
+import {Avatar,Brand,ErrorNote,IconButton,Spinner} from "./UI";
+const ChatThread=dynamic(()=>import("./ChatThread"),{loading:()=> <div className="thread-empty"><Spinner/></div>});
+const Discover=dynamic(()=>import("./DiscoverModal"));
+const ProfileEditor=dynamic(()=>import("./ProfileModal"));
+const Journal=dynamic(()=>import("./JournalModal"));
+export default function ChatRoom({profile,onProfile,onLogout}:{profile:Profile;onProfile:(p:Profile)=>void;onLogout:()=>Promise<void>}){
+ const {items,loading,more,error,refresh,loadMore}=useInbox(profile.id);
+ const [selected,setSelected]=useState<string|null>(null),[search,setSearch]=useState(""),[filter,setFilter]=useState("all"),[modal,setModal]=useState<"new"|"profile"|"journal"|null>(null),[online,setOnline]=useState(true);
+ useEffect(()=>{const update=()=>setOnline(navigator.onLine);update();window.addEventListener("online",update);window.addEventListener("offline",update);return()=>{window.removeEventListener("online",update);window.removeEventListener("offline",update);};},[]);
+ const active=items.find(x=>x.id===selected);
+ const visible=items.filter(c=>(title(c)+" "+c.members?.map(p=>p.username).join(" ")).toLowerCase().includes(search.toLowerCase())&&(filter==="all"||filter==="unread"&&c.unread||filter==="groups"&&c.kind==="group"));
+ return <main className={"app-shell "+(selected?"has-thread":"")}>
+ <nav className="rail" aria-label="Main navigation"><a href="/" aria-label="BitchAt" className="rail-brand"><Brand small/></a><IconButton label="Messages" className="active" onClick={()=>setSelected(null)}><MessageCircle size={23}/></IconButton><IconButton label="New message" onClick={()=>setModal("new")}><Users size={22}/></IconButton><IconButton label="Journal" onClick={()=>setModal("journal")}><BookHeart size={23}/></IconButton><button className="rail-profile" aria-label="Profile" onClick={()=>setModal("profile")}><Avatar profile={profile} size={36}/></button></nav>
+ <aside className="inbox"><header className="inbox-header"><div className="mobile-brand"><Brand small/></div><h1>Messages<span className="pink-dot"/></h1><IconButton label="New message" onClick={()=>setModal("new")}><SquarePen size={23}/></IconButton></header><div className="inbox-search"><label className="input-icon"><Search size={17}/><input aria-label="Search chats" placeholder="Search" value={search} onChange={e=>setSearch(e.target.value)}/></label></div><div className="inbox-filters">{[["all","All"],["unread","Unread"],["groups","Groups"]].map(([id,text])=><button key={id} className={filter===id?"active":""} onClick={()=>setFilter(id)}>{text}</button>)}</div><div className="conversation-list">{loading&&<div className="center pad"><Spinner/></div>}{visible.map(c=><button key={c.id} className={"conversation "+(c.id===selected?"selected":"")} onClick={()=>setSelected(c.id)}><span className="avatar-wrap"><Avatar profile={c.partner} group={c.kind==="group"} size={49}/>{c.partner?.mood&&<span className="mood-badge">{c.partner.mood}</span>}</span><span className="conversation-copy"><span className="row"><strong>{title(c)}</strong><small className="push">{time(c.last_activity)}</small></span><span className="row"><span className={"preview "+(c.unread?"unread":"")}>{c.preview||"@" +(c.partner?.username??profile.username)}</span>{c.unread&&<i className="unread-dot"/>}</span></span></button>)}{!loading&&!visible.length&&<button className="empty-inbox" aria-label="Start a conversation" onClick={()=>setModal("new")}><SquarePen size={30}/><span>New message</span></button>}{more&&<IconButton label="More chats" onClick={()=>void loadMore()}><ChevronDown size={20}/></IconButton>}<ErrorNote text={error}/></div><footer className="inbox-footer"><button onClick={()=>setModal("profile")}><Avatar profile={profile} size={34}/><span><strong>{label(profile)}</strong><small>@{profile.username}</small></span></button><IconButton label="Journal" onClick={()=>setModal("journal")}><BookHeart size={22}/></IconButton>{!online&&<WifiOff size={16} aria-label="Offline"/>}</footer></aside>
+ {active?<ChatThread key={active.id} conversation={active} profile={profile} onBack={()=>setSelected(null)} onRefresh={refresh}/>:<section className="thread-empty"><span className="empty-glyph"><MessageCircle size={49} strokeWidth={1.2}/><Heart size={20}/></span><Brand/><button className="primary" onClick={()=>setModal("new")}><SquarePen size={18}/>New message</button></section>}
+ {modal==="new"&&<Discover userId={profile.id} onClose={()=>setModal(null)} onOpen={id=>{setSelected(id);void refresh();}}/>}{modal==="profile"&&<ProfileEditor profile={profile} onChange={onProfile} onClose={()=>setModal(null)} onLogout={onLogout}/>} {modal==="journal"&&<Journal userId={profile.id} onClose={()=>setModal(null)}/>}
+ </main>;
+}

@@ -1,5 +1,3 @@
 import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {};
-
-export default nextConfig;
+const config: NextConfig = { output: "export", trailingSlash: true, poweredByHeader: false, images: { unoptimized: true } };
+export default config;

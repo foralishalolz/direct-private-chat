@@ -1,39 +1,41 @@
-# Direct — private multi-group chat
+# BitchAt
 
-A mobile-first, Telegram-style real-time chat for a private circle, organized into admin-managed groups. Text messages only — no media uploads. Built with Next.js 16 (App Router), Tailwind CSS v4, Supabase (Auth, PostgreSQL, Realtime), and Lucide icons.
+Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
-## Supabase credentials used
+## Run
 
-Configured in `.env` or `.env.local` (either name works — Next.js reads both):
+Node.js 22 or later:
 
-- `NEXT_PUBLIC_SUPABASE_URL=https://your-project-reference.supabase.co`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key`
-- `SUPABASE_SERVICE_ROLE_KEY=your-service-role-key` (server-only, never exposed to the browser)
-- `SIGNUP_INVITE_CODE=your-chosen-invite-code` (server-only; required to create an account — share it only with people you want in the chat)
-
-See `DEPLOYMENT.md` for the full setup and deploy walkthrough.
-
-## One-time Supabase setup
-
-1. Open **SQL Editor** in your Supabase dashboard and run `supabase/setup.sql` in full. It's written to be safely rerunnable.
-2. No email confirmation toggle change is required — the sign-up API route creates users with `email_confirm: true` via the service role, so `@chat.local` addresses never block login.
-3. **Sign up first, before anyone else.** The very first account ever created automatically becomes the admin ("god user") — this is handled by a database trigger, not a setting.
-
-## What the app does
-
-- **Sign in / Sign up** on one screen. Usernames are normalized and suffixed with `@chat.local` internally; passwords are created server-side with auto-confirmation. Sign-up requires a correct invite code (`SIGNUP_INVITE_CODE`), an 8+ character password with a letter and a number, and is rate-limited to 2 accounts per hour per IP.
-- **Groups** — the admin creates groups (e.g. "Clash of Clans", "Valorant", "Study material") from `/admin`. A user only sees and can chat in groups the admin has added them to. The home screen is a group list; tapping a group opens its chat, with a back button to return.
-- **God mode admin dashboard** (`/admin`, admin-only): create and delete groups, and for every user, a "Manage groups" control listing every group with a checkbox — checking a box grants that user access, unchecking it removes access immediately. This is also how you ban/unban someone from a specific group.
-- **Real-time chat** via Supabase Realtime (INSERT / UPDATE / DELETE), scoped per group, with 30-message infinite scroll and viewport-stable pagination.
-- **Text only** — no images, video, or file uploads of any kind.
-- **Row Level Security** enforces: a user can only read/write messages in groups they belong to (or any group, if admin); only the author can edit/delete their own messages; all group/membership writes go through service-role admin API routes, never directly from the browser — so even a modified client can't grant itself group access.
-- **Dark, Telegram-style interface** throughout — chat, group list, admin dashboard, and login screen.
-
-## Run locally
-
-```bash
+```sh
+git clone --branch bitchat-live --single-branch https://github.com/foralishalolz/direct-private-chat.git
+cd direct-private-chat
 npm install
 npm run dev
 ```
 
-Open the local URL, sign up (you'll become admin automatically as the first account), create a group or two from `/admin`, add your own account to them, then invite others.
+## Check
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npx playwright install chromium
+npx playwright test
+npm start
+```
+
+## Deploy
+
+Import this repository's `bitchat-live` branch in Vercel. Framework: Next.js. Root: repository root. Build: `npm run build`. Output: `out`. Public connection settings are already in `lib/config.ts`; environment variables may override them. No paid plan is required by the app. Database schema and Edge Functions in this repository are already installed on the connected project; do not rerun migrations to deploy the frontend.
+
+Use the login screen's Create account tab. Usernames use 3–24 lowercase letters, numbers or underscores; new passwords use 10–128 characters. Registration is rate limited and confirms internal username email addresses on the server. Settings accepts the configured server-side Pro PIN. Account recovery requires the project administrator because internal username addresses cannot receive email.
+
+## Data behavior
+
+Text remains in Supabase. IndexedDB stores up to 240 recent text messages per cached conversation, within a 40-entry/8 MB cache, for seven days. The outbox holds at most 100 messages and uses stable UUIDs to avoid duplicate sends. Logging out clears that user's local data. One-view photos, capsule payloads, and media blobs are excluded from offline snapshots. This is access-controlled messaging, not end-to-end encryption.
+
+Media expires after 24 hours; capsule media expires 24 hours after unlock. A job every 15 minutes dispatches cleanup to an authenticated Edge Function, removes bytes through the Storage API, then nulls message media references. Failed deletions remain queued for retry. Active profile photos are retained. The one-view server grants a single claim; a recipient can still take a screenshot or use another camera. Pro deleted-text history remains visible to authorized Pro conversation members; delete-for-everyone does not erase that archive. Private journals never feed shared statistics. Couple prompts require both participants to enable Couple mode.
+
+## Verification boundaries
+
+GitHub Actions runs type checks, offline-storage/data tests, a production build, dependency checks, and desktop/mobile browser tests. Browser tests mock network responses and do not establish that every live Supabase integration works. Live end-to-end checks and the actual Vercel URL must be verified before describing a release as production-tested.

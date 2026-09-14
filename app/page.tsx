@@ -1,0 +1,29 @@
+
+"use client";
+import {useEffect,useState} from "react";
+import type {Session} from "@supabase/supabase-js";
+import dynamic from "next/dynamic";
+import {db} from "@/lib/supabase";
+import {activate,cache,cached,clearUser} from "@/lib/offline";
+import {clearMedia} from "@/lib/media";
+import {useOutbox} from "@/hooks/useOutbox";
+import {errorText,type Profile} from "@/lib/types";
+import AuthScreen from "@/components/AuthScreen";
+import {Brand,ErrorNote,Spinner} from "@/components/UI";
+const ChatRoom=dynamic(()=>import("@/components/ChatRoom"),{loading:()=> <div className="loading-screen"><Brand/><Spinner/></div>});
+export default function Home(){
+ const [session,setSession]=useState<Session|null>(null),[profile,setProfile]=useState<Profile|null>(null),[ready,setReady]=useState(false),[error,setError]=useState(""),[version,setVersion]=useState(0);
+ useOutbox(session?.user.id);
+ useEffect(()=>{let alive=true;const client=db();void client.auth.getSession().then(({data,error})=>{if(alive){setSession(data.session);if(error)setError(errorText(error));setReady(true);}});
+ const {data}=client.auth.onAuthStateChange((_event,next)=>{if(alive){setSession(next);setReady(true);}});
+ if("serviceWorker" in navigator&&process.env.NODE_ENV==="production")void navigator.serviceWorker.register("/sw.js").catch(()=>{});
+ return()=>{alive=false;data.subscription.unsubscribe();};},[]);
+ useEffect(()=>{let active=true;setProfile(null);if(!session?.user.id)return;const id=session.user.id;activate(id);
+ void (async()=>{const saved=await cached<Profile>(id,"profile");if(active&&saved)setProfile(saved);const r=await db().from("profiles").select("id,username,display_name,avatar_url,mood,is_pro").eq("id",id).single();if(!active)return;if(r.error){setError(errorText(r.error));return;}setProfile(r.data as Profile);setError("");void cache(id,"profile",r.data);})();
+ return()=>{active=false;};},[session?.user.id,version]);
+ async function logout(){const id=session?.user.id;setProfile(null);clearMedia();if(id)await clearUser(id);await db().auth.signOut({scope:"local"});setSession(null);}
+ if(!ready)return <main className="loading-screen"><Brand/><Spinner/></main>;
+ if(!session)return <AuthScreen/>;
+ if(!profile)return <main className="loading-screen"><Brand/>{error?<><ErrorNote text={error}/><button className="primary" onClick={()=>setVersion(x=>x+1)}>Retry</button><button onClick={()=>void logout()}>Log out</button></>:<Spinner/>}</main>;
+ return <ChatRoom key={session.user.id} profile={profile} onProfile={p=>{setProfile(p);void cache(p.id,"profile",p);}} onLogout={logout}/>;
+}

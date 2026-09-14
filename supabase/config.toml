@@ -1,0 +1,10 @@
+project_id = "llweydgvtpwgnslvgnqm"
+
+[functions.register]
+verify_jwt = false
+
+[functions.open-instant]
+verify_jwt = false
+
+[functions.media-cleanup]
+verify_jwt = false
