@@ -39,3 +39,7 @@ Media expires after 24 hours; capsule media expires 24 hours after unlock. A job
 ## Verification boundaries
 
 GitHub Actions runs type checks, offline-storage/data tests, a production build, dependency checks, and desktop/mobile browser tests. Browser tests mock network responses and do not establish that every live Supabase integration works. Live end-to-end checks and the actual Vercel URL must be verified before describing a release as production-tested.
+
+## Live release verification
+
+The live Supabase check passed 35 assertions, including two real browser sessions exchanging messages, reconnecting an offline outbox, actual Storage uploads, one-view consumption, server-enforced capsules, Pro authorization, and privacy boundaries. The cleanup worker also removed a queued test file through the Storage API (HTTP 200, one deleted, zero failures). Test accounts and uploaded test media are removed after verification; existing chats are retained. The live workflow is manual because it creates disposable accounts in the connected project. Its QA_CLEANUP output identifies the exact test accounts and objects for an administrator to remove; normal CI uses isolated mocked data.

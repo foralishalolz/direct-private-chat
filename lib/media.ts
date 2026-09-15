@@ -1,3 +1,4 @@
+import {imageDimensions} from "./imageDimensions";
 
 import {db} from "./supabase";
 const links=new Map<string,{url:string;until:number}>();
@@ -23,6 +24,7 @@ export async function imageFile(file:Blob,max=1600):Promise<Blob>{
   const webp=String.fromCharCode(...b.slice(0,4))==="RIFF"&&String.fromCharCode(...b.slice(8,12))==="WEBP";
   if(!png&&!jpg&&!webp)throw new Error("Choose a JPEG, PNG or WebP photo.");
   if(png){const v=new DataView(b.buffer);if(v.getUint32(16)*v.getUint32(20)>24e6)throw new Error("Photo dimensions are too large.");}
+  imageDimensions(new Uint8Array(await file.arrayBuffer()));
   const bitmap=await createImageBitmap(file);
   try{if(bitmap.width*bitmap.height>24e6||Math.max(bitmap.width,bitmap.height)>12000)throw new Error("Photo dimensions are too large.");
     const scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));
