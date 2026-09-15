@@ -1,0 +1,88 @@
+
+import assert from "node:assert/strict";
+import {randomUUID,randomBytes} from "node:crypto";
+import {spawn} from "node:child_process";
+import {createClient} from "@supabase/supabase-js";
+import {chromium} from "@playwright/test";
+import {SUPABASE_URL as url,SUPABASE_KEY as key} from "../lib/config.ts";
+const prefix="qa"+(process.env.GITHUB_RUN_ID||Date.now()),accounts=[],clients=[],objects=[];
+let browser,server,count=0;
+const pause=ms=>new Promise(r=>setTimeout(r,ms));
+const value=r=>{if(r.error)throw new Error(r.error.message);return r.data;};
+const rpc=async(c,name,args)=>value(await c.rpc(name,args));
+function ok(name){console.log("LIVE_PASS "+(++count)+" "+name);}
+try{
+ for(let i=0;i<3;i++){
+  const username=prefix+"_"+i,password=randomBytes(24).toString("hex")+"A!";
+  const response=await fetch(url+"/functions/v1/register",{method:"POST",headers:{apikey:key,"Content-Type":"application/json"},body:JSON.stringify({username,password}),signal:AbortSignal.timeout(30000)});
+  if(!response.ok)throw new Error("Registration "+response.status+": "+(await response.json()).error);
+  const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});clients.push(client);
+  const data=value(await client.auth.signInWithPassword({email:username+"@chat.local",password}));
+  accounts.push({id:data.user.id,username,password});console.log("QA_ACCOUNT "+JSON.stringify({id:data.user.id,username}));ok("registration and password login "+i);
+ }
+ const [a,b,x]=clients,[aa,bb,xx]=accounts;
+ assert.ok((await rpc(a,"find_profiles",{p_query:bb.username})).some(p=>p.id===bb.id));ok("username search");
+ const room=await rpc(a,"open_conversation",{p_other:bb.id});assert.equal(await rpc(b,"open_conversation",{p_other:aa.id}),room);ok("idempotent direct conversation");
+ assert.equal(value(await x.from("conversations").select("id").eq("id",room)).length,0);ok("outsider cannot read conversation");
+ assert.ok((await rpc(a,"inbox_page",{})).some(c=>c.id===room&&c.members.some(m=>m.id===bb.id)));ok("live inbox and participants");
+ assert.ok((await a.from("profiles").update({is_pro:true}).eq("id",aa.id)).error);ok("client cannot grant Pro");
+ let resolveInsert;const inserted=new Promise(resolve=>{resolveInsert=resolve;}),events=[];
+ const channel=b.channel("qa:"+room,{config:{postgres_changes_options:{wait:true}}});
+ channel.on("postgres_changes",{event:"*",schema:"public",table:"messages"},event=>{events.push(event);if(event.eventType==="INSERT"&&event.new.conversation_id===room)resolveInsert(event.new);});
+ await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error("Realtime subscription timed out")),25000);channel.subscribe(status=>{if(status==="SUBSCRIBED"){clearTimeout(timer);resolve();}if(status==="CHANNEL_ERROR"||status==="TIMED_OUT"){clearTimeout(timer);reject(new Error("Realtime "+status));}});});
+ const message=value(await a.from("messages").insert({id:randomUUID(),conversation_id:room,user_id:aa.id,content:"QA persistent text"}).select("*").single());
+ const timer=setTimeout(()=>resolveInsert(null),20000),received=await inserted;clearTimeout(timer);assert.equal(received?.id,message.id);ok("first INSERT arrives over realtime");
+ assert.equal(value(await b.from("messages").select("content").eq("id",message.id).single()).content,message.content);ok("text persists for recipient");
+ const denied=await a.from("messages").update({content:"denied"}).eq("id",message.id).select("id");assert.ok(denied.error||denied.data.length===0);ok("non-Pro edit denied");
+ assert.equal(await rpc(a,"unlock_pro",{p_code:"1162"}),true);ok("server-side Pro PIN");
+ value(await a.from("messages").update({content:"QA silent update"}).eq("id",message.id).select("id").single());await pause(1500);assert.ok(events.some(e=>e.eventType==="UPDATE"&&e.new.id===message.id));ok("UPDATE reaches recipient");
+ assert.ok((await rpc(b,"search_messages",{p_conversation:room,p_query:"silent"})).some(m=>m.id===message.id));ok("scoped message search");
+ const wrong=await b.from("messages").delete().eq("id",message.id).select("id");assert.ok(wrong.error||wrong.data.length===0);ok("other author cannot delete");
+ value(await a.from("messages").delete().eq("id",message.id).select("id").single());await pause(1500);assert.ok(events.some(e=>e.eventType==="DELETE"&&e.old.id===message.id));ok("DELETE reaches recipient");
+ assert.ok((await rpc(a,"deleted_history",{p_conversation:room})).some(m=>m.message_id===message.id));ok("Pro deleted-text history");
+ assert.ok((await a.from("messages").insert({id:message.id,conversation_id:room,user_id:aa.id,content:"resurrection"})).error);ok("deleted UUID cannot be resurrected");
+ const png=new Blob([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")],{type:"image/png"});
+ const path=aa.id+"/"+room+"/"+randomUUID()+".png";
+ value(await a.storage.from("chat-media").upload(path,png,{contentType:"image/png",cacheControl:"0"}));objects.push({bucket:"chat-media",path});
+ value(await a.from("messages").insert({conversation_id:room,user_id:aa.id,content:"QA media",media_url:path,media_kind:"image"}));
+ const link=value(await b.storage.from("chat-media").createSignedUrl(path,30));assert.equal((await fetch(link.signedUrl)).status,200);assert.ok((await x.storage.from("chat-media").createSignedUrl(path,30)).error);ok("private media upload and member-only download");
+ const instantPath=aa.id+"/"+room+"/"+randomUUID()+".png";
+ value(await a.storage.from("instant-media").upload(instantPath,png,{contentType:"image/png"}));objects.push({bucket:"instant-media",path:instantPath});
+ const instant=randomUUID();await rpc(a,"send_instant",{p_id:instant,p_conversation:room,p_media:instantPath,p_source:"file"});
+ const token=(await b.auth.getSession()).data.session.access_token;
+ const open=()=>fetch(url+"/functions/v1/open-instant",{method:"POST",headers:{apikey:key,Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({messageId:instant})});
+ const first=await open();assert.equal(first.status,200);assert.ok((await first.blob()).size>0);assert.equal((await open()).status,410);ok("one-view photo serves only once");
+ const capsule=randomUUID(),unlock=Date.now()+4000;
+ await rpc(a,"create_capsule",{p_id:capsule,p_conversation:room,p_content:"QA sealed note",p_media:null,p_unlock:new Date(unlock).toISOString()});assert.ok((await b.rpc("open_capsule",{p_id:capsule})).error);ok("capsule cannot open early");
+ const journal=value(await a.from("journals").insert({user_id:aa.id,body:"QA private journal",mood:"🥰"}).select("id").single());assert.equal(value(await b.from("journals").select("id").eq("id",journal.id)).length,0);ok("journal is private");
+ const poll=await rpc(a,"create_poll",{p_id:randomUUID(),p_conversation:room,p_question:"QA choice",p_options:["Coffee","Tea"]});await rpc(b,"vote_poll",{p_poll:poll,p_choice:1});assert.ok(value(await a.from("poll_votes").select("*").eq("poll_id",poll)).some(v=>v.user_id===bb.id&&v.choice===1));ok("shared polls");
+ const game=await rpc(a,"start_game",{p_conversation:room,p_type:"question"});await rpc(a,"answer_game",{p_id:game.id,p_answer:"QA first answer"});assert.equal((await rpc(b,"game_answers",{p_id:game.id})).length,0);await rpc(b,"answer_game",{p_id:game.id,p_answer:"QA second answer"});assert.equal((await rpc(a,"game_answers",{p_id:game.id})).length,2);ok("game answers reveal only after both answer");
+ const tic=await rpc(a,"start_game",{p_conversation:room,p_type:"tic_tac_toe"}),turn=tic.next_player===aa.id?a:b;await rpc(turn,"play_move",{p_id:tic.id,p_cell:0});assert.ok((await turn.rpc("play_move",{p_id:tic.id,p_cell:1})).error);ok("game turn enforcement");
+ await rpc(a,"set_couple_mode",{p_conversation:room,p_enabled:true});assert.ok((await a.rpc("ensure_goal",{p_conversation:room})).error);await rpc(b,"set_couple_mode",{p_conversation:room,p_enabled:true});const goal=await rpc(a,"ensure_goal",{p_conversation:room});assert.ok(goal.id);assert.ok((await a.rpc("complete_goal",{p_id:goal.id})).error);ok("mutual couple mode and goal availability");
+ const stats=await rpc(a,"couple_stats",{p_conversation:room});assert.ok(stats.messages>=2&&Array.isArray(stats.days));ok("Pro activity statistics");
+ await pause(Math.max(0,unlock-Date.now()+200));assert.equal((await rpc(b,"open_capsule",{p_id:capsule}))[0].content,"QA sealed note");ok("capsule unlocks on schedule");
+ await rpc(a,"set_block",{p_other:bb.id,p_blocked:true});assert.ok((await b.from("messages").insert({conversation_id:room,user_id:bb.id,content:"blocked"})).error);await rpc(a,"set_block",{p_other:bb.id,p_blocked:false});ok("blocking prevents messages");
+ const group=await rpc(a,"create_group",{p_title:"QA group",p_members:[bb.id,xx.id]});assert.equal(value(await x.from("conversations").select("id").eq("id",group)).length,1);ok("group membership");
+ await rpc(a,"set_couple_mode",{p_conversation:room,p_enabled:false});
+ value(await a.from("messages").insert(Array.from({length:35},(_,i)=>({id:randomUUID(),conversation_id:room,user_id:aa.id,content:"QA history "+String(i).padStart(2,"0")}))));
+ const page1=value(await a.from("messages").select("*").eq("conversation_id",room).order("created_at",{ascending:false}).order("id",{ascending:false}).limit(30)),last=page1.at(-1);
+ const page2=value(await a.from("messages").select("*").eq("conversation_id",room).or("created_at.lt."+last.created_at+",and(created_at.eq."+last.created_at+",id.lt."+last.id+")").order("created_at",{ascending:false}).order("id",{ascending:false}).limit(30));
+ assert.equal(page1.length,30);assert.ok(page2.length>0);assert.equal(new Set([...page1,...page2].map(m=>m.id)).size,page1.length+page2.length);ok("30-message cursor pagination has no duplicates");
+ await b.removeChannel(channel);
+ server=spawn(process.execPath,["scripts/serve.mjs"],{stdio:"ignore",env:{...process.env,PORT:"3100"}});
+ for(let i=0;i<30;i++){try{if((await fetch("http://127.0.0.1:3100")).ok)break;}catch{}await pause(200);}
+ browser=await chromium.launch();
+ const contexts=await Promise.all([browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true}),browser.newContext({viewport:{width:1440,height:900}})]),pages=await Promise.all(contexts.map(c=>c.newPage()));
+ const errors=[];for(const page of pages)page.on("pageerror",e=>errors.push(e.message));
+ for(let i=0;i<2;i++){const page=pages[i];await page.goto("http://127.0.0.1:3100");await page.getByRole("textbox",{name:"Username"}).fill(accounts[i].username);await page.locator('input[aria-label="Password"]').fill(accounts[i].password);await page.getByRole("button",{name:"Log in",exact:true}).click();await page.locator(".conversation").filter({hasText:accounts[i===0?1:0].username}).click();await page.getByRole("textbox",{name:"Message",exact:true}).waitFor();}
+ await pages[0].getByRole("textbox",{name:"Message",exact:true}).fill("QA from mobile");await pages[0].getByRole("button",{name:"Send message",exact:true}).click();await pages[1].locator(".message-text").filter({hasText:"QA from mobile"}).waitFor({timeout:25000});ok("live mobile browser sends to desktop");
+ await pages[1].getByRole("textbox",{name:"Message",exact:true}).fill("QA from desktop");await pages[1].getByRole("button",{name:"Send message",exact:true}).click();await pages[0].locator(".message-text").filter({hasText:"QA from desktop"}).waitFor({timeout:25000});ok("live desktop replies to mobile");
+ await contexts[0].setOffline(true);await pages[0].getByRole("textbox",{name:"Message",exact:true}).fill("QA offline delivery");await pages[0].getByRole("button",{name:"Send message",exact:true}).click();await pages[0].locator(".message-text").filter({hasText:"QA offline delivery"}).waitFor();await contexts[0].setOffline(false);await pages[1].locator(".message-text").filter({hasText:"QA offline delivery"}).waitFor({timeout:30000});ok("offline message delivers after reconnect");
+ assert.deepEqual(errors,[]);ok("no uncaught errors in live browser sessions");
+ console.log("CHAT_SCREENSHOT "+(await pages[0].screenshot({type:"jpeg",quality:55})).toString("base64"));
+ console.log("LIVE_CHECK_COMPLETE "+count);
+}finally{
+ console.log("QA_CLEANUP "+JSON.stringify({accounts:accounts.map(({id,username})=>({id,username})),objects}));
+ if(browser)await browser.close();if(server)server.kill();
+ for(const c of clients){await c.removeAllChannels();await c.auth.signOut({scope:"global"}).catch(()=>{});}
+}
