@@ -16,7 +16,7 @@ export function Avatar({profile,size=44,group=false}:{profile?:Partial<Profile>;
 export function Modal({children,onClose,title,wide=false}:{children:ReactNode;onClose:()=>void;title?:string;wide?:boolean}){
  const ref=useRef<HTMLDivElement>(null),close=useRef(onClose);close.current=onClose;
  useEffect(()=>{const previous=document.activeElement as HTMLElement|null;const first=ref.current?.querySelector<HTMLElement>("input,textarea,button,select,[tabindex='0']");first?.focus();
- const listener=(e:KeyboardEvent)=>{if(e.key==="Escape"){e.preventDefault();close.current();}if(e.key==="Tab"){
+ const listener=(e:KeyboardEvent)=>{if([...document.querySelectorAll('[role="dialog"][aria-modal="true"]')].at(-1)!==ref.current)return;if(e.key==="Escape"){e.preventDefault();close.current();}if(e.key==="Tab"){
  const els=[...(ref.current?.querySelectorAll<HTMLElement>("button:not(:disabled),input:not(:disabled),textarea,select,a[href],[tabindex='0']")??[])].filter(x=>x.offsetParent!==null);
  const a=els[0],z=els.at(-1);if(!a){e.preventDefault();return;}if(e.shiftKey&&(document.activeElement===a||document.activeElement===ref.current)){e.preventDefault();z?.focus();}else if(!e.shiftKey&&document.activeElement===z){e.preventDefault();a.focus();}}};
  document.addEventListener("keydown",listener);return()=>{document.removeEventListener("keydown",listener);previous?.focus();};},[]);

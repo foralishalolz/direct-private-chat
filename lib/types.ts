@@ -32,3 +32,12 @@ export function errorText(error: unknown): string {
   if (/fetch|network/i.test(text)) return "Connection lost. Try again.";
   return text.slice(0,180);
 }
+
+export function historyIds(current:Message[],latest:Message[]){
+  const confirmed=current.filter(m=>!m.status),known=new Set(confirmed.map(m=>m.id));
+  const newest=confirmed.at(-1),oldest=latest.at(-1);
+  if(latest.length===30&&newest&&oldest&&!latest.some(m=>known.has(m.id))&&
+    (newest.created_at.localeCompare(oldest.created_at)||newest.id.localeCompare(oldest.id))<0)return [];
+  const latestIds=new Set(latest.map(m=>m.id));
+  return confirmed.filter(m=>!latestIds.has(m.id)).map(m=>m.id);
+}

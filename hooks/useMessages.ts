@@ -2,19 +2,19 @@
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from "react";
 import {db} from "@/lib/supabase";
 import {acknowledge,announce,cache,cached,cacheable,enqueue,pending} from "@/lib/offline";
-import {errorText,merge,type Message} from "@/lib/types";
+import {errorText,historyIds,merge,type Message} from "@/lib/types";
 export function useMessages(conversationId:string,userId:string){
   const [messages,setMessages]=useState<Message[]>([]),[loading,setLoading]=useState(true),[more,setMore]=useState(true),[older,setOlder]=useState(false),[connected,setConnected]=useState(false),[error,setError]=useState("");
-  const rows=useRef<Message[]>([]),events=useRef(new Map<string,{row:Message|null;revision:number}>()),revision=useRef(0),alive=useRef(false),refreshing=useRef(false),paging=useRef(false),lastSync=useRef(0);
+  const rows=useRef<Message[]>([]),events=useRef(new Map<string,{row:Message|null;revision:number}>()),revision=useRef(0),alive=useRef(false),refreshing=useRef(false),refreshAgain=useRef(false),paging=useRef(false),lastSync=useRef(0);
   useLayoutEffect(()=>{rows.current=messages;},[messages]);
   const reconcile=useCallback(async()=>{
-    if(refreshing.current||!navigator.onLine)return;
+    if(refreshing.current){refreshAgain.current=true;return;}if(!navigator.onLine)return;
     refreshing.current=true;const start=revision.current;
     try{
       const result=await db().from("messages").select("*").eq("conversation_id",conversationId).order("created_at",{ascending:false}).order("id",{ascending:false}).limit(30);
       if(result.error)throw result.error;
       const latest=result.data as Message[];
-      const ids=rows.current.filter(m=>!m.status&&!latest.some(r=>r.id===m.id)).map(m=>m.id);
+      const ids=historyIds(rows.current,latest);
       const history:Message[]=[];
       for(let i=0;i<ids.length;i+=100){const r=await db().from("messages").select("*").eq("conversation_id",conversationId).in("id",ids.slice(i,i+100));if(r.error)throw r.error;history.push(...r.data as Message[]);}
       if(!alive.current)return;
@@ -25,7 +25,7 @@ export function useMessages(conversationId:string,userId:string){
       });
       setMore(latest.length===30||history.length>0);setError("");lastSync.current=Date.now();
     }catch(e){if(alive.current)setError(errorText(e));}
-    finally{refreshing.current=false;if(alive.current)setLoading(false);}
+    finally{refreshing.current=false;if(alive.current){setLoading(false);if(refreshAgain.current){refreshAgain.current=false;void reconcile();}}}
   },[conversationId]);
   useEffect(()=>{
     alive.current=true;rows.current=[];events.current.clear();revision.current=0;setMessages([]);setLoading(true);setConnected(false);

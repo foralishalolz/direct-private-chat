@@ -3,7 +3,7 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import "fake-indexeddb/auto";
 import {activate,acknowledge,cache,cached,cacheable,clearUser,enqueue,pending,updatePending} from "../lib/offline";
-import {merge,usernameEmail,type Message} from "../lib/types";
+import {historyIds,merge,usernameEmail,type Message} from "../lib/types";
 const message=(user="a",id=crypto.randomUUID()):Message=>({id,user_id:user,conversation_id:"room",content:"hello",media_url:null,media_kind:null,kind:"message",created_at:"2026-09-14T10:00:00Z",instant_viewed:false});
 test("usernames normalize consistently and reject invalid email tricks",()=>{assert.equal(usernameEmail(" @Hello_12 "),"hello_12@chat.local");for(const input of ["a","someone@example.com","a+b","space here","a".repeat(25)])assert.throws(()=>usernameEmail(input));});
 test("merging a realtime acknowledgement never duplicates an optimistic message",()=>{const m=message();const rows=merge([{...m,status:"queued"}],[{...m,created_at:"2026-09-14T10:00:01Z"}]);assert.equal(rows.length,1);assert.equal(rows[0].status,undefined);});
@@ -16,3 +16,13 @@ test("logout stops subsequent cache and queue writes",async()=>{activate("logout
 test("queue has a hard 100-message bound but allows retry of existing IDs",async()=>{activate("limit");const rows=Array.from({length:100},()=>message("limit"));await Promise.all(rows.map(enqueue));assert.equal((await pending("limit")).length,100);await assert.rejects(enqueue(message("limit")));await enqueue(rows[0]);assert.equal((await pending("limit")).length,100);await clearUser("limit");});
 test("instants never enter the offline queue",async()=>{await assert.rejects(enqueue({...message("instant"),kind:"instant"}));});
 test("device snapshots are isolated and bounded",async()=>{activate("cache-a");activate("cache-b");await cache("cache-a","private",{body:"my journal"});assert.equal(await cached("cache-b","private"),null);for(let i=0;i<45;i++)await cache("cache-a","thread-"+i,{i});let retained=0;for(let i=0;i<45;i++)if(await cached("cache-a","thread-"+i))retained++;assert.ok(retained<=40);assert.equal(await cache("cache-a","huge","x".repeat(2*1024*1024)),false);await clearUser("cache-a");});
+
+test("reconnect resets a discontinuous cached window so older pagination cannot skip a gap",()=>{
+ const current=[{...message("u","old"),created_at:"2026-09-14T09:00:00Z"}];
+ const latest=Array.from({length:30},(_,i)=>({...message("u",String(99-i)),created_at:"2026-09-14T12:00:00Z"}));
+ assert.deepEqual(historyIds(current,latest),[]);
+});
+test("reconnect preserves contiguous loaded history",()=>{
+ const a=message("u","a"),b=message("u","b");
+ assert.deepEqual(historyIds([a,b],[b]),["a"]);
+});

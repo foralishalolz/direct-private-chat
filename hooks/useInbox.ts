@@ -20,7 +20,7 @@ export function useInbox(userId:string){
  const update=()=>{clearTimeout(timer);timer=setTimeout(()=>{generation++;void refresh();},350);};
  const c=db(),ch=c.channel("inbox:"+userId,{config:{postgres_changes_options:{wait:true}}});
  for(const table of ["conversations","conversation_members","profiles"])ch.on("postgres_changes",{event:"*",schema:"public",table},update);
- ch.on("postgres_changes",{event:"INSERT",schema:"public",table:"messages"},update);
+ ch.on("postgres_changes",{event:"*",schema:"public",table:"messages"},update);
  ch.subscribe(status=>{if(status==="SUBSCRIBED")update();});
  update();const focus=()=>{if(document.visibilityState==="visible")update();};window.addEventListener("online",focus);document.addEventListener("visibilitychange",focus);
  return()=>{alive.current=false;clearTimeout(timer);void c.removeChannel(ch);window.removeEventListener("online",focus);document.removeEventListener("visibilitychange",focus);};},[refresh,userId]);

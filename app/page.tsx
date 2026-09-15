@@ -25,5 +25,5 @@ export default function Home(){
  if(!ready)return <main className="loading-screen"><Brand/><Spinner/></main>;
  if(!session)return <AuthScreen/>;
  if(!profile)return <main className="loading-screen"><Brand/>{error?<><ErrorNote text={error}/><button className="primary" onClick={()=>setVersion(x=>x+1)}>Retry</button><button onClick={()=>void logout()}>Log out</button></>:<Spinner/>}</main>;
- return <ChatRoom key={session.user.id} profile={profile} onProfile={p=>{setProfile(p);void cache(p.id,"profile",p);}} onLogout={logout}/>;
+ return <ChatRoom key={session.user.id} profile={profile} onProfile={p=>{setProfile(current=>current?.id===p.id?p:current);void cache(p.id,"profile",p);}} onLogout={logout}/>;
 }
