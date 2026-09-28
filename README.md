@@ -1,4 +1,4 @@
-# BitchAt
+# BitchAt 2.1
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -7,9 +7,9 @@ Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing
 Node.js 22 or later:
 
 ```sh
-git clone --branch bitchat-live --single-branch https://github.com/foralishalolz/direct-private-chat.git
-cd direct-private-chat
-npm install
+git clone --branch bitchat-production --single-branch https://github.com/foralishalolz/direct-private-chat.git bitchat-production
+cd bitchat-production
+npm ci
 npm run dev
 ```
 
@@ -26,7 +26,15 @@ npm start
 
 ## Deploy
 
-Import this repository's `bitchat-live` branch in Vercel. Framework: Next.js. Root: repository root. Build: `npm run build`. Output: `out`. Public connection settings are already in `lib/config.ts`; environment variables may override them. No paid plan is required by the app. Database schema and Edge Functions in this repository are already installed on the connected project; do not rerun migrations to deploy the frontend.
+This release is isolated on the `bitchat-production` branch. It includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. The old branch is preserved.
+
+In Vercel, import `foralishalolz/direct-private-chat`, set the production branch to `bitchat-production`, and use the repository root. Framework: Next.js. Install: `npm ci`. Build: `npm run build`. Output: `out`. The committed `vercel.json` contains these build settings and browser security headers. The Vercel connection must be authorized for the team owning the project; source files cannot grant that access.
+
+Public connection settings are already in `lib/config.ts`; `.env.example` contains matching values for an optional `.env.local`. No administrator key belongs in the frontend. Database schema and Edge Functions in this repository are already installed on the connected project; do not rerun migrations to deploy the frontend. New database installations must use their own project URL and publishable key and configure the Edge Function secrets before accepting users.
+
+`npm run build` also produces a portable `out/` directory. Serve that directory over HTTPS on a static host with directory-index routing. `/login/`, `/manifest.webmanifest`, `/sw.js`, and `/release.json` must be reachable. The app's Supabase authentication and private chat storage remain the same across frontend hosts. Browser sessions and offline caches belong to each origin, so a new address requires signing in again.
+
+GitHub checks use the committed lockfile and attach the compiled website and browser test screenshots. The `Published website check` workflow is manual and targets Vercel; run it only after the Vercel deployment is available.
 
 Use the login screen's Create account tab. Usernames use 3–24 lowercase letters, numbers or underscores; new passwords use 10–128 characters. Registration is rate limited and confirms internal username email addresses on the server. Settings accepts the configured server-side Pro PIN. Account recovery requires the project administrator because internal username addresses cannot receive email.
 

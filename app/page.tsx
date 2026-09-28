@@ -14,7 +14,7 @@ const ChatRoom=dynamic(()=>import("@/components/ChatRoom"),{loading:()=> <div cl
 export default function Home(){
  const [session,setSession]=useState<Session|null>(null),[profile,setProfile]=useState<Profile|null>(null),[ready,setReady]=useState(false),[error,setError]=useState(""),[version,setVersion]=useState(0);
  useOutbox(session?.user.id);
- useEffect(()=>{let alive=true;const client=db();void client.auth.getSession().then(({data,error})=>{if(alive){setSession(data.session);if(error)setError(errorText(error));setReady(true);}});
+ useEffect(()=>{let alive=true;const client=db();void client.auth.getSession().then(({data,error})=>{if(alive){setSession(data.session);if(error)setError(errorText(error));setReady(true);}}).catch(cause=>{if(alive){setError(errorText(cause));setReady(true);}});
  const {data}=client.auth.onAuthStateChange((_event,next)=>{if(alive){setSession(next);setReady(true);}});
  if("serviceWorker" in navigator&&process.env.NODE_ENV==="production")void navigator.serviceWorker.register("/sw.js").catch(()=>{});
  return()=>{alive=false;data.subscription.unsubscribe();};},[]);
@@ -23,7 +23,7 @@ export default function Home(){
  return()=>{active=false;};},[session?.user.id,version]);
  async function logout(){const id=session?.user.id;setProfile(null);clearMedia();if(id)await clearUser(id);await db().auth.signOut({scope:"local"});setSession(null);}
  if(!ready)return <main className="loading-screen"><Brand/><Spinner/></main>;
- if(!session)return <AuthScreen/>;
+ if(!session)return <AuthScreen initialError={error}/>;
  if(!profile)return <main className="loading-screen"><Brand/>{error?<><ErrorNote text={error}/><button className="primary" onClick={()=>setVersion(x=>x+1)}>Retry</button><button onClick={()=>void logout()}>Log out</button></>:<Spinner/>}</main>;
  return <ChatRoom key={session.user.id} profile={profile} onProfile={p=>{setProfile(current=>current?.id===p.id?p:current);void cache(p.id,"profile",p);}} onLogout={logout}/>;
 }

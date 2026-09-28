@@ -2,12 +2,12 @@
 name: BitchAt checks
 on:
   push:
-    branches: [bitchat-live]
+    branches: [bitchat-production]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
-  group: bitchat-verify
+  group: bitchat-verify-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   verify:
@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: "22"
       - name: Install dependencies
-        run: npm install --no-fund
+        run: npm ci --no-fund
       - name: Type check
         run: npm run typecheck
       - name: Storage and data tests
@@ -34,16 +34,6 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Browser checks
         run: npx playwright test
-      - name: Save lockfile
-        if: success()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          if ! git diff --cached --quiet; then
-            git commit -m "Pin verified dependencies"
-            git push origin HEAD:bitchat-live
-          fi
       - name: Save test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,3 +43,10 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+      - name: Save deployable website
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bitchat-static-release
+          path: out/
+          retention-days: 14
