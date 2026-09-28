@@ -11,7 +11,8 @@ export function Spinner(){return <LoaderCircle className="spin" size={20} aria-l
 export function Brand({small=false}:{small?:boolean}){return <span className={"brand "+(small?"small":"")}><span className="brand-mark"><MessageCircle size={small?19:27} strokeWidth={2.5}/><i/></span><span>BitchAt<span className="brand-dot">.</span></span></span>;}
 export function Avatar({profile,size=44,group=false}:{profile?:Partial<Profile>;size?:number;group?:boolean}){
  const [url,setUrl]=useState("");useEffect(()=>{let active=true;setUrl("");if(profile?.avatar_url)void signed("avatars",profile.avatar_url).then(x=>{if(active)setUrl(x);}).catch(()=>{});return()=>{active=false;};},[profile?.avatar_url,profile?.id]);
- return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.38)}}>{url?<img src={url} alt="" width={size} height={size} loading="lazy" onError={()=>setUrl("")}/>:group?<Users size={size*.45}/>:label(profile).slice(0,1).toUpperCase()||<MessageCircle size={size*.4}/>}</span>;
+ const colors=["#49436a","#325963","#685049","#4c596e","#655077"];const seed=(profile?.id||profile?.username||"group").split("").reduce((sum,char)=>sum+char.charCodeAt(0),0);
+ return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.38),background:colors[seed%colors.length],color:"#f6f3ff"}}>{url?<img src={url} alt="" width={size} height={size} loading="lazy" onError={()=>setUrl("")}/>:group?<Users size={size*.45}/>:label(profile).slice(0,1).toUpperCase()||<MessageCircle size={size*.4}/>}</span>;
 }
 export function Modal({children,onClose,title,wide=false}:{children:ReactNode;onClose:()=>void;title?:string;wide?:boolean}){
  const ref=useRef<HTMLDivElement>(null),close=useRef(onClose);close.current=onClose;

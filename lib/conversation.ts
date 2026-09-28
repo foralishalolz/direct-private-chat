@@ -8,9 +8,10 @@ export async function loadConversation(id: string, userId: string): Promise<Conv
   const conversation = result.data as Conversation;
   let ids = [conversation.member_a, conversation.member_b].filter((value): value is string => !!value);
   if (conversation.kind === "group") {
-    const members = await db().from("conversation_members").select("user_id").eq("conversation_id", id);
+    const members = await db().from("conversation_members").select("user_id,last_read_at").eq("conversation_id", id);
     if (members.error) throw members.error;
     ids = members.data.map(member => member.user_id as string);
+    conversation.member_reads=members.data.map(member=>({user_id:member.user_id,read_at:member.last_read_at}));
   }
   const profiles = await db().from("profiles").select("id,username,display_name,avatar_url,mood").in("id", ids);
   if (profiles.error) throw profiles.error;

@@ -1,4 +1,4 @@
-# BitchAt 2.1
+# BitchAt 2.2
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -42,7 +42,7 @@ Use the login screen's Create account tab. Usernames use 3–24 lowercase letter
 
 Text remains in Supabase. IndexedDB stores up to 240 recent text messages per cached conversation, within a 40-entry/8 MB cache, for seven days. The outbox holds at most 100 messages and uses stable UUIDs to avoid duplicate sends. Logging out clears that user's local data. One-view photos, capsule payloads, and media blobs are excluded from offline snapshots. This is access-controlled messaging, not end-to-end encryption.
 
-Media expires after 24 hours; capsule media expires 24 hours after unlock. A job every 15 minutes dispatches cleanup to an authenticated Edge Function, removes bytes through the Storage API, then nulls message media references. Failed deletions remain queued for retry. Active profile photos are retained. The one-view server grants a single claim; a recipient can still take a screenshot or use another camera. Pro deleted-text history remains visible to authorized Pro conversation members; delete-for-everyone does not erase that archive. Private journals never feed shared statistics. Couple prompts require both participants to enable Couple mode.
+Media expires after 24 hours; capsule media expires 24 hours after unlock. A job every 15 minutes dispatches cleanup to an authenticated Edge Function, removes bytes through the Storage API, then nulls message media references. Failed deletions remain queued for retry. Active profile photos are retained. New one-view photos grant one claim per recipient, including group members. A sender can explicitly enable replay and saving for Pro viewers; it is off by default and the same 24-hour expiry still applies. Upgrading to Pro cannot reopen a strict one-view photo. Legacy photos keep their original claim behavior; a recipient can still take a screenshot or use another camera. Pro edited/deleted message history and unexpired deleted media remain visible to authorized Pro conversation members; delete-for-everyone does not erase that archive. Private journals never feed shared statistics. Couple prompts require both participants to enable Couple mode.
 
 ## Verification boundaries
 
@@ -51,3 +51,15 @@ GitHub Actions runs type checks, offline-storage/data tests, a production build,
 ## Live release verification
 
 The live Supabase check passed 35 assertions, including two real browser sessions exchanging messages, reconnecting an offline outbox, actual Storage uploads, one-view consumption, server-enforced capsules, Pro authorization, and privacy boundaries. The cleanup worker also removed a queued test file through the Storage API (HTTP 200, one deleted, zero failures). Test accounts and uploaded test media are removed after verification; existing chats are retained. The live workflow is manual because it creates disposable accounts in the connected project. Its QA_CLEANUP output identifies the exact test accounts and objects for an administrator to remove; normal CI uses isolated mocked data.
+
+## Version 2.2
+
+Group owners and Pro members can rename a group, create a seven-day invite code, or revoke it. Members can leave; ownership passes to a remaining member. Groups accept up to 32 members through invitations. Delete chat clears only the caller’s history and hides the conversation until a new message arrives; it never erases another member’s copy. Read receipts advance only through a displayed message. Pro history begins when the corresponding migration is installed; earlier versions cannot be reconstructed. Media downloads are available only while the server still retains the bytes.
+
+For the existing connected database, the 20260928 migrations are already applied. For a new Supabase project, use the complete schema and deploy the included Edge Functions. No secret key belongs in Vercel’s public environment variables.
+
+## Security review
+
+The new public tables have RLS enabled. Private payload/history tables intentionally have no client policies or table grants. The authenticated SECURITY DEFINER RPCs use an empty search path and check the caller's conversation membership and, where required, ownership or Pro status. The database linter flags those RPCs for review; their elevated execution is intentional. See [function review guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
+
+The connected project's leaked-password protection setting is currently disabled. Review [Supabase password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection) before a wider public launch. This setting is separate from the app's minimum password length and registration rate limit.

@@ -7,11 +7,12 @@ import {useLive} from "@/hooks/useLive";
 import {imageFile,upload} from "@/lib/media";
 import {day,errorText,label,time,type Capsule,type Conversation,type Game,type Message,type Poll,type Profile} from "@/lib/types";
 import {Modal,IconButton,ErrorNote,Spinner} from "./UI";
+import {ChatDetails,MessageHistory,QuickPlay} from "./ChatFeatures";
 import {PrivateMedia} from "./MessageBubble";
 export type ActivityTab="capsules"|"games"|"polls"|"stats"|"search"|"archive"|"chat";
-export default function Activities({tab,conversation:c,profile:p,onClose,onRefresh}:{tab:ActivityTab;conversation:Conversation;profile:Profile;onClose:()=>void;onRefresh:()=>Promise<void>}){
- const titles:Record<ActivityTab,string>={capsules:"Capsules",games:"Play",polls:"Polls",stats:"Together",search:"Search messages",archive:"Deleted messages",chat:"Chat"};
- return <Modal title={titles[tab]} onClose={onClose} wide><div className="panel-pad">{tab==="capsules"?<Capsules c={c} p={p}/>:tab==="games"?<Games c={c} p={p}/>:tab==="polls"?<Polls c={c} p={p}/>:tab==="stats"?<Stats c={c} p={p}/>:tab==="search"||tab==="archive"?<MessageSearch c={c} archive={tab==="archive"}/>:<ChatOptions c={c} p={p} onRefresh={onRefresh}/>}</div></Modal>;
+export default function Activities({tab,conversation:c,profile:p,onClose,onRefresh,onExit}:{tab:ActivityTab;conversation:Conversation;profile:Profile;onClose:()=>void;onRefresh:()=>Promise<void>;onExit:()=>void}){
+ const titles:Record<ActivityTab,string>={capsules:"Capsules",games:"Play",polls:"Polls",stats:"Together",search:"Search messages",archive:"Message history",chat:"Chat"};
+ return <Modal title={titles[tab]} onClose={onClose} wide><div className="panel-pad">{tab==="capsules"?<Capsules c={c} p={p}/>:tab==="games"?<><QuickPlay c={c}/>{c.kind==="direct"&&<Games c={c} p={p}/>}</>:tab==="polls"?<Polls c={c} p={p}/>:tab==="stats"?<Stats c={c} p={p}/>:tab==="archive"?<MessageHistory c={c}/>:tab==="search"?<MessageSearch c={c} archive={false}/>:<ChatDetails c={c} p={p} onRefresh={onRefresh} onExit={onExit}/>}</div></Modal>;
 }
 function Capsules({c,p}:{c:Conversation;p:Profile}){
  const [limit,setLimit]=useState(30),[body,setBody]=useState(""),[date,setDate]=useState(""),[photo,setPhoto]=useState<File|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[opened,setOpened]=useState<{content:string;media_url:string|null}|null>(null),[now,setNow]=useState(Date.now());const input=useRef<HTMLInputElement>(null),id=useRef(crypto.randomUUID());
@@ -47,13 +48,6 @@ function MessageSearch({c,archive}:{c:Conversation;archive:boolean}){
  useEffect(()=>{const n=++generation.current;setRows([]);setMore(false);if(!archive&&query.trim().length<2){setBusy(false);return;}const timer=setTimeout(()=>void run(false,n),250);return()=>{clearTimeout(timer);generation.current++;};},[query,archive,c.id]);
  return <>{!archive&&<label className="input-icon"><Search size={18}/><input aria-label="Search messages" placeholder="Search" value={query} maxLength={200} onChange={e=>setQuery(e.target.value)}/></label>}<ErrorNote text={error}/><div className="search-hits">{rows.map(m=><article key={m.message_id??m.id}><small>{m.username??label(c.members?.find(p=>p.id===m.user_id))} · {day(m.created_at)} {time(m.created_at)}</small><p>{m.content}</p></article>)}</div>{busy&&<Spinner/>}{more&&<IconButton label="More results" disabled={busy} onClick={()=>void run(true)}><ChevronDown size={20}/></IconButton>}</>;
 }
-function ChatOptions({c,p,onRefresh}:{c:Conversation;p:Profile;onRefresh:()=>Promise<void>}){
- const [error,setError]=useState(""),[busy,setBusy]=useState(false),[blocked,setBlocked]=useState(false);
- useEffect(()=>{let active=true;if(c.partner)void rpc<{other_id:string}[]>("my_blocks").then(rows=>{if(active)setBlocked(rows.some(x=>x.other_id===c.partner?.id));}).catch(e=>{if(active)setError(errorText(e));});return()=>{active=false;};},[c.partner]);
- const mine=c.member_a===p.id?c.couple_a:c.couple_b;
- async function act(fn:()=>Promise<unknown>){setBusy(true);try{await fn();await onRefresh();setError("");}catch(e){setError(errorText(e));}finally{setBusy(false);}}
- return <>{c.kind==="direct"&&<><button className="menu-item" disabled={busy} onClick={()=>void act(()=>rpc("set_couple_mode",{p_conversation:c.id,p_enabled:!mine}))}><Heart size={20}/><span>Couple mode</span><span className={"switch "+(mine?"on":"")} role="switch" aria-checked={mine}/></button>{mine&&!(c.couple_a&&c.couple_b)&&<small className="muted">Waiting for {label(c.partner)}</small>}<button className="menu-item danger" disabled={busy} onClick={()=>void act(async()=>{await rpc("set_block",{p_other:c.partner?.id,p_blocked:!blocked});setBlocked(!blocked);})}><ShieldCheck size={20}/>{blocked?"Unblock":"Block"}</button></>}{c.kind==="group"&&c.members?.map(m=><div className="menu-item" key={m.id}>@{m.username}</div>)}<ErrorNote text={error}/></>;
-}
 type Goal={id:string;prompt:string;available_at:string;completed_a:string|null;completed_b:string|null};
 export function GoalCard({c,p}:{c:Conversation;p:Profile}){
  const [error,setError]=useState(""),[busy,setBusy]=useState(false),[now,setNow]=useState(Date.now());
@@ -63,3 +57,4 @@ export function GoalCard({c,p}:{c:Conversation;p:Profile}){
  const done=c.member_a===p.id?g.completed_a:g.completed_b;
  return <aside className="goal-card"><span className="goal-icon"><Heart size={21}/></span><div><small>Together</small><p>{g.prompt}</p><div className="goal-checks"><span className={g.completed_a?"done":""}><Check size={12}/>{label(c.members?.find(x=>x.id===c.member_a))}</span><span className={g.completed_b?"done":""}><Check size={12}/>{label(c.members?.find(x=>x.id===c.member_b))}</span></div><ErrorNote text={error}/></div><IconButton label="Complete goal" disabled={!!done||busy} className={done?"completed":""} onClick={async()=>{setBusy(true);try{await rpc("complete_goal",{p_id:g.id});await live.refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);}}}><Check size={20}/></IconButton></aside>;
 }
+

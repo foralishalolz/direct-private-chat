@@ -2,7 +2,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import "fake-indexeddb/auto";
-import {activate,acknowledge,cache,cached,cacheable,clearUser,enqueue,pending,updatePending} from "../lib/offline";
+import {activate,acknowledge,cache,cached,cacheable,clearUser,clearConversation,visibleRows,enqueue,pending,updatePending} from "../lib/offline";
 import {historyIds,merge,usernameEmail,type Message} from "../lib/types";
 const message=(user="a",id=crypto.randomUUID()):Message=>({id,user_id:user,conversation_id:"room",content:"hello",media_url:null,media_kind:null,kind:"message",created_at:"2026-09-14T10:00:00Z",instant_viewed:false});
 test("usernames normalize consistently and reject invalid email tricks",()=>{assert.equal(usernameEmail(" @Hello_12 "),"hello_12@chat.local");for(const input of ["a","someone@example.com","a+b","space here","a".repeat(25)])assert.throws(()=>usernameEmail(input));});
@@ -25,4 +25,14 @@ test("reconnect resets a discontinuous cached window so older pagination cannot 
 test("reconnect preserves contiguous loaded history",()=>{
  const a=message("u","a"),b=message("u","b");
  assert.deepEqual(historyIds([a,b],[b]),["a"]);
+});
+
+test("clearing one conversation removes its queue and prevents stale snapshot restoration",async()=>{
+ const user="clear-room";activate(user);const old=message(user),other={...message(user),conversation_id:"other"};
+ await enqueue(old);await enqueue(other);await cache(user,"messages:room",[old]);
+ await clearConversation(user,"room","2026-09-14T10:00:01Z");
+ assert.deepEqual((await pending(user)).map(row=>row.message.id),[other.id]);
+ await cache(user,"messages:room",[old]);assert.deepEqual(await cached(user,"messages:room"),[]);
+ const next={...message(user),created_at:"2026-09-14T10:00:02Z"};assert.deepEqual(visibleRows(user,"room",[old,next]),[next]);
+ await enqueue(next);await assert.rejects(enqueue(old));await clearUser(user);
 });

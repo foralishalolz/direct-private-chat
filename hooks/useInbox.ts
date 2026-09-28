@@ -19,7 +19,7 @@ export function useInbox(userId:string){
  void cached<Conversation[]>(userId,"inbox").then(rows=>{if(alive.current&&rows&&generation===0){setItems(rows);setLoading(false);}});
  const update=()=>{clearTimeout(timer);timer=setTimeout(()=>{generation++;void refresh();},350);};
  const c=db(),ch=c.channel("inbox:"+userId,{config:{postgres_changes_options:{wait:true}}});
- for(const table of ["conversations","conversation_members","profiles"])ch.on("postgres_changes",{event:"*",schema:"public",table},update);
+ for(const table of ["conversations","conversation_members","profiles","chat_preferences"])ch.on("postgres_changes",{event:"*",schema:"public",table},update);
  ch.on("postgres_changes",{event:"*",schema:"public",table:"messages"},update);
  ch.subscribe(status=>{if(status==="SUBSCRIBED")update();});
  update();const focus=()=>{if(document.visibilityState==="visible")update();};window.addEventListener("online",focus);document.addEventListener("visibilitychange",focus);

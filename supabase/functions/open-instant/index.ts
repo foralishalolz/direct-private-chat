@@ -19,11 +19,12 @@ Deno.serve(async (req: Request) => {
     const { messageId } = await readJson(req, 1024);
     if (typeof messageId !== "string" || !/^[0-9a-f-]{36}$/.test(messageId))
       return json({ error: "Invalid request" }, 400);
-    const { data: path, error: claimError } = await admin.rpc("claim_instant", {
+    const { data: claim, error: claimError } = await admin.rpc("claim_instant_v2", {
       p_id: messageId,
       p_viewer: user.id,
     });
-    if (claimError || !path) return json({ error: "Instant unavailable" }, 410);
+    if (claimError || !claim?.path) return json({ error: "Instant unavailable" }, 410);
+    const path = claim.path as string;
     const { data: photo, error: downloadError } = await admin.storage
       .from("instant-media")
       .download(path);
@@ -34,7 +35,7 @@ Deno.serve(async (req: Request) => {
       photo.size > 10485760
     )
       return json({ error: "Invalid media" }, 400);
-    EdgeRuntime.waitUntil(
+    if (claim.delete_now) EdgeRuntime.waitUntil(
       (async () => {
         const { error: removeError } = await admin.storage
           .from("instant-media")
@@ -58,3 +59,4 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Instant unavailable" }, 400);
   }
 });
+

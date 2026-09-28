@@ -3,6 +3,11 @@ export type Pending={id:string;userId:string;message:Message;attempts:number;nex
 type CacheRow={id:string;userId:string;data:unknown;updated:number;bytes:number};
 let connection:Promise<IDBDatabase>|undefined;
 const stopped=new Set<string>();
+const cleared=new Map<string,string>();
+export function visibleRows(userId:string,conversationId:string,rows:Message[]){
+  const before=cleared.get(userId+":"+conversationId);
+  return before?rows.filter(m=>m.created_at>before):rows;
+}
 export function activate(userId:string){stopped.delete(userId);}
 function open():Promise<IDBDatabase>{
   if(!connection) connection=new Promise((resolve,reject)=>{
@@ -29,9 +34,11 @@ export async function cached<T>(userId:string,name:string):Promise<T|null>{
 export async function cache(userId:string,name:string,data:unknown){
   if(stopped.has(userId)) return false;
   try{
+    if(name.startsWith("messages:")&&Array.isArray(data))data=visibleRows(userId,name.slice(9),data);
     const bytes=JSON.stringify(data).length*2;if(bytes>2*1024*1024)return false;
     await tx<void>("cache","readwrite",(s)=>{
       if(stopped.has(userId))return;
+      if(name.startsWith("messages:")&&Array.isArray(data))data=visibleRows(userId,name.slice(9),data);
       s.put({id:userId+":"+name,userId,data,updated:Date.now(),bytes});
       const q=s.index("userId").getAll(userId);q.onsuccess=()=>{
         let size=0;(q.result as CacheRow[]).sort((a,b)=>b.updated-a.updated).forEach((r,i)=>{size+=r.bytes;if(i>=40||size>8*1024*1024||Date.now()-r.updated>7*86400000)s.delete(r.id);});
@@ -47,6 +54,7 @@ export async function pending(userId:string):Promise<Pending[]>{
 }
 export async function enqueue(message:Message){
   if(stopped.has(message.user_id))throw new Error("Sign in again.");
+  if(!visibleRows(message.user_id,message.conversation_id,[message]).length)throw new Error("This chat was cleared.");
   if(message.kind==="instant")throw new Error("Instants need a connection.");
   await tx<void>("outbox","readwrite",s=>{
     const count=s.index("userId").count(message.user_id);
@@ -68,4 +76,20 @@ export async function updatePending(row:Pending){
 export async function clearUser(userId:string){
   stopped.add(userId);
   for(const name of ["cache","outbox"])await tx<void>(name,"readwrite",s=>{const q=s.index("userId").openKeyCursor(IDBKeyRange.only(userId));q.onsuccess=()=>{const cursor=q.result;if(cursor){s.delete(cursor.primaryKey);cursor.continue();}};}).catch(()=>{});
+}
+
+/** Prevent a delayed unmount or retry from restoring a cleared conversation. */
+export async function clearConversation(userId:string,conversationId:string,before:string){
+  const key=userId+":"+conversationId;
+  if((cleared.get(key)??"")<before)cleared.set(key,before);
+  if(typeof window!=="undefined")window.dispatchEvent(new CustomEvent("bitchat-chat-cleared",{detail:{userId,conversationId,before}}));
+  await tx<void>("cache","readwrite",s=>{
+    s.delete(userId+":messages:"+conversationId);
+    s.delete(userId+":inbox");
+  }).catch(()=>{});
+  await tx<void>("outbox","readwrite",s=>{
+    const q=s.index("userId").getAll(userId);q.onsuccess=()=>{
+      for(const row of q.result as Pending[])if(row.message.conversation_id===conversationId&&row.message.created_at<=before)s.delete(row.id);
+    };
+  }).catch(()=>{});
 }

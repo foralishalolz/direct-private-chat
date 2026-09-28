@@ -5,7 +5,7 @@ import {spawn} from "node:child_process";
 import {createClient} from "@supabase/supabase-js";
 import {chromium} from "@playwright/test";
 import {SUPABASE_URL as url,SUPABASE_KEY as key} from "../lib/config.ts";
-const prefix="qa"+(process.env.GITHUB_RUN_ID||Date.now()),accounts=[],clients=[],objects=[];
+const prefix="qa"+(process.env.GITHUB_RUN_ID||Date.now()),accounts=[],clients=[],objects=[],conversations=[];
 let browser,server,count=0;
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const value=r=>{if(r.error)throw new Error(r.error.message);return r.data;};
@@ -22,7 +22,7 @@ try{
  }
  const [a,b,x]=clients,[aa,bb,xx]=accounts;
  assert.ok((await rpc(a,"find_profiles",{p_query:bb.username})).some(p=>p.id===bb.id));ok("username search");
- const room=await rpc(a,"open_conversation",{p_other:bb.id});assert.equal(await rpc(b,"open_conversation",{p_other:aa.id}),room);ok("idempotent direct conversation");
+ const room=await rpc(a,"open_conversation",{p_other:bb.id});conversations.push(room);assert.equal(await rpc(b,"open_conversation",{p_other:aa.id}),room);ok("idempotent direct conversation");
  assert.equal(value(await x.from("conversations").select("id").eq("id",room)).length,0);ok("outsider cannot read conversation");
  assert.ok((await rpc(a,"inbox_page",{})).some(c=>c.id===room&&c.members.some(m=>m.id===bb.id)));ok("live inbox and participants");
  assert.ok((await a.from("profiles").update({is_pro:true}).eq("id",aa.id)).error);ok("client cannot grant Pro");
@@ -62,7 +62,40 @@ try{
  const stats=await rpc(a,"couple_stats",{p_conversation:room});assert.ok(stats.messages>=2&&Array.isArray(stats.days));ok("Pro activity statistics");
  await pause(Math.max(0,unlock-Date.now()+200));assert.equal((await rpc(b,"open_capsule",{p_id:capsule}))[0].content,"QA sealed note");ok("capsule unlocks on schedule");
  await rpc(a,"set_block",{p_other:bb.id,p_blocked:true});assert.ok((await b.from("messages").insert({conversation_id:room,user_id:bb.id,content:"blocked"})).error);await rpc(a,"set_block",{p_other:bb.id,p_blocked:false});ok("blocking prevents messages");
- const group=await rpc(a,"create_group",{p_title:"QA group",p_members:[bb.id,xx.id]});assert.equal(value(await x.from("conversations").select("id").eq("id",group)).length,1);ok("group membership");
+ const group=await rpc(a,"create_group",{p_title:"QA group",p_members:[bb.id,xx.id]});conversations.push(group);assert.equal(value(await x.from("conversations").select("id").eq("id",group)).length,1);ok("group membership");
+
+ const history=await rpc(a,"message_history",{p_conversation:room});
+ assert.ok(history.some(h=>h.kind==="edited"&&h.before_content==="QA persistent text"&&h.after_content==="QA silent update"));assert.ok(history.some(h=>h.kind==="deleted"&&h.message_id===message.id));
+ assert.ok((await b.rpc("message_history",{p_conversation:room})).error);assert.ok((await x.rpc("message_history",{p_conversation:room})).error);ok("edit and delete history requires Pro membership");
+ const heart=value(await a.from("messages").insert({conversation_id:room,user_id:aa.id,kind:"miss",content:""}).select("id").single());assert.ok(heart.id);ok("quick heart accepts an empty text body");
+ const earlier=value(await a.from("messages").insert({conversation_id:room,user_id:aa.id,content:"QA read first"}).select("*").single());
+ const later=value(await a.from("messages").insert({conversation_id:room,user_id:aa.id,content:"QA read later"}).select("*").single());
+ await rpc(b,"mark_read_through",{p_conversation:room,p_message:earlier.id});
+ assert.ok((await rpc(a,"message_receipts",{p_message:earlier.id}))[0].read_at);assert.equal((await rpc(a,"message_receipts",{p_message:later.id}))[0].read_at,null);ok("read receipts never mark an undisplayed newer message as seen");
+ assert.ok((await x.rpc("mark_read_through",{p_conversation:room,p_message:earlier.id})).error);assert.ok((await b.rpc("message_receipts",{p_message:earlier.id})).error);ok("read-receipt endpoints enforce membership and authorship");
+ const roll=randomUUID();await rpc(a,"quick_play",{p_id:roll,p_conversation:room,p_kind:"dice"});await rpc(a,"quick_play",{p_id:roll,p_conversation:room,p_kind:"dice"});
+ const rolled=value(await b.from("messages").select("content").eq("id",roll));assert.equal(rolled.length,1);assert.match(rolled[0].content,/^🎲 [1-6]$/);ok("server dice is shared and idempotent");
+ await rpc(a,"quick_play",{p_id:randomUUID(),p_conversation:room,p_kind:"coin"});ok("coin flip writes to the conversation");
+ const invite=await rpc(a,"group_invite",{p_conversation:group});assert.match(invite,/^[a-f0-9]{32}$/);
+ assert.ok((await b.rpc("group_invite",{p_conversation:group})).error);assert.ok((await b.rpc("rename_group",{p_conversation:group,p_title:"not allowed"})).error);ok("ordinary group members cannot administer invites or rename groups");
+ await rpc(a,"rename_group",{p_conversation:group,p_title:"QA renamed group"});assert.equal(value(await b.from("conversations").select("title").eq("id",group).single()).title,"QA renamed group");
+ const groupMessage=value(await a.from("messages").insert({conversation_id:group,user_id:aa.id,content:"QA group receipt"}).select("id").single());
+ await rpc(b,"mark_read_through",{p_conversation:group,p_message:groupMessage.id});const receipts=await rpc(a,"message_receipts",{p_message:groupMessage.id});assert.ok(receipts.find(r=>r.user_id===bb.id)?.read_at);assert.equal(receipts.find(r=>r.user_id===xx.id)?.read_at,null);ok("group read receipts track each member");
+ await rpc(x,"leave_group",{p_conversation:group});assert.equal(value(await x.from("messages").select("id").eq("conversation_id",group)).length,0);assert.equal(value(await x.from("conversations").select("id").eq("id",group)).length,0);ok("leaving a group revokes data access");
+ assert.equal(await rpc(x,"join_group",{p_code:invite}),group);assert.equal(await rpc(x,"join_group",{p_code:invite}),group);assert.equal(value(await a.from("conversation_members").select("user_id").eq("conversation_id",group)).length,3);ok("invite joins are authenticated and idempotent");
+ await rpc(a,"group_invite",{p_conversation:group,p_revoke:true});assert.ok((await x.rpc("join_group",{p_code:invite})).error);ok("revoked invite codes stop working");
+ const mediaMessage=value(await a.from("messages").select("id").eq("media_url",path).single());value(await a.from("messages").delete().eq("id",mediaMessage.id));
+ assert.ok((await rpc(a,"message_history",{p_conversation:room})).some(h=>h.media_url===path));assert.ok(value(await a.storage.from("chat-media").download(path)).size>0);assert.ok((await b.storage.from("chat-media").download(path)).error);ok("deleted media download is Pro-only and conversation-scoped");
+ const replayPath=aa.id+"/"+room+"/"+randomUUID()+".png";value(await a.storage.from("instant-media").upload(replayPath,png,{contentType:"image/png"}));objects.push({bucket:"instant-media",path:replayPath});
+ const replayId=randomUUID();await rpc(a,"send_instant_v2",{p_id:replayId,p_conversation:room,p_media:replayPath,p_source:"file",p_allow_replay:true});
+ const openAs=async(c,id)=>{const token=(await c.auth.getSession()).data.session.access_token;return fetch(url+"/functions/v1/open-instant",{method:"POST",headers:{apikey:key,Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({messageId:id})});};
+ assert.equal((await openAs(b,replayId)).status,200);assert.equal((await openAs(b,replayId)).status,410);assert.equal((await openAs(x,replayId)).status,410);ok("opt-in photos remain single-view for non-Pro recipients");
+ await rpc(b,"unlock_pro",{p_code:"1162"});assert.equal((await openAs(b,replayId)).status,200);assert.equal((await openAs(b,replayId)).status,200);assert.equal((await openAs(b,instant)).status,410);ok("Pro replay requires sender consent and cannot reopen a strict instant");
+ const groupPhoto=aa.id+"/"+group+"/"+randomUUID()+".png";value(await a.storage.from("instant-media").upload(groupPhoto,png,{contentType:"image/png"}));objects.push({bucket:"instant-media",path:groupPhoto});
+ const groupInstant=randomUUID();await rpc(a,"send_instant_v2",{p_id:groupInstant,p_conversation:group,p_media:groupPhoto,p_source:"file",p_allow_replay:false});
+ assert.equal((await openAs(b,groupInstant)).status,200);assert.equal((await openAs(b,groupInstant)).status,410);assert.equal((await openAs(x,groupInstant)).status,200);assert.equal((await openAs(x,groupInstant)).status,410);ok("each group recipient gets one strict view even when another viewer is Pro");
+ assert.ok((await b.from("messages").update({allow_replay:true}).eq("id",instant)).error);assert.ok((await b.rpc("claim_instant_v2",{p_id:replayId,p_viewer:aa.id})).error);ok("clients cannot forge replay consent or call service-only claims");
+ const proOther=await b.from("messages").update({content:"not my message"}).eq("id",earlier.id).select("id");assert.ok(proOther.error||proOther.data.length===0);ok("Pro still cannot edit someone else's message");
  await rpc(a,"set_couple_mode",{p_conversation:room,p_enabled:false});
  value(await a.from("messages").insert(Array.from({length:35},(_,i)=>({id:randomUUID(),conversation_id:room,user_id:aa.id,content:"QA history "+String(i).padStart(2,"0")}))));
  const page1=value(await a.from("messages").select("*").eq("conversation_id",room).order("created_at",{ascending:false}).order("id",{ascending:false}).limit(30)),last=page1.at(-1);
@@ -80,9 +113,14 @@ try{
  await contexts[0].setOffline(true);await pages[0].getByRole("textbox",{name:"Message",exact:true}).fill("QA offline delivery");await pages[0].getByRole("button",{name:"Send message",exact:true}).click();await pages[0].locator(".message-text").filter({hasText:"QA offline delivery"}).waitFor();await contexts[0].setOffline(false);await pages[1].locator(".message-text").filter({hasText:"QA offline delivery"}).waitFor({timeout:30000});ok("offline message delivers after reconnect");
  assert.deepEqual(errors,[]);ok("no uncaught errors in live browser sessions");
  console.log("CHAT_SCREENSHOT "+(await pages[0].screenshot({type:"jpeg",quality:55})).toString("base64"));
+
+ await rpc(a,"clear_chat",{p_conversation:room});assert.equal(value(await a.from("messages").select("id").eq("conversation_id",room)).length,0);assert.ok(value(await b.from("messages").select("id").eq("conversation_id",room)).length>0);
+ assert.equal((await rpc(a,"search_messages",{p_conversation:room,p_query:"QA"})).length,0);assert.equal((await rpc(a,"message_history",{p_conversation:room})).length,0);assert.ok(!(await rpc(a,"inbox_page",{})).some(c=>c.id===room));ok("delete-for-me clears only the caller's messages, search, history and inbox");
+ assert.ok((await x.rpc("clear_chat",{p_conversation:room})).error);value(await b.from("messages").insert({conversation_id:room,user_id:bb.id,content:"QA new message after clearing"}));assert.equal(value(await a.from("messages").select("id").eq("conversation_id",room)).length,1);assert.ok((await rpc(a,"inbox_page",{})).some(c=>c.id===room));ok("a new message reopens a cleared chat without restoring old history");
+ await rpc(a,"leave_group",{p_conversation:group});const transferred=value(await b.from("conversations").select("created_by").eq("id",group).single());assert.ok([bb.id,xx.id].includes(transferred.created_by));await rpc(x,"leave_group",{p_conversation:group});await rpc(b,"leave_group",{p_conversation:group});ok("group ownership transfers and the last member can leave");
  console.log("LIVE_CHECK_COMPLETE "+count);
 }finally{
- console.log("QA_CLEANUP "+JSON.stringify({accounts:accounts.map(({id,username})=>({id,username})),objects}));
+ console.log("QA_CLEANUP "+JSON.stringify({conversations,accounts:accounts.map(({id,username})=>({id,username})),objects}));
  if(browser)await browser.close();if(server)server.kill();
  for(const c of clients){await c.removeAllChannels();await c.auth.signOut({scope:"global"}).catch(()=>{});}
 }

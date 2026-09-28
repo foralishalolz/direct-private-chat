@@ -1,6 +1,13 @@
 
 import {db} from "./supabase";
 import {label,title,type Conversation,type Message} from "./types";
+export function saveBlob(blob:Blob,name:string){
+ const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+}
+export async function downloadMedia(path:string,bucket="chat-media"){
+ const {data,error}=await db().storage.from(bucket).download(path);if(error||!data)throw error??new Error("Media unavailable.");
+ saveBlob(data,"BitchAt-"+(path.split("/").at(-1)??"media"));
+}
 export async function exportChat(c:Conversation,signal?:AbortSignal){
  const parts:BlobPart[]=["BitchAt · "+title(c)+"\nExported "+new Date().toISOString()+"\n\n"];let cursor:Message|undefined,bytes=0;
  while(true){let q=db().from("messages").select("*").eq("conversation_id",c.id).order("created_at",{ascending:true}).order("id",{ascending:true}).limit(500);
@@ -11,5 +18,5 @@ export async function exportChat(c:Conversation,signal?:AbortSignal){
  parts.push(lines);cursor=r.data.at(-1) as Message;if(r.data.length<500)break;
  }
  if(signal?.aborted)throw new DOMException("Cancelled","AbortError");
- const blob=new Blob(parts,{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="BitchAt-"+title(c).replace(/[^a-z0-9_-]/gi,"_").slice(0,50)+"-"+new Date().toISOString().slice(0,10)+".txt";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+ saveBlob(new Blob(parts,{type:"text/plain;charset=utf-8"}),"BitchAt-"+title(c).replace(/[^a-z0-9_-]/gi,"_").slice(0,50)+"-"+new Date().toISOString().slice(0,10)+".txt");
 }

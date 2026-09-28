@@ -71,7 +71,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
       <aside className="inbox">
         <header className="inbox-header">
           <div className="mobile-brand"><Brand small /></div>
-          <h1>Messages</h1>
+          <h1>Messages{items.some(c=>c.unread)&&<span className="inbox-count">{items.filter(c=>c.unread).length}</span>}</h1>
           <IconButton label="New message" onClick={() => setModal("new")}><SquarePen size={24} /></IconButton>
         </header>
         <div className="inbox-search"><label className="input-icon"><Search size={18} aria-hidden="true" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
