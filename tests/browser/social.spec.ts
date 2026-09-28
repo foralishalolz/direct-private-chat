@@ -16,7 +16,7 @@ async function mock(page:Page,instants=false){
   if(route.request().method()==="POST")calls.push({name,body:bodyIn});
   if(name==="my_privacy")body=privacy;
   if(name==="set_privacy"){privacy={share_online:!!bodyIn.p_online,share_last_active:!!bodyIn.p_last_active,share_typing:!!bodyIn.p_typing,share_receipts:!!bodyIn.p_receipts};body=privacy;}
-  if(name==="member_activity")body=[{user_id:other,online:false,last_active:new Date(Date.now()-7200000).toISOString()}];
+  if(name==="member_activity")body=[{user_id:other,online:false,last_active:new Date(Date.now()-7260000).toISOString()}];
   if(name==="profiles")body=url.searchParams.get("id")?.startsWith("in.")?[self,alex,maya]:self;
   if(name==="inbox_page")body=[...(!hidden?[direct]:[]),...(!left?[group]:[])];
   if(name==="conversations")body=url.searchParams.get("id")?.includes(gid)?group:direct;

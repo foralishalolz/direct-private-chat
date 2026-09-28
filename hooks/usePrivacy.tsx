@@ -15,7 +15,7 @@ export function PrivacyProvider({userId,children}:{userId:string;children:ReactN
  const alive=useRef(false),lock=useRef(false),epoch=useRef(0),current=useRef(settings),session=useRef(crypto.randomUUID()),activityQueue=useRef<Promise<void>>(Promise.resolve());current.current=settings;
  const refresh=useCallback(async()=>{const n=epoch.current;try{const result=await rpc("my_privacy");if(alive.current&&n===epoch.current){setSettings(settingsFrom(result));setReady(true);setError("");}}catch(e){if(alive.current)setError(errorText(e));}},[]);
  useEffect(()=>{alive.current=true;const client=db();void refresh();
-  const channel=client.channel("privacy:"+userId,{config:{postgres_changes_options:{wait:true}}}).on("postgres_changes",{event:"*",schema:"public",table:"privacy_settings",filter:"user_id=eq."+userId},event=>{if(alive.current&&"user_id" in event.new){epoch.current++;setSettings(settingsFrom(event.new));setReady(true);}}).subscribe();
+  const channel=client.channel("privacy:"+userId+":"+crypto.randomUUID(),{config:{postgres_changes_options:{wait:true}}}).on("postgres_changes",{event:"*",schema:"public",table:"privacy_settings",filter:"user_id=eq."+userId},event=>{if(alive.current&&"user_id" in event.new){epoch.current++;setSettings(settingsFrom(event.new));setReady(true);}}).subscribe();
   const online=()=>void refresh();window.addEventListener("online",online);
   return()=>{alive.current=false;epoch.current++;window.removeEventListener("online",online);void client.removeChannel(channel);};
  },[refresh,userId]);

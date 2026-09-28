@@ -1,4 +1,4 @@
-# BitchAt 2.2
+# BitchAt 2.3
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -53,6 +53,12 @@ GitHub Actions runs type checks, offline-storage/data tests, a production build,
 The 2.2 live Supabase check passed 55 assertions, including two real browser sessions exchanging messages, reconnecting an offline outbox, actual Storage uploads, one-view consumption, server-enforced capsules, Pro authorization, and privacy boundaries. The test run also covered individual group instant views, replay consent, read-through boundaries, group invite revocation, ownership transfer, and per-user chat clearing. Test accounts and uploaded test media are removed after verification; existing chats are retained. The live workflow is manual because it creates disposable accounts in the connected project. Its QA_CLEANUP output identifies the exact test accounts and objects for an administrator to remove; normal CI uses isolated mocked data.
 
 The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the production build, and the dependency audit (zero known vulnerabilities).
+
+## Version 2.3
+
+Profile → Privacy controls online status, last-active time, typing, and read receipts separately. Preferences are enforced by Supabase for every viewer, including Pro members. Hidden receipts are removed from public conversation/member records; a private read marker keeps the owner's unread count accurate. Reenabling receipts shares the saved read position. Turning off both activity settings deletes the stored activity state. Activity heartbeats run only in visible tabs; tab sessions expire after 75 seconds and status refreshes at most every 30 seconds. Last-active time is approximate after a browser closes without delivering its final request.
+
+Typing broadcasts are emitted by an authenticated database function, with the sender derived from the session and a per-conversation throttle. Client broadcasts cannot impersonate a sender. Typing expires after a few seconds and clears when a message arrives. Reconnecting and changing privacy settings cannot reorder a tab's activity updates. Pro members can edit or delete their own messages through the message menu or long press; recipients receive silent realtime updates. All action icons use the same rounded Lucide styling and accessible names.
 
 ## Version 2.2
 
