@@ -29,3 +29,4 @@ export async function endpoint(name: string,body: unknown,authenticated=true) {
   if(!response.ok){const data=await response.json().catch(()=>({error:"Please try again."}));throw new Error(data.error??"Please try again.");}
   return response;
 }
+

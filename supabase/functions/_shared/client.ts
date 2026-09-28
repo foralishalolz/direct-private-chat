@@ -63,3 +63,4 @@ export function publishableRequest(req: Request): boolean {
   const keys: Record<string, string> = JSON.parse(Deno.env.get("SUPABASE_PUBLISHABLE_KEYS") ?? "{}");
   return Object.values(keys).includes(supplied) || supplied === Deno.env.get("SUPABASE_ANON_KEY");
 }
+

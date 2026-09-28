@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import {db} from "@/lib/supabase";
 import {activate,cache,cached,clearUser} from "@/lib/offline";
 import {clearMedia} from "@/lib/media";
+import {PrivacyProvider} from "@/hooks/usePrivacy";
 import {useOutbox} from "@/hooks/useOutbox";
 import {errorText,type Profile} from "@/lib/types";
 import AuthScreen from "@/components/AuthScreen";
@@ -25,5 +26,5 @@ export default function Home(){
  if(!ready)return <main className="loading-screen"><Brand/><Spinner/></main>;
  if(!session)return <AuthScreen initialError={error}/>;
  if(!profile)return <main className="loading-screen"><Brand/>{error?<><ErrorNote text={error}/><button className="primary" onClick={()=>setVersion(x=>x+1)}>Retry</button><button onClick={()=>void logout()}>Log out</button></>:<Spinner/>}</main>;
- return <ChatRoom key={session.user.id} profile={profile} onProfile={p=>{setProfile(current=>current?.id===p.id?p:current);void cache(p.id,"profile",p);}} onLogout={logout}/>;
+ return <PrivacyProvider key={session.user.id} userId={session.user.id}><ChatRoom key={session.user.id} profile={profile} onProfile={p=>{setProfile(current=>current?.id===p.id?p:current);void cache(p.id,"profile",p);}} onLogout={logout}/></PrivacyProvider>;
 }

@@ -98,7 +98,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
           <ErrorNote text={error} />
         </div>
         <footer className="inbox-footer">
-          <button onClick={() => setModal("profile")}><Avatar profile={profile} size={36} /><span><strong>{label(profile)}</strong><small>@{profile.username}</small></span></button>
+          <button aria-label="Profile" onClick={() => setModal("profile")}><Avatar profile={profile} size={36} /><span><strong>{label(profile)}</strong><small>@{profile.username}</small></span></button>
           <IconButton label="Journal" onClick={() => setModal("journal")}><BookHeart size={23} /></IconButton>
           {!online && <WifiOff size={17} aria-label="Offline" />}
         </footer>

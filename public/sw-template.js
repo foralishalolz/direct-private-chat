@@ -9,3 +9,4 @@ self.addEventListener("fetch",event=>{
  if(!ASSETS.includes(url.pathname))return;
  event.respondWith(caches.open(VERSION).then(async cache=>(await cache.match(url.pathname))||fetch(request)).catch(()=>fetch(request)));
 });
+

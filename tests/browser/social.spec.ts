@@ -9,11 +9,14 @@ const direct={id:cid,kind:"direct",title:"",member_a:uid,member_b:other,created_
 const group={...direct,id:gid,kind:"group",title:"Weekend crew",member_a:null,member_b:null,members:[self,alex,maya],preview:"Saturday sounds perfect",member_reads:[{user_id:other,read_at:stamp}]};
 const messages=[{id:"77777777-7777-4777-8777-777777777777",conversation_id:cid,user_id:other,content:"Coffee after work? ☕",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:new Date(Date.now()-120000).toISOString()},{id:"88888888-8888-4888-8888-888888888888",conversation_id:cid,user_id:uid,content:"Absolutely. Same place, 6:30?",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:stamp}];
 async function mock(page:Page,instants=false){
- const calls:{name:string;body:Record<string,unknown>}[]=[];let hidden=false,left=false;
+ const calls:{name:string;body:Record<string,unknown>}[]=[];let hidden=false,left=false;let privacy={share_online:true,share_last_active:true,share_typing:true,share_receipts:true};
  await page.addInitScript(({uid})=>{const token=btoa(JSON.stringify({alg:"HS256"}))+"."+btoa(JSON.stringify({sub:uid,exp:Math.floor(Date.now()/1000)+3600,aud:"authenticated",role:"authenticated"}))+".test";localStorage.setItem("sb-llweydgvtpwgnslvgnqm-auth-token",JSON.stringify({access_token:token,refresh_token:"test",expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,token_type:"bearer",user:{id:uid,aud:"authenticated",role:"authenticated",app_metadata:{},user_metadata:{}}}));},{uid});
  await page.route("**/rest/v1/**",async route=>{
   const url=new URL(route.request().url()),name=url.pathname.split("/").at(-1)!;const bodyIn=route.request().postDataJSON()??{};let body:unknown=[];
   if(route.request().method()==="POST")calls.push({name,body:bodyIn});
+  if(name==="my_privacy")body=privacy;
+  if(name==="set_privacy"){privacy={share_online:!!bodyIn.p_online,share_last_active:!!bodyIn.p_last_active,share_typing:!!bodyIn.p_typing,share_receipts:!!bodyIn.p_receipts};body=privacy;}
+  if(name==="member_activity")body=[{user_id:other,online:false,last_active:new Date(Date.now()-7200000).toISOString()}];
   if(name==="profiles")body=url.searchParams.get("id")?.startsWith("in.")?[self,alex,maya]:self;
   if(name==="inbox_page")body=[...(!hidden?[direct]:[]),...(!left?[group]:[])];
   if(name==="conversations")body=url.searchParams.get("id")?.includes(gid)?group:direct;
@@ -71,4 +74,19 @@ test("settled inbox and conversation visual checkpoints have no overflow or runt
  await openChat(page);await page.screenshot({path:testInfo.outputPath("conversation.png")});
  if(process.env.CI)console.log("SOCIAL_CHAT_"+testInfo.project.name+" "+(await page.screenshot({type:"jpeg",quality:65})).toString("base64"));
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);expect(errors).toEqual([]);
+});
+
+test("privacy switches persist without sending typing events when disabled",async({page})=>{
+ const calls=await mock(page);await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Privacy",exact:true}).click();
+ const modal=page.getByRole("dialog",{name:"Privacy",exact:true});await expect(modal.getByRole("switch")).toHaveCount(4);
+ for(const name of ["Online status","Last active","Typing indicator","Read receipts"]){const toggle=modal.getByRole("switch",{name,exact:true});await expect(toggle).toHaveAttribute("aria-checked","true");await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","false");await expect(toggle).toBeEnabled();}
+ expect(calls.filter(c=>c.name==="set_privacy").at(-1)?.body).toEqual({p_online:false,p_last_active:false,p_typing:false,p_receipts:false});
+ await modal.getByRole("button",{name:"Close",exact:true}).click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Close",exact:true}).click();await openChat(page);
+ await expect(page.locator(".thread-person")).toContainText("Active 2h ago");await page.getByRole("textbox",{name:"Message",exact:true}).fill("A private draft");expect(calls.filter(c=>c.name==="send_typing")).toHaveLength(0);
+ if(await page.getByRole("button",{name:"Back to messages"}).isVisible())await page.getByRole("button",{name:"Back to messages"}).click();
+ await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Privacy",exact:true}).click();await expect(page.getByRole("switch",{name:"Typing indicator"})).toHaveAttribute("aria-checked","false");
+});
+test("message controls use icons and expose editing only on owned messages",async({page})=>{
+ await mock(page);await openChat(page);const own=page.locator(".message-row.own");await expect(own.getByRole("button",{name:"Message actions"}).locator("svg")).toHaveCount(1);await own.getByRole("button",{name:"Message actions"}).click();await page.getByRole("button",{name:"Edit",exact:true}).click();await expect(page.getByRole("dialog",{name:"Edit message"})).toBeVisible();await page.getByRole("button",{name:"Close",exact:true}).click();
+ await page.locator(".message-row:not(.own)").getByRole("button",{name:"Message actions"}).click();await expect(page.getByRole("button",{name:"Edit",exact:true})).toHaveCount(0);await expect(page.getByRole("button",{name:"Delete for everyone",exact:true})).toHaveCount(0);
 });

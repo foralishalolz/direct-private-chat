@@ -12,3 +12,4 @@ returns jsonb language sql stable security invoker set search_path='' as $$
 $$;
 revoke all on function public.inbox_page(timestamptz,uuid) from public,anon;
 grant execute on function public.inbox_page(timestamptz,uuid) to authenticated;
+

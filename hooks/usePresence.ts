@@ -1,17 +1,39 @@
-
 "use client";
-import {useEffect,useRef,useState} from "react";
-import type {RealtimeChannel} from "@supabase/supabase-js";
-import {db} from "@/lib/supabase";
+import {useCallback,useEffect,useRef,useState} from "react";
+import {db,rpc} from "@/lib/supabase";
+import {usePrivacy} from "./usePrivacy";
+type Activity={user_id:string;online:boolean;last_active:string|null};
+export function activeLabel(value:string|null|undefined,now=Date.now()){
+ if(!value)return "";const elapsed=Math.max(0,now-new Date(value).getTime());if(!Number.isFinite(elapsed))return "";
+ if(elapsed<60000)return "Active just now";
+ if(elapsed<3600000)return "Active "+Math.floor(elapsed/60000)+"m ago";
+ if(elapsed<86400000)return "Active "+Math.floor(elapsed/3600000)+"h ago";
+ return "Active "+Math.floor(elapsed/86400000)+"d ago";
+}
 export function usePresence(conversationId:string,userId:string){
- const [online,setOnline]=useState<string[]>([]),[typing,setTyping]=useState<string[]>([]);
- const ref=useRef<RealtimeChannel|null>(null),last=useRef(0),expires=useRef(new Map<string,number>());
- useEffect(()=>{let active=true;const client=db();const ch=client.channel("room:"+conversationId,{config:{private:true,presence:{key:userId}}});ref.current=ch;
- const sync=()=>{if(active)setOnline(Object.keys(ch.presenceState()).filter(x=>x!==userId));};
- ch.on("presence",{event:"sync"},sync).on("broadcast",{event:"typing"},({payload})=>{if(active&&typeof payload?.id==="string"&&payload.id!==userId){expires.current.set(payload.id,Date.now()+4500);setTyping([...expires.current.keys()]);}}).subscribe(status=>{if(status==="SUBSCRIBED"&&document.visibilityState==="visible")void ch.track({id:userId});});
- const visibility=()=>{if(document.visibilityState==="visible")void ch.track({id:userId});else void ch.untrack();};
- const timer=setInterval(()=>{if(!active)return;let changed=false;for(const [id,at] of expires.current)if(at<Date.now()){expires.current.delete(id);changed=true;}if(changed)setTyping([...expires.current.keys()]);},1000);
- document.addEventListener("visibilitychange",visibility);return()=>{active=false;ref.current=null;clearInterval(timer);expires.current.clear();document.removeEventListener("visibilitychange",visibility);void client.removeChannel(ch);};},[conversationId,userId]);
- function sendTyping(){if(Date.now()-last.current<1800||document.visibilityState!=="visible")return;last.current=Date.now();void ref.current?.send({type:"broadcast",event:"typing",payload:{id:userId}});}
- return{online,typing,sendTyping};
+ const {settings,ready}=usePrivacy();
+ const [activity,setActivity]=useState<Activity[]>([]),[typing,setTyping]=useState<string[]>([]);
+ const last=useRef(0),expires=useRef(new Map<string,number>());
+ const clearTyping=useCallback((id:string)=>{if(expires.current.delete(id))setTyping([...expires.current.keys()]);},[]);
+ useEffect(()=>{
+  let alive=true,flight=false,again=false;const client=db();setActivity([]);setTyping([]);expires.current.clear();
+  const refresh=async()=>{if(!alive||!navigator.onLine||document.visibilityState!=="visible")return;if(flight){again=true;return;}flight=true;
+   try{const rows=await rpc<Activity[]>("member_activity",{p_conversation:conversationId});if(alive)setActivity(rows);}
+   catch{}finally{flight=false;if(again&&alive){again=false;void refresh();}}
+  };
+  let scheduled:ReturnType<typeof setTimeout>;
+  const schedule=()=>{clearTimeout(scheduled);scheduled=setTimeout(()=>void refresh(),250);};
+  const shareOnline=ready&&settings.share_online;
+  const channel=client.channel("room:"+conversationId,{config:{private:true,presence:{key:userId}}});
+  channel.on("presence",{event:"sync"},schedule).on("broadcast",{event:"typing"},({payload})=>{
+   if(alive&&typeof payload?.id==="string"&&payload.id!==userId){expires.current.set(payload.id,Date.now()+4500);setTyping([...expires.current.keys()]);}
+  }).subscribe(status=>{if(status==="SUBSCRIBED"){if(shareOnline&&document.visibilityState==="visible")void channel.track({id:userId});schedule();}});
+  const visibility=()=>{if(shareOnline&&document.visibilityState==="visible")void channel.track({id:userId});else void channel.untrack();schedule();};
+  const timer=setInterval(()=>{if(!alive)return;let changed=false;for(const [id,until] of expires.current)if(until<Date.now()){expires.current.delete(id);changed=true;}if(changed)setTyping([...expires.current.keys()]);},1000);
+  const poll=setInterval(()=>void refresh(),30000);void refresh();
+  document.addEventListener("visibilitychange",visibility);window.addEventListener("online",visibility);
+  return()=>{alive=false;clearInterval(timer);clearInterval(poll);clearTimeout(scheduled);expires.current.clear();document.removeEventListener("visibilitychange",visibility);window.removeEventListener("online",visibility);void client.removeChannel(channel);};
+ },[conversationId,userId,ready,settings.share_online]);
+ function sendTyping(){if(!ready||!settings.share_typing||Date.now()-last.current<1800||!navigator.onLine||document.visibilityState!=="visible")return;last.current=Date.now();void rpc("send_typing",{p_conversation:conversationId}).catch(()=>{});}
+ return{online:activity.filter(p=>p.online).map(p=>p.user_id),lastActive:activity.find(p=>p.user_id!==userId)?.last_active??null,typing,sendTyping,clearTyping};
 }

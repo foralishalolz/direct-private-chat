@@ -16,5 +16,5 @@ export async function loadConversation(id: string, userId: string): Promise<Conv
   const profiles = await db().from("profiles").select("id,username,display_name,avatar_url,mood").in("id", ids);
   if (profiles.error) throw profiles.error;
   const members: Profile[] = profiles.data.map(profile => ({ ...profile, is_pro: false }));
-  return { ...conversation, members, partner: members.find(member => member.id !== userId) };
+  return { ...conversation, members, partner: conversation.kind === "direct" ? members.find(member => member.id !== userId) : undefined };
 }

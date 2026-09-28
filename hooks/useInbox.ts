@@ -7,7 +7,7 @@ import {errorText,type Conversation} from "@/lib/types";
 export function useInbox(userId:string){
  const [items,setItems]=useState<Conversation[]>([]),[loading,setLoading]=useState(true),[more,setMore]=useState(false),[error,setError]=useState("");
  const alive=useRef(true),flight=useRef(false),queued=useRef(false),last=useRef<Conversation|undefined>(undefined),total=useRef(60);
- const normalize=useCallback((rows:Conversation[])=>rows.map(c=>({...c,partner:c.members?.find(p=>p.id!==userId),unread:!!c.preview&&(!c.read_at||c.read_at<c.last_activity)})),[userId]);
+ const normalize=useCallback((rows:Conversation[])=>rows.map(c=>({...c,partner:c.kind==="direct"?c.members?.find(p=>p.id!==userId):undefined,unread:!!c.preview&&(!c.read_at||c.read_at<c.last_activity)})),[userId]);
  const refresh=useCallback(async()=>{
  if(flight.current){queued.current=true;return;}flight.current=true;
  try{const all:Conversation[]=[];let cursor:Conversation|undefined;

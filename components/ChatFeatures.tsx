@@ -77,7 +77,7 @@ export function ChatDetails({ c, p, onRefresh, onExit }: ChatProps & { onRefresh
       {c.kind === "group" && <button className="menu-item danger" disabled={busy} onClick={() => setConfirm("leave")}><LogOut size={20}/>Leave group</button>}
     </div><ErrorNote text={error}/>
     {confirm && <Modal title={confirm === "leave" ? "Leave group?" : "Delete chat?"} onClose={() => { if (!busy) setConfirm(null); }}>
-      <div className="panel-pad"><p className="confirmation-copy">{confirm === "leave" ? "You’ll need a new invitation to join again." : "This clears the messages and pending sends for your account. Other members keep their copy."}</p>
+      <div className="panel-pad"><p className="confirmation-copy">{confirm === "leave" ? "You’ll need an invitation to join again." : "This clears the messages and pending sends for your account. Other members keep their copy."}</p>
         <div className="confirmation-actions"><button className="quiet-button" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button><button className="danger-button" disabled={busy} onClick={() => void act(remove)}>{busy ? <Spinner/> : confirm === "leave" ? "Leave group" : "Delete for me"}</button></div><ErrorNote text={error}/>
       </div>
     </Modal>}

@@ -8,3 +8,4 @@ const hash=createHash("sha256");for(const path of assets)hash.update(await readF
 const urls=assets.map(p=>"/"+p.slice(4));
 await writeFile("out/sw.js","const VERSION="+JSON.stringify("bitchat-shell-"+version)+";\nconst ASSETS="+JSON.stringify(urls)+";\n"+await readFile("public/sw-template.js","utf8"));
 await writeFile("out/build-info.json",JSON.stringify({version,built:new Date().toISOString()}));
+

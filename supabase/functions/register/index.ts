@@ -61,3 +61,4 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Could not create this account." }, 400);
   }
 });
+
