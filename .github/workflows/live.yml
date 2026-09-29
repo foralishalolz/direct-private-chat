@@ -2,9 +2,6 @@
 name: Live Supabase checks
 on:
   workflow_dispatch:
-  push:
-    branches: [bitchat-production]
-    paths: ["scripts/live-check.mjs"]
 permissions:
   contents: read
 jobs:

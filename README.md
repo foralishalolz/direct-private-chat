@@ -50,6 +50,12 @@ GitHub Actions runs type checks, offline-storage/data tests, a production build,
 
 ## Live release verification
 
+The 2.3 release passed 71 live assertions on 2026-09-29, including mobile-to-desktop typing, online status, editing, deletion, privacy changes seen by a Pro recipient, and offline delivery. Concurrent setting changes preserve each other; delayed realtime responses cannot restore older preferences. The same release passed 21 unit tests, 36 desktop/mobile browser checks, the production build, and the dependency audit with zero known vulnerabilities.
+
+- [Live Supabase verification](https://github.com/foralishalolz/direct-private-chat/actions/runs/36505794127)
+- [Build, browser and data verification](https://github.com/foralishalolz/direct-private-chat/actions/runs/36505793712)
+
+
 The 2.2 live Supabase check passed 55 assertions, including two real browser sessions exchanging messages, reconnecting an offline outbox, actual Storage uploads, one-view consumption, server-enforced capsules, Pro authorization, and privacy boundaries. The test run also covered individual group instant views, replay consent, read-through boundaries, group invite revocation, ownership transfer, and per-user chat clearing. Test accounts and uploaded test media are removed after verification; existing chats are retained. The live workflow is manual because it creates disposable accounts in the connected project. Its QA_CLEANUP output identifies the exact test accounts and objects for an administrator to remove; normal CI uses isolated mocked data.
 
 The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the production build, and the dependency audit (zero known vulnerabilities).
