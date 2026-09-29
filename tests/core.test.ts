@@ -36,3 +36,18 @@ test("clearing one conversation removes its queue and prevents stale snapshot re
  const next={...message(user),created_at:"2026-09-14T10:00:02Z"};assert.deepEqual(visibleRows(user,"room",[old,next]),[next]);
  await enqueue(next);await assert.rejects(enqueue(old));await clearUser(user);
 });
+
+import {DEFAULT_PRIVACY,reconcilePrivacy} from "../lib/privacy";
+test("delayed privacy events cannot turn hidden activity back on",()=>{
+ const first=reconcilePrivacy(null,{...DEFAULT_PRIVACY,revision:0})!;
+ const hidden=reconcilePrivacy(first,{...DEFAULT_PRIVACY,revision:4,share_online:false,share_last_active:false,share_typing:false,share_receipts:false})!;
+ const stale=reconcilePrivacy(hidden,{...DEFAULT_PRIVACY,revision:2,share_online:false});
+ assert.equal(stale,hidden);assert.equal(stale?.share_last_active,false);
+ assert.equal(reconcilePrivacy(hidden,{...DEFAULT_PRIVACY,revision:4}),hidden);
+ const newer=reconcilePrivacy(hidden,{...hidden,revision:5,share_typing:true});assert.equal(newer?.share_typing,true);assert.equal(newer?.share_last_active,false);
+});
+test("incomplete privacy responses cannot replace a valid preference snapshot",()=>{
+ const current={...DEFAULT_PRIVACY,revision:2,share_online:false};
+ for(const invalid of [null,[],{revision:3},{...DEFAULT_PRIVACY,revision:-1},{...DEFAULT_PRIVACY,revision:3,share_online:"true"}])assert.equal(reconcilePrivacy(current,invalid),current);
+ assert.equal(reconcilePrivacy(null,[]),null);
+});

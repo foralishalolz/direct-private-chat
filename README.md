@@ -58,6 +58,8 @@ The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the 
 
 Profile → Privacy controls online status, last-active time, typing, and read receipts separately. Preferences are enforced by Supabase for every viewer, including Pro members. Hidden receipts are removed from public conversation/member records; a private read marker keeps the owner's unread count accurate. Reenabling receipts shares the saved read position. Turning off both activity settings deletes the stored activity state. Activity heartbeats run only in visible tabs; tab sessions expire after 75 seconds and status refreshes at most every 30 seconds. Last-active time is approximate after a browser closes without delivering its final request.
 
+Each privacy switch is saved separately under a database lock. Monotonic revisions prevent delayed HTTP responses or realtime events from restoring older settings, including changes made on another device.
+
 Typing broadcasts are emitted by an authenticated database function, with the sender derived from the session and a per-conversation throttle. Client broadcasts cannot impersonate a sender. Typing expires after a few seconds and clears when a message arrives. Reconnecting and changing privacy settings cannot reorder a tab's activity updates. Pro members can edit or delete their own messages through the message menu or long press; recipients receive silent realtime updates. All action icons use the same rounded Lucide styling and accessible names.
 
 ## Version 2.2

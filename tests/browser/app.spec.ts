@@ -11,6 +11,7 @@ async function signedIn(page:Page){
  if(path.endsWith("/profiles"))body=url.searchParams.get("id")?.startsWith("in.")?[profile,partner]:profile;
  if(path.endsWith("/rpc/inbox_page"))body=[{id:cid,kind:"direct",title:"",member_a:uid,member_b:other,last_activity:"2026-09-14T10:00:00Z",created_at:"2026-09-14T09:00:00Z",read_a:null,read_b:null,couple_a:false,couple_b:false,members:[profile,partner],preview:"Hello",read_at:null}];
  if(path.endsWith("/messages")){if(route.request().method()==="POST"){const sent=route.request().postDataJSON();body={...sent,created_at:new Date().toISOString(),instant_viewed:false};}else body=[{id:"44444444-4444-4444-8444-444444444444",conversation_id:cid,user_id:other,content:"Hello",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:"2026-09-14T10:00:00Z"}];}
+ if(path.endsWith("/rpc/my_privacy"))body={revision:0,share_online:true,share_last_active:true,share_typing:true,share_receipts:true};
  if(path.endsWith("/rpc/my_blocks"))body=[];if(path.endsWith("/rpc/mark_read"))body=null;
  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(body)});});
  await page.routeWebSocket("wss://llweydgvtpwgnslvgnqm.supabase.co/**",ws=>{ws.onMessage(raw=>{try{const msg=JSON.parse(String(raw));if(Array.isArray(msg))ws.send(JSON.stringify([msg[0],msg[1],msg[2],"phx_reply",{status:"ok",response:{postgres_changes:[]}}]));}catch{}});});
