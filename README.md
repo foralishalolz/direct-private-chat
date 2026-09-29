@@ -50,15 +50,23 @@ GitHub Actions runs type checks, offline-storage/data tests, a production build,
 
 ## Live release verification
 
-The 2.3 release passed 71 live assertions on 2026-09-29, including mobile-to-desktop typing, online status, editing, deletion, privacy changes seen by a Pro recipient, and offline delivery. Concurrent setting changes preserve each other; delayed realtime responses cannot restore older preferences. The same release passed 21 unit tests, 36 desktop/mobile browser checks, the production build, and the dependency audit with zero known vulnerabilities.
+The 2.4 release passed 79 live assertions on 2026-09-29, including regular-user edit/delete permissions, reaction inserts/changes/removal between mobile and desktop browsers, retained-history access rules, privacy settings, Storage uploads and offline delivery. It also passed 21 unit tests, 42 desktop/mobile browser checks, the production build, and the dependency audit with zero known vulnerabilities. Browser checks cover optimistic reactions and failed-request rollback, editing/deletion by a regular user, loading history while the realtime handshake is pending, and no message/reaction refetch while typing.
 
-- [Live Supabase verification](https://github.com/foralishalolz/direct-private-chat/actions/runs/36505794127)
-- [Build, browser and data verification](https://github.com/foralishalolz/direct-private-chat/actions/runs/36505793712)
+- [Live Supabase verification](https://github.com/foralishalolz/direct-private-chat/actions/runs/36514545115)
+- [Build, browser and data verification](https://github.com/foralishalolz/direct-private-chat/actions/runs/36514545081)
 
 
 The 2.2 live Supabase check passed 55 assertions, including two real browser sessions exchanging messages, reconnecting an offline outbox, actual Storage uploads, one-view consumption, server-enforced capsules, Pro authorization, and privacy boundaries. The test run also covered individual group instant views, replay consent, read-through boundaries, group invite revocation, ownership transfer, and per-user chat clearing. Test accounts and uploaded test media are removed after verification; existing chats are retained. The live workflow is manual because it creates disposable accounts in the connected project. Its QA_CLEANUP output identifies the exact test accounts and objects for an administrator to remove; normal CI uses isolated mocked data.
 
 The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the production build, and the dependency audit (zero known vulnerabilities).
+
+## Version 2.4
+
+Every conversation member can edit and delete their own sent messages. Database policies enforce authorship and membership for both regular and Pro accounts; editing another person's message is never allowed. Edited/deleted history remains restricted to Pro members of that conversation, and strict one-view photos are excluded from archives.
+
+Each delivered message has a reaction icon with 24 emoji choices. Reactions appear optimistically, can be changed or removed, and roll back if the server rejects the action. Each person has one reaction per message. An authenticated, idempotent database function derives the reacting user from their session and uses narrow column permissions. Realtime inserts/updates are filtered to the conversation; deletes affect only known messages. Pagination fetches reactions only for newly loaded messages, and a successful local reaction reconciles only its message. Reconnects refresh the loaded window.
+
+Opening a chat starts its HTTP snapshot after local hydration without waiting for the realtime handshake. Subscription catch-up still reconciles changes that arrive during loading. The message list is memoized separately from the composer, so typing does not rerender history or refetch messages/reactions. Private media still loads only near the viewport; existing offline and 24-hour media retention limits are unchanged.
 
 ## Version 2.3
 
