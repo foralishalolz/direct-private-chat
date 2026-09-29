@@ -8,7 +8,8 @@ const maya={...alex,id:third,username:"maya",display_name:"Maya",mood:null};
 const direct={id:cid,kind:"direct",title:"",member_a:uid,member_b:other,created_by:uid,created_at:stamp,last_activity:stamp,read_a:stamp,read_b:stamp,couple_a:false,couple_b:false,members:[self,alex],preview:"See you soon ✨",read_at:stamp};
 const group={...direct,id:gid,kind:"group",title:"Weekend crew",member_a:null,member_b:null,members:[self,alex,maya],preview:"Saturday sounds perfect",member_reads:[{user_id:other,read_at:stamp}]};
 const messages=[{id:"77777777-7777-4777-8777-777777777777",conversation_id:cid,user_id:other,content:"Coffee after work? ☕",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:new Date(Date.now()-120000).toISOString()},{id:"88888888-8888-4888-8888-888888888888",conversation_id:cid,user_id:uid,content:"Absolutely. Same place, 6:30?",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:stamp}];
-async function mock(page:Page,instants=false){
+async function mock(page:Page,instants=false,pro=true){
+ const me={...self,is_pro:pro};let rows=messages.map(m=>({...m}));let reactions:{message_id:string;user_id:string;emoji:string}[]=[];
  const calls:{name:string;body:Record<string,unknown>}[]=[];let hidden=false,left=false;let privacy={revision:0,share_online:true,share_last_active:true,share_typing:true,share_receipts:true};
  await page.addInitScript(({uid})=>{const token=btoa(JSON.stringify({alg:"HS256"}))+"."+btoa(JSON.stringify({sub:uid,exp:Math.floor(Date.now()/1000)+3600,aud:"authenticated",role:"authenticated"}))+".test";localStorage.setItem("sb-llweydgvtpwgnslvgnqm-auth-token",JSON.stringify({access_token:token,refresh_token:"test",expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,token_type:"bearer",user:{id:uid,aud:"authenticated",role:"authenticated",app_metadata:{},user_metadata:{}}}));},{uid});
  await page.route("**/rest/v1/**",async route=>{
@@ -17,11 +18,15 @@ async function mock(page:Page,instants=false){
   if(name==="my_privacy")body=privacy;
   if(name==="set_privacy_option"){privacy={...privacy,[String(bodyIn.p_setting)]:!!bodyIn.p_enabled,revision:privacy.revision+1};body=privacy;}
   if(name==="member_activity")body=[{user_id:other,online:false,last_active:new Date(Date.now()-7260000).toISOString()}];
-  if(name==="profiles")body=url.searchParams.get("id")?.startsWith("in.")?[self,alex,maya]:self;
+  if(name==="profiles")body=url.searchParams.get("id")?.startsWith("in.")?[me,alex,maya]:me;
   if(name==="inbox_page")body=[...(!hidden?[direct]:[]),...(!left?[group]:[])];
   if(name==="conversations")body=url.searchParams.get("id")?.includes(gid)?group:direct;
   if(name==="conversation_members")body=[self,alex,maya].map(p=>({user_id:p.id,last_read_at:stamp}));
-  if(name==="messages")body=messages.map(m=>({...m,conversation_id:url.searchParams.get("conversation_id")?.includes(gid)?gid:cid}));
+  if(name==="messages"&&route.request().method()==="PATCH"){const id=url.searchParams.get("id")?.slice(3);rows=rows.map(m=>m.id===id?{...m,content:String(bodyIn.content)}:m);body=rows.find(m=>m.id===id);}
+  if(name==="messages"&&route.request().method()==="DELETE"){const id=url.searchParams.get("id")?.slice(3);rows=rows.filter(m=>m.id!==id);body=[{id}];}
+  if(name==="reactions")body=reactions;
+  if(name==="set_reaction"){reactions=reactions.filter(r=>r.message_id!==bodyIn.p_message||r.user_id!==uid);if(bodyIn.p_emoji)reactions.push({message_id:String(bodyIn.p_message),user_id:uid,emoji:String(bodyIn.p_emoji)});body=null;}
+  if(name==="messages"&&route.request().method()==="GET")body=rows.map(m=>({...m,conversation_id:url.searchParams.get("conversation_id")?.includes(gid)?gid:cid}));
   if(name==="messages"&&instants)body=[...messages,...[false,true].map((replay,i)=>({...messages[0],id:`99999999-9999-4999-8999-99999999999${i}`,content:"",kind:"instant",per_recipient:true,allow_replay:replay,created_at:stamp}))];
   if(name==="message_receipts")body=[{...alex,user_id:other,read_at:stamp},{...maya,user_id:third,read_at:null}];
   if(name==="group_invite")body=bodyIn.p_revoke?null:code;
@@ -86,7 +91,32 @@ test("privacy switches persist without sending typing events when disabled",asyn
  if(await page.getByRole("button",{name:"Back to messages"}).isVisible())await page.getByRole("button",{name:"Back to messages"}).click();
  await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Privacy",exact:true}).click();await expect(page.getByRole("switch",{name:"Typing indicator"})).toHaveAttribute("aria-checked","false");
 });
-test("message controls use icons and expose editing only on owned messages",async({page})=>{
- await mock(page);await openChat(page);const own=page.locator(".message-row.own");await expect(own.getByRole("button",{name:"Message actions"}).locator("svg")).toHaveCount(1);await own.getByRole("button",{name:"Message actions"}).click();await page.getByRole("button",{name:"Edit",exact:true}).click();await expect(page.getByRole("dialog",{name:"Edit message"})).toBeVisible();await page.getByRole("button",{name:"Close",exact:true}).click();
+test("regular members can edit and delete only their own messages",async({page})=>{
+ await mock(page,false,false);await openChat(page);const own=page.locator(".message-row.own");await expect(own.getByRole("button",{name:"Message actions"}).locator("svg")).toHaveCount(1);await own.getByRole("button",{name:"Message actions"}).click();await page.getByRole("button",{name:"Edit",exact:true}).click();await expect(page.getByRole("dialog",{name:"Edit message"})).toBeVisible();await page.getByRole("dialog",{name:"Edit message"}).getByRole("textbox").fill("A regular member edit");await page.getByRole("button",{name:"Save edit"}).click();await expect(own.locator(".message-text")).toHaveText("A regular member edit");await own.getByRole("button",{name:"Message actions"}).click();await page.getByRole("button",{name:"Delete for everyone",exact:true}).click();await expect(own).toHaveCount(0);
  await page.locator(".message-row:not(.own)").getByRole("button",{name:"Message actions"}).click();await expect(page.getByRole("button",{name:"Edit",exact:true})).toHaveCount(0);await expect(page.getByRole("button",{name:"Delete for everyone",exact:true})).toHaveCount(0);
+});
+
+
+test("emoji reactions are optimistic, replaceable, removable and rollback on failure",async({page})=>{
+ await mock(page,false,false);await openChat(page);const bubble=page.locator(".message-row.own");
+ let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+ await page.route("**/rest/v1/rpc/set_reaction",async route=>{await gate;await route.fallback();},{times:1});
+ await bubble.getByRole("button",{name:"React to message"}).click();await expect(page.getByRole("dialog",{name:"Reactions"}).locator(".reaction-grid button")).toHaveCount(24);
+ await page.getByRole("dialog",{name:"Reactions"}).getByRole("button",{name:"👍",exact:true}).click();await expect(bubble.locator(".message-reactions button")).toHaveAttribute("aria-pressed","true");
+ release();await expect(page.getByRole("dialog",{name:"Reactions"})).toHaveCount(0);
+ await bubble.getByRole("button",{name:"React to message"}).click();await page.getByRole("dialog",{name:"Reactions"}).getByRole("button",{name:"😂",exact:true}).click();await expect(page.getByRole("dialog",{name:"Reactions"})).toHaveCount(0);await expect(bubble.locator(".message-reactions button")).toContainText("😂");await expect(bubble.locator(".message-reactions button")).toHaveCount(1);
+ await bubble.locator(".message-reactions button").click();await expect(bubble.locator(".message-reactions button")).toHaveCount(0);
+ await page.route("**/rest/v1/rpc/set_reaction",route=>route.fulfill({status:403,contentType:"application/json",body:JSON.stringify({message:"Reaction unavailable"})}));
+ await bubble.getByRole("button",{name:"React to message"}).click();await page.getByRole("dialog",{name:"Reactions"}).getByRole("button",{name:"🔥",exact:true}).click();await expect(page.getByRole("dialog",{name:"Reactions"}).getByRole("alert")).toContainText("Reaction unavailable");await expect(bubble.locator(".message-reactions button")).toHaveCount(0);
+});
+
+test("composer typing does not refetch messages or reactions",async({page})=>{
+ await mock(page);await openChat(page);let reads=0;
+ page.on("request",request=>{if(request.method()==="GET"&&/\/rest\/v1\/(messages|reactions)\?/.test(request.url()))reads++;});
+ await page.getByRole("textbox",{name:"Message",exact:true}).pressSequentially("An uninterrupted draft with emoji 🫶",{delay:20});expect(reads).toBe(0);
+});
+
+test("chat history loads while the realtime handshake is still pending",async({page})=>{
+ await mock(page);await page.routeWebSocket("wss://llweydgvtpwgnslvgnqm.supabase.co/**",socket=>socket.onMessage(()=>{}));
+ await page.locator(".conversation").filter({hasText:"Alex"}).click();await expect(page.locator(".message-text").filter({hasText:"Absolutely"})).toBeVisible({timeout:1300});
 });

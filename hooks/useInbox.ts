@@ -18,7 +18,7 @@ export function useInbox(userId:string){
  useEffect(()=>{alive.current=true;let timer:ReturnType<typeof setTimeout>;let generation=0;
  void cached<Conversation[]>(userId,"inbox").then(rows=>{if(alive.current&&rows&&generation===0){setItems(rows);setLoading(false);}});
  const update=()=>{clearTimeout(timer);timer=setTimeout(()=>{generation++;void refresh();},350);};
- const c=db(),ch=c.channel("inbox:"+userId,{config:{postgres_changes_options:{wait:true}}});
+ const c=db(),ch=c.channel("inbox:"+userId+":"+crypto.randomUUID(),{config:{postgres_changes_options:{wait:true}}});
  for(const table of ["conversations","conversation_members","profiles","chat_preferences"])ch.on("postgres_changes",{event:"*",schema:"public",table},update);
  ch.on("postgres_changes",{event:"*",schema:"public",table:"messages"},update);
  ch.subscribe(status=>{if(status==="SUBSCRIBED")update();});

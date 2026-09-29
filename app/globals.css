@@ -192,3 +192,12 @@ input:focus,textarea:focus,select:focus,.input-icon:focus-within{border-color:#a
 .privacy-controls{padding-bottom:25px}.privacy-row{width:100%;min-height:68px;display:flex;justify-content:flex-start;text-align:left;gap:14px;border-bottom:1px solid #ffffff08;font-size:14px}.privacy-row:last-of-type{border-bottom:0}.privacy-row>.switch{margin-left:auto}.privacy-icon{height:39px;width:39px;display:flex;align-items:center;justify-content:center;border-radius:13px;background:#c3b3ff12;color:#cabeeb}.privacy-row:disabled{opacity:.55}.privacy-row[aria-checked=true] .privacy-icon{background:#c3b3ff1c;color:#d7c9ff}.privacy-row .switch{width:40px;height:24px;border-radius:20px}.privacy-row .switch:after{width:18px;height:18px;top:3px;left:3px}.privacy-row .switch.on:after{transform:translateX(16px)}
 .profile-edit>.row{gap:11px}.profile-edit>.row .icon-button{min-width:45px;min-height:45px;background:#ffffff04;border-radius:14px}.profile-edit>.row .icon-button:hover{background:#ffffff0a}
 .message-meta>button[aria-label="Message actions"]{width:28px;height:24px;border-radius:7px}.message-meta>button[aria-label="Message actions"]:hover{background:#ffffff0c}
+
+/* Compact reaction controls retain generous touch targets. */
+.message-meta>button[aria-label="React to message"]{width:28px;height:28px;border-radius:8px}
+.message-meta>button[aria-label="React to message"]:hover{background:#ffffff0c;color:#c7b9e8}
+.message-reactions{flex-wrap:wrap;max-width:100%}.message-reactions button{min-width:32px;min-height:30px;transition:background .12s,border-color .12s,transform .12s}.message-reactions button:active{transform:scale(.9)}
+.reaction-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.reaction-grid button{height:48px;border-radius:14px;font-size:27px;background:#ffffff04;transition:background .12s,transform .12s}
+.reaction-grid button:hover,.reaction-grid button[aria-pressed=true]{background:#c0aaff24}.reaction-grid button:active{transform:scale(.88)}
+@media(pointer:coarse){.message-meta>button[aria-label="React to message"],.message-meta>button[aria-label="Message actions"]{min-height:32px;min-width:36px}}

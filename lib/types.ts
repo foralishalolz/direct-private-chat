@@ -7,7 +7,7 @@ export type Capsule = { id: string; conversation_id: string; user_id: string; un
 export type Game = { id: string; game_type: "question" | "either" | "tic_tac_toe"; question: string; option_a: string | null; option_b: string | null; created_by: string; next_player: string | null; board: string; winner: string | null; ended_at: string | null; created_at: string };
 export type Poll = { id: string; conversation_id: string; question: string; options: string[]; created_at: string; closes_at: string };
 export const MOODS = ["🥰","😊","🥺","😴","😔","😤","🤍","🫶"];
-export const REACTIONS = ["❤️","😂","🥺","🔥","😘","🫶"];
+export const REACTIONS = ["❤️","😂","🥺","🔥","😘","🫶","👍","👎","😍","🥹","😮","😢","😡","🤍","💯","🎉","✨","👀","🙈","🤗","😈","💋","💕","💀"];
 export const label = (p?: Partial<Profile>) => p?.display_name || p?.username || "";
 export const title = (c: Conversation) => c.kind === "group" ? c.title : label(c.partner);
 export const subtitle = (c: Conversation) => c.kind === "group" ? String(c.members?.length ?? 0) + " members" : "@" + (c.partner?.username ?? "");

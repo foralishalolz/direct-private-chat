@@ -51,7 +51,7 @@ export function useMessages(conversationId:string,userId:string){
       if(row.user_id===userId&&!row.status)void acknowledge(userId,row.id);
     };
     const remove=(id:string)=>{
-      if(!alive.current)return;
+      if(!alive.current||(!rows.current.some(m=>m.id===id)&&!refreshing.current&&!paging.current))return;
       events.current.set(id,{row:null,revision:++revision.current});
       setMessages(previous=>{const next=previous.filter(m=>m.id!==id);rows.current=next;return next;});
     };
@@ -63,13 +63,14 @@ export function useMessages(conversationId:string,userId:string){
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"instant_receipts",filter:"user_id=eq."+userId},event=>{const id=String(event.new.message_id);viewed.current.add(id);const m=rows.current.find(m=>m.id===id);if(m)receive({...m,instant_viewed:true});})
       .on("postgres_changes",{event:"*",schema:"public",table:"chat_preferences",filter:"conversation_id=eq."+conversationId},event=>{const pref=event.new as {user_id?:string;cleared_before?:string};if(pref.user_id===userId&&pref.cleared_before)void clearConversation(userId,conversationId,pref.cleared_before);})
       .subscribe(status=>{if(!alive.current)return;setConnected(status==="SUBSCRIBED");if(status==="SUBSCRIBED")void hydrate.then(()=>{if(alive.current)void reconcile();});});
-    const fallback=setTimeout(()=>{void hydrate.then(()=>{if(alive.current&&Date.now()-lastSync.current>1000)void reconcile();});},1500);
+    // The HTTP snapshot starts immediately after local hydration, in parallel with Realtime.
+    void hydrate.then(()=>{if(alive.current)void reconcile();});
     const clear=(event:Event)=>{const d=(event as CustomEvent<{userId:string;conversationId:string}>).detail;if(d.userId===userId&&d.conversationId===conversationId){events.current.clear();revision.current++;setMessages(previous=>{const next=visibleRows(userId,conversationId,previous);rows.current=next;return next;});setMore(false);}};
     window.addEventListener("bitchat-chat-cleared",clear);
     const outbox=(event:Event)=>{const d=(event as CustomEvent<{userId:string;row?:Message;removed?:string}>).detail;if(d.userId===userId){if(d.row)receive(d.row);if(d.removed)remove(d.removed);}};
     const focus=()=>{if(document.visibilityState==="visible"&&Date.now()-lastSync.current>10000)void hydrate.then(()=>{if(alive.current)void reconcile();});};
     window.addEventListener("bitchat-outbox",outbox);window.addEventListener("online",focus);document.addEventListener("visibilitychange",focus);
-    return()=>{alive.current=false;window.removeEventListener("bitchat-chat-cleared",clear);clearTimeout(fallback);void cache(userId,"messages:"+conversationId,cacheable(rows.current));void client.removeChannel(channel);window.removeEventListener("bitchat-outbox",outbox);window.removeEventListener("online",focus);document.removeEventListener("visibilitychange",focus);};
+    return()=>{alive.current=false;window.removeEventListener("bitchat-chat-cleared",clear);void cache(userId,"messages:"+conversationId,cacheable(rows.current));void client.removeChannel(channel);window.removeEventListener("bitchat-outbox",outbox);window.removeEventListener("online",focus);document.removeEventListener("visibilitychange",focus);};
   },[conversationId,userId,reconcile]);
   useEffect(()=>{const t=setTimeout(()=>void cache(userId,"messages:"+conversationId,cacheable(messages)),500);return()=>clearTimeout(t);},[messages,userId,conversationId]);
   const loadOlder=useCallback(async()=>{
