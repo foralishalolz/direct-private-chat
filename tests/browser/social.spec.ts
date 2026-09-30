@@ -177,3 +177,26 @@ test("composer preserves new text while an earlier send waits for local storage"
  });
  await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await page.evaluate(()=>Object.assign(window,{delayOutbox:true}));await input.fill("First draft");await page.getByRole("button",{name:"Send message",exact:true}).click();await input.fill("Second draft");await expect(page.locator(".message-text").filter({hasText:"First draft"})).toBeVisible();await expect(input).toHaveValue("Second draft");await expect(page.getByRole("button",{name:"Record voice note"})).toHaveCount(0);await input.fill("");await expect(page.getByRole("button",{name:"Record voice note"})).toBeVisible();await expect(page.getByRole("button",{name:"Emoji",exact:true})).toBeVisible();
 });
+
+
+test("received realtime messages show an account-scoped alert and open the chat",async({page})=>{
+ await mock(page);let socket:{send:(data:string)=>void}|undefined,topic="",join:string|null=null,ids:number[]=[];
+ await page.routeWebSocket("wss://llweydgvtpwgnslvgnqm.supabase.co/**",ws=>ws.onMessage(raw=>{try{
+  const message=JSON.parse(String(raw));if(!Array.isArray(message))return;
+  const filters=(message[4]?.config?.postgres_changes??[]).map((filter:Record<string,unknown>,index:number)=>({...filter,id:index+1}));
+  if(message[3]==="phx_join"&&String(message[2]).includes("inbox:")){socket=ws;topic=message[2];join=message[0];ids=filters.filter((filter:{table:string})=>filter.table==="messages").map((filter:{id:number})=>filter.id);}
+  ws.send(JSON.stringify([message[0],message[1],message[2],"phx_reply",{status:"ok",response:{postgres_changes:filters}}]));
+ }catch{}}));
+ await page.reload();await expect(page.locator(".conversation")).toHaveCount(2);await expect.poll(()=>ids.length).toBe(1);
+ const record={...messages[0],id:"abcd1234-1234-4234-8234-123456789abc",created_at:new Date().toISOString()};
+ socket!.send(JSON.stringify([join,null,topic,"postgres_changes",{ids,data:{schema:"public",table:"messages",type:"INSERT",record,old_record:{},columns:[],commit_timestamp:new Date().toISOString(),errors:[]}}]));
+ await expect(page.locator(".message-toast")).toBeVisible();await page.locator(".message-toast").getByRole("button",{name:"New message",exact:true}).click();await expect(page.locator(".thread-person")).toContainText("Alex");await expect(page.locator(".message-toast")).toHaveCount(0);
+});
+
+test("backgrounding releases the camera and resuming requires a fresh tap",async({page})=>{
+ await page.addInitScript(()=>{const stats={starts:0,stops:0};Object.assign(window,{cameraStats:stats});Object.defineProperty(navigator.mediaDevices,"getUserMedia",{configurable:true,value:async()=>{stats.starts++;const canvas=document.createElement("canvas");canvas.width=320;canvas.height=240;canvas.getContext("2d")!.fillRect(0,0,320,240);const media=canvas.captureStream(15);for(const track of media.getTracks()){const stop=track.stop.bind(track);track.stop=()=>{stats.stops++;stop();};}return media;}});});
+ await mock(page);await openChat(page);await page.getByRole("button",{name:"Attachments"}).click();await page.getByRole("button",{name:"Instant",exact:true}).click();await expect(page.getByRole("button",{name:"Take and send one-view photo"})).toBeEnabled();
+ await page.evaluate(()=>{Object.defineProperty(document,"visibilityState",{configurable:true,get:()=>"hidden"});document.dispatchEvent(new Event("visibilitychange"));});await expect(page.getByRole("button",{name:"Resume camera"})).toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as unknown as {cameraStats:{stops:number}}).cameraStats.stops)).toBe(1);
+ await page.evaluate(()=>{Object.defineProperty(document,"visibilityState",{configurable:true,get:()=>"visible"});document.dispatchEvent(new Event("visibilitychange"));});expect(await page.evaluate(()=>(window as unknown as {cameraStats:{starts:number}}).cameraStats.starts)).toBe(1);
+ await page.getByRole("button",{name:"Resume camera"}).click();await expect(page.getByRole("button",{name:"Take and send one-view photo"})).toBeEnabled();expect(await page.evaluate(()=>(window as unknown as {cameraStats:{starts:number}}).cameraStats.starts)).toBe(2);await page.getByRole("button",{name:"Close",exact:true}).click();
+});
