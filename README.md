@@ -1,4 +1,4 @@
-# BitchAt 2.6
+# BitchAt 2.7
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -34,7 +34,7 @@ Public connection settings are already in `lib/config.ts`; `.env.example` contai
 
 `npm run build` also produces a portable `out/` directory. Serve that directory over HTTPS on a static host with directory-index routing. `/login/`, `/manifest.webmanifest`, `/sw.js`, and `/release.json` must be reachable. The app's Supabase authentication and private chat storage remain the same across frontend hosts. Browser sessions and offline caches belong to each origin, so a new address requires signing in again.
 
-GitHub checks use the committed lockfile and attach the compiled website and browser test screenshots. The `Published website check` workflow is manual and targets Vercel; run it only after the Vercel deployment is available.
+GitHub checks use the committed lockfile and attach the compiled website and browser test screenshots. The `Published website check` workflow runs when a release is published on the production branch, waits for Vercel to serve that version, and checks the public login, account creation, icons, and offline shell. It can also be run manually.
 
 Use the login screen's Create account tab. Usernames use 3–24 lowercase letters, numbers or underscores; new passwords use 10–128 characters. Registration is rate limited and confirms internal username email addresses on the server. Settings accepts the configured server-side Pro PIN. Account recovery requires the project administrator because internal username addresses cannot receive email.
 
@@ -60,6 +60,18 @@ The 2.2 live Supabase check passed 55 assertions, including two real browser ses
 
 The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the production build, and the dependency audit (zero known vulnerabilities).
 
+## Version 2.7
+
+The Affection tray sends kisses, hugs, love, and I-miss-you messages without discarding a typed draft or reply. Each is a normal readable message, so realtime delivery, offline retries, search, export, reactions, editing, and deletion use the existing chat paths. The thread also has an I miss you shortcut. Both participants must enable Couple mode for the romantic bubble styling and Pick our date game. Effects are brief and respect reduced-motion preferences.
+
+Swipe a message right to reply. Horizontal movement uses animation-frame DOM updates without rerendering the message list; vertical gestures retain native scrolling. Short, cancelled, and vertical gestures cannot select a reply, and controls inside a message keep their normal behavior. Reply remains available in the message menu. The composer focuses on the reply gesture and preserves its draft.
+
+Strict instant photos close and clear their canvas pixels on a subsequent screen touch, a delivered keyboard event, focus loss, backgrounding, printing, or close. Late image decoding cannot restore wiped pixels. Browser pages cannot reliably observe phone power/volume buttons or prevent operating-system screenshots; these dismissal measures are not screenshot protection. Pro replay and saving still require the sender's explicit choice.
+
+Notifications now use real Web Push, including when no app tab is open on a supported device. Enable Message alerts in Profile → Notifications; iPhone requires a supported Home Screen installation. Permission is requested only after a tap. Registration is scoped to the signed-in account, and disabling alerts or signing out unsubscribes the device and clears its local notification owner. The service worker shows only a generic New message alert and validates the intended account before opening a conversation.
+
+The live `20260930082838_private_web_push_delivery` migration and `push-notifications` Edge Function implement a private, coalescing delivery queue with recipient membership, blocking, archive, clearing, read-marker, and expiry checks. VAPID keys and the worker secret stay in Supabase Vault. Queue errors do not interrupt message inserts. Deliveries use bounded leases, retries, timeouts, and invalid-endpoint removal; a one-minute cron recovers queued work. Physical-device delivery depends on browser support, notification permission, and the device's operating-system settings. The service worker caches app assets only and retains one previous shell's immutable chunks so an update does not force a reload or discard an open draft.
+
 ## Version 2.6
 
 Inbox rows reveal Archive and Delete when swiped left. Right-click or focus a row and press Left Arrow for the same actions; Escape or Right Arrow closes them. Vertical movement keeps native list scrolling and cannot delete a chat. Only one row is revealed at a time. Deletion still requires confirmation and clears only the caller's history. The Archived tab exposes saved conversations; swiping one reveals Unarchive. Archive state is stored per authenticated account, stays archived when new messages arrive, and synchronizes across devices. Archiving preserves all text, queued sends, and the other participants' inboxes. Failed archive requests leave the row intact. Existing media retention and privacy rules are unchanged.
@@ -76,7 +88,7 @@ Stickers can be created, saved, reused, and removed locally, including received 
 
 Instant cameras offer hardware torch when supported and screen flash otherwise. Leaving the app stops the camera; returning requires a Resume camera tap. Streams are stopped on close and camera switches. Strict instant viewers render bytes to canvas with no image URL or link in the DOM, clear their pixels on close, and close on backgrounding. Ordinary photos remain inline. No browser can guarantee prevention of OS screenshots, external recording, or capture by a recipient who controls their device. Strict instants remain one-view for Pro; replay/save requires the sender's explicit choice.
 
-Profile → Notifications enables opt-in, generic message alerts without message content. In-app alerts and service-worker system notifications use the existing Realtime subscription; clicking an alert opens the chat only for the matching account. Notifications are supported while a BitchAt tab remains running, including backgrounded tabs. Delivery when every tab is closed requires a separate Web Push backend and is not implemented. iPhone system notifications require adding the site to the Home Screen and browser support.
+Version 2.5 introduced opt-in, generic alerts while an app tab remained running. Version 2.7 replaces the background-tab delivery path with the Web Push backend described above; visible in-app alerts continue to use Realtime.
 
 The connected project's Pro password was rotated on 2026-09-30. Its plaintext is never included in application source, database migrations, or client bundles. New database installs seed an unusable random password until an administrator configures their own hash. Live Pro QA requires the private `BITCHAT_QA_PRO_CODE` environment variable (or GitHub Actions secret); it fails before creating test accounts if the variable is missing. Existing Pro accounts remain Pro. Pro access does not override other people's blocking/privacy settings, strict one-view consent, or camera/microphone permissions.
 
