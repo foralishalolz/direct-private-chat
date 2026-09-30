@@ -49,6 +49,7 @@ async function mock(page:Page,instants=false,pro=true,couple=false){
 async function openChat(page:Page,isGroup=false){await page.locator(".conversation").filter({hasText:isGroup?"Weekend crew":"Alex"}).click();await expect(page.locator(".message-text").filter({hasText:"Absolutely"})).toBeVisible();}
 
 async function dragChat(page:Page, row:Locator, mobile:boolean, dx:number, dy=0){
+ await row.scrollIntoViewIfNeeded();
  const box=await row.boundingBox();if(!box)throw new Error("Chat row unavailable.");
  const x=box.x+(dx>0?Math.min(25,box.width/4):Math.min(box.width-15,220)),y=box.y+box.height/2;
  if(mobile){const session=await page.context().newCDPSession(page);
@@ -330,13 +331,13 @@ test("vertical, cancelled and short drags do not select a reply or open a menu",
 test("one-view pixels disappear on the next touch and the photo cannot be reopened",async({page})=>{
  await mock(page,true);let opens=0;await page.route("**/functions/v1/open-instant",route=>{opens++;return route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64")});});
  await openChat(page);await page.locator(".instant-card").first().click();const viewer=page.getByRole("dialog",{name:"Instant",exact:true});await expect.poll(()=>viewer.locator("canvas").evaluate((node:HTMLCanvasElement)=>node.width)).toBe(1);
- await viewer.locator("canvas").evaluate(node=>Object.assign(window,{touchedPhoto:node}));await viewer.locator("canvas").click();await expect(viewer).toHaveCount(0);await expect(page.locator(".instant-card").first()).toBeDisabled();
+ await viewer.locator("canvas").evaluate(node=>Object.assign(window,{touchedPhoto:node}));await viewer.locator(".instant-surface").click();await expect(viewer).toHaveCount(0);await expect(page.locator(".instant-card").first()).toBeDisabled();
  expect(await page.evaluate(()=>{const node=(window as unknown as {touchedPhoto:HTMLCanvasElement}).touchedPhoto;return[node.width,node.height];})).toEqual([0,0]);expect(opens).toBe(1);
 });
 test("exposed screenshot keys close an instant while opted-in replay photos retain their save control",async({page})=>{
  await mock(page,true);await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64")}));
  await openChat(page);await page.locator(".instant-card").first().click();await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toBeVisible();await page.keyboard.press("PrintScreen");await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toHaveCount(0);
- await page.locator(".instant-card").nth(1).click();const replay=page.getByRole("dialog",{name:"Replayable photo",exact:true});await expect(replay.getByRole("button",{name:"Save photo",exact:true})).toBeVisible();await replay.locator("canvas").click();await expect(replay).toBeVisible();await replay.getByRole("button",{name:"Close",exact:true}).click();
+ await page.locator(".instant-card").nth(1).click();const replay=page.getByRole("dialog",{name:"Replayable photo",exact:true});await expect(replay.getByRole("button",{name:"Save photo",exact:true})).toBeVisible();await replay.locator(".instant-surface").click();await expect(replay).toBeVisible();await replay.getByRole("button",{name:"Close",exact:true}).click();
 });
 test("couple mode gives a romantic accent and a date picker inside Play",async({page},info)=>{
  const calls=await mock(page,false,true,true);await openChat(page);await expect(page.locator(".chat-thread")).toHaveClass(/romantic-chat/);
