@@ -5,6 +5,7 @@ import type {Session} from "@supabase/supabase-js";
 import dynamic from "next/dynamic";
 import {db} from "@/lib/supabase";
 import {activate,cache,cached,clearUser} from "@/lib/offline";
+import {disableNotifications} from "@/lib/notifications";
 import {clearMedia} from "@/lib/media";
 import {PrivacyProvider} from "@/hooks/usePrivacy";
 import {useOutbox} from "@/hooks/useOutbox";
@@ -22,7 +23,7 @@ export default function Home(){
  useEffect(()=>{let active=true;setProfile(null);if(!session?.user.id)return;const id=session.user.id;activate(id);
  void (async()=>{const saved=await cached<Profile>(id,"profile");if(active&&saved)setProfile(saved);const r=await db().from("profiles").select("id,username,display_name,avatar_url,mood,is_pro").eq("id",id).single();if(!active)return;if(r.error){setError(errorText(r.error));return;}setProfile(r.data as Profile);setError("");void cache(id,"profile",r.data);})();
  return()=>{active=false;};},[session?.user.id,version]);
- async function logout(){const id=session?.user.id;setProfile(null);clearMedia();if(id)await clearUser(id);await db().auth.signOut({scope:"local"});setSession(null);}
+ async function logout(){const id=session?.user.id;setProfile(null);clearMedia();if(id){await disableNotifications(id).catch(()=>{});await clearUser(id);}await db().auth.signOut({scope:"local"});setSession(null);}
  if(!ready)return <main className="loading-screen"><Brand/><Spinner/></main>;
  if(!session)return <AuthScreen initialError={error}/>;
  if(!profile)return <main className="loading-screen"><Brand/>{error?<><ErrorNote text={error}/><button className="primary" onClick={()=>setVersion(x=>x+1)}>Retry</button><button onClick={()=>void logout()}>Log out</button></>:<Spinner/>}</main>;

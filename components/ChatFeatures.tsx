@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, ShieldCheck, Trash2, X } from "lucide-react";
-import { rpc } from "@/lib/supabase";
+import { db, rpc } from "@/lib/supabase";
 import { useLive } from "@/hooks/useLive";
 import ChatActionModal from "./ChatActionModal";
 import { downloadMedia } from "@/lib/export";
 import { day, errorText, label, time, type Conversation, type Message, type Profile } from "@/lib/types";
 import { Avatar, ErrorNote, IconButton, Modal, Spinner } from "./UI";
 import { PrivateMedia } from "./MessageBubble";
+
+const DATE_IDEAS = ["Coffee and a long walk", "Cook something new together", "Make each other a five-song playlist", "Pick a film and share your favorite snack", "A sunset call", "Draw each other in sixty seconds", "Recreate your first date", "A ten-minute slow dance"];
 
 type ChatProps = { c: Conversation; p: Profile };
 
@@ -110,11 +112,11 @@ export function MessageHistory({ c }: { c: Conversation }) {
 export function QuickPlay({ c }: { c: Conversation }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [result, setResult] = useState("");
   const lock = useRef(false);
-  async function play(kind: string) {
+  async function play(kind: "dice" | "coin" | "date") {
     if (lock.current) return;
     lock.current = true; setBusy(true); setError(""); setResult("");
-    try { await rpc("quick_play", { p_id: crypto.randomUUID(), p_conversation: c.id, p_kind: kind }); setResult("Sent to chat"); }
+    try { if (kind === "date") { const message = "💌 " + DATE_IDEAS[crypto.getRandomValues(new Uint32Array(1))[0] % DATE_IDEAS.length]; const { error } = await db().from("messages").insert({ id: crypto.randomUUID(), conversation_id: c.id, content: message }); if (error) throw error; } else await rpc("quick_play", { p_id: crypto.randomUUID(), p_conversation: c.id, p_kind: kind }); setResult("Sent to chat"); }
     catch (e) { setError(errorText(e)); } finally { lock.current = false; setBusy(false); }
   }
-  return <div className="quick-play"><div className="play-tiles"><button disabled={busy} onClick={() => void play("dice")}><Dices size={27}/><span>Roll a dice</span></button><button disabled={busy} onClick={() => void play("coin")}><Coins size={27}/><span>Flip a coin</span></button></div><span className="action-status" role="status">{busy ? <Spinner/> : result}</span><ErrorNote text={error}/></div>;
+  return <div className="quick-play"><div className="play-tiles"><button disabled={busy} onClick={() => void play("dice")}><Dices size={27}/><span>Roll a dice</span></button><button disabled={busy} onClick={() => void play("coin")}><Coins size={27}/><span>Flip a coin</span></button>{c.kind === "direct" && c.couple_a && c.couple_b && <button disabled={busy} onClick={() => void play("date")}><Heart size={27}/><span>Pick our date</span></button>}</div><span className="action-status" role="status">{busy ? <Spinner/> : result}</span><ErrorNote text={error}/></div>;
 }

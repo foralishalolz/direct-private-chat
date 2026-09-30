@@ -9,3 +9,6 @@ verify_jwt = false
 [functions.media-cleanup]
 verify_jwt = false
 
+
+[functions.push-notifications]
+verify_jwt = false

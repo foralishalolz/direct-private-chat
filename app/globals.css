@@ -1,5 +1,20 @@
 
 @import "tailwindcss";
+/* Affection stays inside the conversation. Motion is finite and honors system preferences. */
+.chat-thread.romantic-chat{--pink:#f47da8;--pink-dim:#f47da814;background:radial-gradient(ellipse at 65% 80%,#a64c7a08,transparent 60%)}
+.chat-shortcuts .miss-shortcut{margin-left:auto;color:#eab4cb}
+.affection-tray{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px 0 14px}
+.affection-tray button{flex-direction:column;gap:7px;border:1px solid var(--line);border-radius:17px;background:var(--raised);min-height:80px;transition:background .15s,transform .15s}
+.affection-tray button:active{transform:scale(.95)}.affection-tray button>span{font-size:27px;line-height:1.2}.affection-tray small{font-size:11px;color:var(--text)}
+.message-row{position:relative}.bubble{touch-action:pan-y pinch-zoom;transition:transform .16s ease-out}
+.reply-swiping .bubble{transition:none;user-select:none;-webkit-user-select:none;will-change:transform}
+.swipe-reply-indicator{position:absolute;left:0;top:15px;width:31px;height:31px;display:flex;align-items:center;justify-content:center;color:var(--muted);border-radius:50%;background:var(--raised);opacity:var(--reply-progress,0);transform:scale(calc(.65 + var(--reply-progress,0)*.35));pointer-events:none}
+.own .swipe-reply-indicator{left:auto;right:min(72%,240px)}.reply-armed .swipe-reply-indicator{color:var(--pink);background:var(--pink-dim)}
+.bubble.affection-bubble{background:linear-gradient(145deg,#28212d,#1c1a23);border:1px solid #ef9cb21c;min-width:152px;padding:18px 22px}.own .bubble.affection-bubble{background:linear-gradient(145deg,#4c2b47,#33223a);border-color:#f6a5bc22}
+.affection-card{display:flex;flex-direction:column;align-items:center;gap:10px}.affection-glyph{font-size:46px;line-height:1.3;display:inline-block;transform-origin:center}.affection-caption{font-size:12px;color:#f3dbe8;white-space:nowrap}
+.affection-fresh .affection-glyph{animation:affection-pop .7s ease-out 1}
+@keyframes affection-pop{0%{transform:scale(.75) rotate(-8deg)}45%{transform:scale(1.16) rotate(5deg)}75%{transform:scale(.98)}100%{transform:scale(1)}}
+@media(prefers-reduced-motion:reduce){.affection-fresh .affection-glyph{animation:none}.bubble,.affection-tray button{transition:none}}
 :root{color-scheme:dark;--bg:#101014;--panel:#15151a;--raised:#1d1d24;--line:#ffffff0d;--text:#f4f2f5;--muted:#87848f;--pink:#fa6595;--pink-dim:#fa659519;--danger:#ff7489}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased;overscroll-behavior:none}
@@ -217,3 +232,5 @@ input:focus,textarea:focus,select:focus,.input-icon:focus-within{border-color:#a
 @media print{.instant-surface,.instant-photo{display:none!important}}
 
 @media(max-width:760px){.conversation-item .conversation{background:#13161e}.conversation-item .conversation.selected{background:#2a273d}}
+
+.romantic-chat .message-row.own .bubble:not(.affection-bubble):not(.sticker-bubble){background:linear-gradient(130deg,#743866,#594063)}

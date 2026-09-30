@@ -14,7 +14,7 @@ for (let attempt = 0; attempt < 12; attempt++) {
   await new Promise(resolve => setTimeout(resolve, 10000));
 }
 assert.equal(release?.version, expected);
-for (const path of ["/", "/login/", "/manifest.webmanifest", "/sw.js"]) assert.equal((await fetch(url + path, { signal: AbortSignal.timeout(15000) })).status, 200, path);
+for (const path of ["/", "/login/", "/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png", "/badge.png", "/apple-touch-icon.png"]) assert.equal((await fetch(url + path, { signal: AbortSignal.timeout(15000) })).status, 200, path);
 console.log("PUBLIC_HTTP_PASS", url, release.version);
 const browser = await chromium.launch();
 try {

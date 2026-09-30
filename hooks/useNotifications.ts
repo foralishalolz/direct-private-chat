@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clearNotifications, notifyMessage, UUID } from "@/lib/notifications";
+import { clearNotifications, restoreNotifications, UUID } from "@/lib/notifications";
 import type { Message } from "@/lib/types";
 
 export function useNotifications(userId: string, selected: string | null, onOpen: (id: string) => void) {
@@ -9,6 +9,7 @@ export function useNotifications(userId: string, selected: string | null, onOpen
   current.current = selected; open.current = onOpen;
   useEffect(() => {
     alive.current = true;
+    void restoreNotifications(userId).catch(() => {});
     const receive = (event: MessageEvent) => {
       const data = event.data;
       if (data?.type === "bitchat-open-chat" && data.userId === userId && typeof data.conversationId === "string" && UUID.test(data.conversationId)) { open.current(data.conversationId); setToast(null); }
@@ -28,7 +29,7 @@ export function useNotifications(userId: string, selected: string | null, onOpen
     if (!Number.isFinite(age) || age > 60000 || age < -60000) return;
     seen.current.add(message.id); if (seen.current.size > 200) seen.current.delete(seen.current.values().next().value!);
     if (document.visibilityState === "visible") { if (current.current !== message.conversation_id) setToast(message.conversation_id); }
-    else void notifyMessage(userId, message.conversation_id, message.id, () => alive.current).catch(() => {});
+    // Background notifications arrive through Web Push, even with no open tab.
   }, [userId]);
   return { onMessage, toast, dismiss: () => setToast(null) };
 }

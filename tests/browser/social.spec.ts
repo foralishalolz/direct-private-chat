@@ -8,7 +8,7 @@ const maya={...alex,id:third,username:"maya",display_name:"Maya",mood:null};
 const direct={id:cid,kind:"direct",title:"",member_a:uid,member_b:other,created_by:uid,created_at:stamp,last_activity:stamp,read_a:stamp,read_b:stamp,couple_a:false,couple_b:false,members:[self,alex],preview:"See you soon ✨",read_at:stamp};
 const group={...direct,id:gid,kind:"group",title:"Weekend crew",member_a:null,member_b:null,members:[self,alex,maya],preview:"Saturday sounds perfect",member_reads:[{user_id:other,read_at:stamp}]};
 const messages=[{id:"77777777-7777-4777-8777-777777777777",conversation_id:cid,user_id:other,content:"Coffee after work? ☕",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:new Date(Date.now()-120000).toISOString()},{id:"88888888-8888-4888-8888-888888888888",conversation_id:cid,user_id:uid,content:"Absolutely. Same place, 6:30?",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:stamp}];
-async function mock(page:Page,instants=false,pro=true){
+async function mock(page:Page,instants=false,pro=true,couple=false){
  const me={...self,is_pro:pro};let rows=messages.map(m=>({...m}));let reactions:{message_id:string;user_id:string;emoji:string}[]=[];
  const calls:{name:string;body:Record<string,unknown>}[]=[];let hidden=false,left=false;const archived=new Set<string>();let privacy={revision:0,share_online:true,share_last_active:true,share_typing:true,share_receipts:true};
  await page.addInitScript(({uid})=>{const token=btoa(JSON.stringify({alg:"HS256"}))+"."+btoa(JSON.stringify({sub:uid,exp:Math.floor(Date.now()/1000)+3600,aud:"authenticated",role:"authenticated"}))+".test";localStorage.setItem("sb-llweydgvtpwgnslvgnqm-auth-token",JSON.stringify({access_token:token,refresh_token:"test",expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,token_type:"bearer",user:{id:uid,aud:"authenticated",role:"authenticated",app_metadata:{},user_metadata:{}}}));},{uid});
@@ -19,7 +19,10 @@ async function mock(page:Page,instants=false,pro=true){
   if(name==="set_privacy_option"){privacy={...privacy,[String(bodyIn.p_setting)]:!!bodyIn.p_enabled,revision:privacy.revision+1};body=privacy;}
   if(name==="member_activity")body=[{user_id:other,online:false,last_active:new Date(Date.now()-7260000).toISOString()}];
   if(name==="profiles")body=url.searchParams.get("id")?.startsWith("in.")?[me,alex,maya]:me;
-  if(name==="inbox_page")body=[...(!hidden?[direct]:[]),...(!left?[group]:[])].map(c=>({...c,archived:archived.has(c.id)}));
+  if(name==="push_public_key")body="B"+"A".repeat(86);
+  if(name==="register_push_subscription"||name==="unregister_push_subscription")body=null;
+  if(name==="ensure_goal"||name==="games")body=null;
+  if(name==="inbox_page")body=[...(!hidden?[direct]:[]),...(!left?[group]:[])].map(c=>({...c,archived:archived.has(c.id),couple_a:couple,couple_b:couple}));
   if(name==="set_chat_archived"){const id=String(bodyIn.p_conversation);if(bodyIn.p_archived)archived.add(id);else archived.delete(id);body=!!bodyIn.p_archived;}
   if(name==="conversations")body=url.searchParams.get("id")?.includes(gid)?group:direct;
   if(name==="conversation_members")body=[self,alex,maya].map(p=>({user_id:p.id,last_read_at:stamp}));
@@ -27,6 +30,7 @@ async function mock(page:Page,instants=false,pro=true){
   if(name==="messages"&&route.request().method()==="DELETE"){const id=url.searchParams.get("id")?.slice(3);rows=rows.filter(m=>m.id!==id);body=[{id}];}
   if(name==="reactions")body=reactions;
   if(name==="set_reaction"){reactions=reactions.filter(r=>r.message_id!==bodyIn.p_message||r.user_id!==uid);if(bodyIn.p_emoji)reactions.push({message_id:String(bodyIn.p_message),user_id:uid,emoji:String(bodyIn.p_emoji)});body=null;}
+  if(name==="messages"&&route.request().method()==="POST"){const message={...messages[0],...bodyIn,user_id:uid,created_at:new Date().toISOString()};rows=rows.filter(m=>m.id!==message.id);rows.push(message);body=message;}
   if(name==="messages"&&route.request().method()==="GET")body=rows.map(m=>({...m,conversation_id:url.searchParams.get("conversation_id")?.includes(gid)?gid:cid}));
   if(name==="messages"&&instants)body=[...messages,...[false,true].map((replay,i)=>({...messages[0],id:`99999999-9999-4999-8999-99999999999${i}`,content:"",kind:"instant",per_recipient:true,allow_replay:replay,created_at:stamp}))];
   if(name==="message_receipts")body=[{...alex,user_id:other,read_at:stamp},{...maya,user_id:third,read_at:null}];
@@ -46,7 +50,7 @@ async function openChat(page:Page,isGroup=false){await page.locator(".conversati
 
 async function dragChat(page:Page, row:Locator, mobile:boolean, dx:number, dy=0){
  const box=await row.boundingBox();if(!box)throw new Error("Chat row unavailable.");
- const x=box.x+Math.min(box.width-15,220),y=box.y+box.height/2;
+ const x=box.x+(dx>0?Math.min(25,box.width/4):Math.min(box.width-15,220)),y=box.y+box.height/2;
  if(mobile){const session=await page.context().newCDPSession(page);
   try{await session.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x,y,id:1}]});
    for(let i=1;i<=6;i++)await session.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:x+dx*i/6,y:y+dy*i/6,id:1}]});
@@ -296,4 +300,68 @@ test("old inbox responses cannot undo archiving and newer device changes still a
  const row=page.locator(".conversation").filter({hasText:"Alex"});await row.focus();await page.keyboard.press("ArrowLeft");await page.getByRole("button",{name:"Archive chat with Alex",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(1);
  releaseOld();await expect.poll(()=>reads).toBe(2);await expect(page.locator(".conversation")).toHaveCount(1);
  releaseNew();await expect(page.locator(".conversation")).toHaveCount(2);await expect(page.locator(".conversation").filter({hasText:"Alex"})).toBeVisible();
+});
+
+
+test("affection sends kisses and hugs without disturbing a reply or a typed draft",async({page})=>{
+ const calls=await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Keep this thought");
+ for(const kind of ["kiss","hug"]){await page.getByRole("button",{name:"Attachments",exact:true}).click();await page.getByRole("button",{name:"Affection",exact:true}).click();await page.getByRole("button",{name:"Send "+kind,exact:true}).click();await expect(input).toHaveValue("Keep this thought");await expect(page.locator(".affection-tray")).toHaveCount(0);}
+ await expect(page.locator(".affection-caption").filter({hasText:"A kiss for you"})).toBeVisible();await expect(page.locator(".affection-caption").filter({hasText:"A hug for you"})).toBeVisible();
+ await expect.poll(()=>calls.filter(c=>c.name==="messages"&&String(c.body.content).includes("for you")).length).toBe(2);
+ await page.getByRole("button",{name:"I miss you",exact:true}).click();await expect(page.locator(".affection-caption").filter({hasText:"I miss you"})).toBeVisible();await expect(input).toHaveValue("Keep this thought");
+ await expect.poll(()=>calls.some(c=>c.name==="messages"&&c.body.kind==="miss"&&c.body.content==="🤍 I miss you")).toBe(true);
+});
+test("swipe to reply works in both directions of authorship and keeps a typed draft",async({page},info)=>{
+ const calls=await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Yes please");
+ await dragChat(page,page.locator(".message-row").first().locator(".bubble"),info.project.name==="mobile",112);
+ await expect(page.locator(".composer-reply")).toContainText("Coffee after work?");await expect(input).toBeFocused();await expect(input).toHaveValue("Yes please");await expect(page.getByRole("dialog",{name:"Message",exact:true})).toHaveCount(0);
+ await page.getByRole("button",{name:"Cancel reply",exact:true}).click();
+ await dragChat(page,page.locator(".message-row.own").last().locator(".bubble"),info.project.name==="mobile",112);
+ await expect(page.locator(".composer-reply")).toContainText("Absolutely");await expect(page.locator(".composer-reply")).toContainText("yourself");
+ await page.getByRole("button",{name:"Send message",exact:true}).click();await expect.poll(()=>calls.some(c=>c.name==="messages"&&c.body.reply_to===messages[1].id&&c.body.content==="Yes please")).toBe(true);
+});
+test("vertical, cancelled and short drags do not select a reply or open a menu",async({page},info)=>{
+ await mock(page);await openChat(page);const bubble=page.locator(".message-row").first().locator(".bubble"),mobile=info.project.name==="mobile";
+ await dragChat(page,bubble,mobile,8,58);await dragChat(page,bubble,mobile,40);
+ await bubble.dispatchEvent("pointerdown",{pointerId:99,clientX:30,clientY:30,isPrimary:true,button:0});await bubble.dispatchEvent("pointercancel",{pointerId:99});
+ await expect(page.locator(".composer-reply")).toHaveCount(0);await expect(page.getByRole("dialog",{name:"Message",exact:true})).toHaveCount(0);
+ expect(await bubble.evaluate(node=>node.style.transform)).toBe("");
+});
+test("one-view pixels disappear on the next touch and the photo cannot be reopened",async({page})=>{
+ await mock(page,true);let opens=0;await page.route("**/functions/v1/open-instant",route=>{opens++;return route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64")});});
+ await openChat(page);await page.locator(".instant-card").first().click();const viewer=page.getByRole("dialog",{name:"Instant",exact:true});await expect.poll(()=>viewer.locator("canvas").evaluate((node:HTMLCanvasElement)=>node.width)).toBe(1);
+ await viewer.locator("canvas").evaluate(node=>Object.assign(window,{touchedPhoto:node}));await viewer.locator("canvas").click();await expect(viewer).toHaveCount(0);await expect(page.locator(".instant-card").first()).toBeDisabled();
+ expect(await page.evaluate(()=>{const node=(window as unknown as {touchedPhoto:HTMLCanvasElement}).touchedPhoto;return[node.width,node.height];})).toEqual([0,0]);expect(opens).toBe(1);
+});
+test("exposed screenshot keys close an instant while opted-in replay photos retain their save control",async({page})=>{
+ await mock(page,true);await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64")}));
+ await openChat(page);await page.locator(".instant-card").first().click();await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toBeVisible();await page.keyboard.press("PrintScreen");await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toHaveCount(0);
+ await page.locator(".instant-card").nth(1).click();const replay=page.getByRole("dialog",{name:"Replayable photo",exact:true});await expect(replay.getByRole("button",{name:"Save photo",exact:true})).toBeVisible();await replay.locator("canvas").click();await expect(replay).toBeVisible();await replay.getByRole("button",{name:"Close",exact:true}).click();
+});
+test("couple mode gives a romantic accent and a date picker inside Play",async({page},info)=>{
+ const calls=await mock(page,false,true,true);await openChat(page);await expect(page.locator(".chat-thread")).toHaveClass(/romantic-chat/);
+ await page.getByRole("button",{name:"I miss you",exact:true}).click();await expect(page.locator(".affection-caption")).toContainText("I miss you");
+ if(info.project.name==="mobile")console.log("ROMANTIC_MOBILE "+(await page.screenshot({type:"jpeg",quality:80})).toString("base64"));
+ await page.locator(".chat-shortcuts").getByRole("button",{name:"Play",exact:true}).click();await page.getByRole("button",{name:"Pick our date",exact:true}).click();await expect.poll(()=>calls.some(c=>c.name==="messages"&&String(c.body.content).startsWith("💌 "))).toBe(true);
+});
+async function pushDevice(page:Page){
+ await page.addInitScript(()=>{
+  let permission="default",subscription:Record<string,unknown>|null=null;const stats={requests:0,subscribed:0,unsubscribed:0};Object.assign(window,{pushStats:stats});
+  const reg={active:{},getNotifications:async()=>[],pushManager:{getSubscription:async()=>subscription,subscribe:async(options:{applicationServerKey:Uint8Array})=>{stats.subscribed++;const record={endpoint:"https://fcm.googleapis.com/fcm/send/test-device",options:{applicationServerKey:options.applicationServerKey.buffer},toJSON:()=>({keys:{p256dh:"B"+"A".repeat(86),auth:"A".repeat(22)}}),unsubscribe:async()=>{stats.unsubscribed++;subscription=null;return true;}};subscription=record;return record;}}};
+  Object.defineProperty(window,"Notification",{configurable:true,value:{get permission(){return permission;},requestPermission:async()=>{stats.requests++;permission="granted";return permission;}}});Object.defineProperty(window,"PushManager",{configurable:true,value:function(){}});
+  Object.defineProperty(navigator,"serviceWorker",{configurable:true,value:{ready:Promise.resolve(reg),getRegistration:async()=>reg,register:async()=>reg,addEventListener:()=>{},removeEventListener:()=>{}}});
+ });
+}
+test("push opt-in registers one device and disabling removes it without another permission prompt",async({page})=>{
+ await pushDevice(page);const calls=await mock(page);expect(await page.evaluate(()=>(window as unknown as {pushStats:{requests:number}}).pushStats.requests)).toBe(0);
+ await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Notifications",exact:true}).click();const toggle=page.getByRole("switch",{name:"Message alerts",exact:true});await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","true");
+ expect(calls.find(c=>c.name==="register_push_subscription")?.body).toEqual({p_endpoint:"https://fcm.googleapis.com/fcm/send/test-device",p_p256dh:"B"+"A".repeat(86),p_auth:"A".repeat(22)});
+ await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","false");await expect.poll(()=>calls.filter(c=>c.name==="unregister_push_subscription").length).toBe(1);
+ expect(await page.evaluate(()=>(window as unknown as {pushStats:unknown}).pushStats)).toEqual({requests:1,subscribed:1,unsubscribed:1});
+});
+test("a failed push registration rolls back the subscription and keeps the chat usable",async({page})=>{
+ await pushDevice(page);await mock(page);await page.route("**/rest/v1/rpc/register_push_subscription",route=>route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({message:"Connection lost. Try again."})}));
+ await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts",exact:true}).click();await expect(page.getByRole("dialog",{name:"Notifications",exact:true}).getByRole("alert")).toBeVisible();await expect(page.getByRole("switch",{name:"Message alerts",exact:true})).toHaveAttribute("aria-checked","false");
+ expect(await page.evaluate(()=>(window as unknown as {pushStats:{unsubscribed:number}}).pushStats.unsubscribed)).toBe(1);
+ await page.getByRole("dialog",{name:"Notifications",exact:true}).getByRole("button",{name:"Close",exact:true}).click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Close",exact:true}).click();await openChat(page);await page.getByRole("textbox",{name:"Message",exact:true}).fill("Still works");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect(page.locator(".message-text").filter({hasText:"Still works"})).toBeVisible();
 });
