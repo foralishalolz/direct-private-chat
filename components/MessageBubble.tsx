@@ -16,15 +16,15 @@ export function PrivateMedia({path,bucket="chat-media",kind="image",sticker=fals
  return <div ref={ref} className={"private-media "+(sticker?"sticker":"")}>{failed?<span className="media-gone"><ImageIcon size={20}/></span>:!url?<div className="media-loading"><Spinner/></div>:kind==="video"?<video src={url} controls playsInline preload="none" onError={()=>setFailed(true)}/>:kind==="audio"?<audio src={url} controls preload="none" onError={()=>setFailed(true)}/>:<img src={url} alt="Photo" loading="lazy" decoding="async" draggable={false} onContextMenu={e=>e.preventDefault()} onError={()=>setFailed(true)}/>}</div>;
 }
 function InstantPhoto({blob,replay}:{blob:Blob;replay:boolean}){
- const canvas=useRef<HTMLCanvasElement>(null),[error,setError]=useState("");
+ const canvas=useRef<HTMLCanvasElement>(null),[error,setError]=useState(""),[ready,setReady]=useState(false);
  useEffect(()=>{let active=true;const element=canvas.current;
   const wipe=()=>{active=false;if(element){element.getContext("2d")?.clearRect(0,0,element.width,element.height);element.width=0;element.height=0;}};
   const hide=()=>{if(document.visibilityState!=="visible")wipe();};
   document.addEventListener("visibilitychange",hide);window.addEventListener("pagehide",wipe);window.addEventListener("blur",wipe);
-  void createImageBitmap(blob).then(bitmap=>{try{if(!active||!element||document.visibilityState!=="visible")return;const ctx=element.getContext("2d");if(!ctx)throw new Error("Photo unavailable.");element.width=bitmap.width;element.height=bitmap.height;ctx.drawImage(bitmap,0,0);}finally{bitmap.close();}}).catch(e=>{if(active)setError(errorText(e));});
+  void createImageBitmap(blob).then(bitmap=>{try{if(!active||!element||document.visibilityState!=="visible")return;const ctx=element.getContext("2d");if(!ctx)throw new Error("Photo unavailable.");element.width=bitmap.width;element.height=bitmap.height;ctx.drawImage(bitmap,0,0);setReady(true);}finally{bitmap.close();}}).catch(e=>{if(active)setError(errorText(e));});
   return()=>{wipe();document.removeEventListener("visibilitychange",hide);window.removeEventListener("pagehide",wipe);window.removeEventListener("blur",wipe);};
  },[blob]);
- return <div className="instant-surface" onContextMenu={e=>e.preventDefault()} onCopy={e=>e.preventDefault()} onDragStart={e=>e.preventDefault()}><canvas ref={canvas} role="img" aria-label={replay?"Replayable photo":"One-view photo"} className="instant-photo"/><ErrorNote text={error}/></div>;
+ return <div className="instant-surface" onContextMenu={e=>e.preventDefault()} onCopy={e=>e.preventDefault()} onDragStart={e=>e.preventDefault()}>{!ready&&!error&&<div className="center pad"><Spinner/></div>}<canvas width={0} height={0} ref={canvas} role="img" aria-label={replay?"Replayable photo":"One-view photo"} className="instant-photo"/><ErrorNote text={error}/></div>;
 }
 function Instant({message,own,isPro}:{message:Message;own:boolean;isPro:boolean}){
  const [blob,setBlob]=useState<Blob|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[viewed,setViewed]=useState(message.instant_viewed);

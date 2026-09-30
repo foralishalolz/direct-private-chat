@@ -81,7 +81,7 @@ test("dice and coin shortcuts submit a shared server action",async({page})=>{
 });
 test("strict instants stay one-view for Pro while consented photos expose replay and save",async({page})=>{
  await mock(page,true);let opens=0;
- await page.route("**/functions/v1/open-instant",route=>{opens++;return route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")});});
+ await page.route("**/functions/v1/open-instant",route=>{opens++;return route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64")});});
  await openChat(page);const strict=page.locator(".instant-card").first();await strict.click();await expect(page.getByRole("img",{name:"One-view photo"})).toBeVisible();await expect(page.getByRole("button",{name:"Save photo"})).toHaveCount(0);await page.getByRole("button",{name:"Close",exact:true}).click();await expect(strict).toBeDisabled();
  const replay=page.locator(".instant-card").last();await replay.click();await expect(page.getByRole("button",{name:"Save photo"})).toBeVisible();await page.getByRole("button",{name:"Close",exact:true}).click();await replay.click();await expect(page.getByRole("img",{name:"Replayable photo"})).toBeVisible();expect(opens).toBe(3);
 });
@@ -175,7 +175,7 @@ test("camera starts only when requested and stops on close with flash available"
 });
 
 test("instant viewer has no image link and wipes canvas pixels on close",async({page})=>{
- await mock(page,true);await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")}));await openChat(page);await page.locator(".instant-card").first().click();const viewer=page.getByRole("dialog",{name:"Instant",exact:true});await expect(viewer.locator("canvas")).toBeVisible();await expect(viewer.locator("img,a")).toHaveCount(0);await viewer.locator("canvas").evaluate(node=>Object.assign(window,{closedInstantCanvas:node}));await viewer.getByRole("button",{name:"Close",exact:true}).click();expect(await page.evaluate(()=>{const node=(window as unknown as {closedInstantCanvas:HTMLCanvasElement}).closedInstantCanvas;return [node.width,node.height];})).toEqual([0,0]);
+ await mock(page,true);await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64")}));await openChat(page);await page.locator(".instant-card").first().click();const viewer=page.getByRole("dialog",{name:"Instant",exact:true});await expect(viewer.locator("canvas")).toBeVisible();await expect(viewer.locator("img,a")).toHaveCount(0);await viewer.locator("canvas").evaluate(node=>Object.assign(window,{closedInstantCanvas:node}));await viewer.getByRole("button",{name:"Close",exact:true}).click();expect(await page.evaluate(()=>{const node=(window as unknown as {closedInstantCanvas:HTMLCanvasElement}).closedInstantCanvas;return [node.width,node.height];})).toEqual([0,0]);
 });
 
 test("composer preserves new text while an earlier send waits for local storage",async({page})=>{
@@ -224,6 +224,7 @@ test("swipe reveals private chat actions without opening a conversation",async({
  await expect(page.getByRole("button",{name:"Delete chat with Alex",exact:true})).toHaveCount(0);
  await dragChat(page,alexRow,info.project.name==="mobile",-130);
  await expect(page.getByRole("button",{name:"Archive chat with Alex",exact:true})).toBeVisible();await expect(alexRow).toHaveAttribute("aria-expanded","true");
+ if(process.env.CI)console.log("SWIPE_"+info.project.name+" "+(await page.screenshot({type:"jpeg",quality:70})).toString("base64"));
  await expect(page.locator(".thread-person")).toHaveCount(0);
  await dragChat(page,page.locator(".conversation").filter({hasText:"Weekend crew"}),info.project.name==="mobile",-130);
  await expect(page.locator(".conversation-item.actions-open")).toHaveCount(1);await expect(alexRow).toHaveAttribute("aria-expanded","false");
@@ -252,12 +253,12 @@ test("vertical gestures keep swipe actions hidden and never open a chat",async({
 test("failed archive leaves the row and its history untouched",async({page})=>{
  await mock(page);await page.route("**/rest/v1/rpc/set_chat_archived",route=>route.fulfill({status:403,contentType:"application/json",body:JSON.stringify({message:"Conversation unavailable."})}));
  const row=page.locator(".conversation").filter({hasText:"Alex"});await row.focus();await page.keyboard.press("ArrowLeft");await page.getByRole("button",{name:"Archive chat with Alex",exact:true}).click();
- await expect(page.getByRole("alert")).toHaveText("Conversation unavailable.");await expect(page.locator(".conversation")).toHaveCount(2);await expect(row).toHaveAttribute("aria-expanded","true");
+ await expect(page.locator(".conversation-list").getByRole("alert")).toHaveText("Conversation unavailable.");await expect(page.locator(".conversation")).toHaveCount(2);await expect(row).toHaveAttribute("aria-expanded","true");
  await page.keyboard.press("Escape");await expect(row).toHaveAttribute("aria-expanded","false");await row.click();await expect(page.locator(".message-text")).toHaveCount(2);
 });
 
 test("received stickers have a visible save action and enter the local square collection",async({page})=>{
- await mock(page);const path=other+"/"+cid+"/received.png",png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64");
+ await mock(page);const path=other+"/"+cid+"/received.png",png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64");
  await page.route("**/rest/v1/messages?**",route=>route.request().method()==="GET"?route.fulfill({status:200,contentType:"application/json",body:JSON.stringify([...messages,{...messages[0],id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",content:"",kind:"sticker",media_kind:"image",media_url:path}])}):route.fallback());
  await page.route("**/storage/v1/**",route=>route.request().method()==="POST"?route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({signedURL:"/object/sign/chat-media/"+path+"?token=test"})}):route.fulfill({status:200,contentType:"image/png",body:png}));
  await openChat(page);const save=page.getByRole("button",{name:"Save sticker",exact:true});await expect(save).toBeVisible();await save.click();await expect(page.getByRole("button",{name:"Sticker saved",exact:true})).toBeDisabled();
@@ -266,7 +267,7 @@ test("received stickers have a visible save action and enter the local square co
 });
 
 test("one-view pixels clear synchronously on backgrounding and cannot reopen",async({page})=>{
- await mock(page,true);let opens=0;await page.route("**/functions/v1/open-instant",route=>{opens++;return route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")});});
+ await mock(page,true);let opens=0;await page.route("**/functions/v1/open-instant",route=>{opens++;return route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64")});});
  await openChat(page);await page.locator(".instant-card").first().click();await expect.poll(()=>page.getByRole("img",{name:"One-view photo"}).evaluate((node:HTMLCanvasElement)=>node.width)).toBe(1);
  expect(await page.evaluate(()=>{const canvas=document.querySelector<HTMLCanvasElement>(".instant-photo")!;Object.defineProperty(document,"visibilityState",{configurable:true,value:"hidden"});document.dispatchEvent(new Event("visibilitychange"));return[canvas.width,canvas.height];})).toEqual([0,0]);
  await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toHaveCount(0);await expect(page.locator(".instant-card").first()).toBeDisabled();expect(opens).toBe(1);
@@ -274,8 +275,15 @@ test("one-view pixels clear synchronously on backgrounding and cannot reopen",as
 
 test("a delayed one-view decode never redraws pixels after focus loss",async({page})=>{
  await page.addInitScript(()=>{const original=createImageBitmap;let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});Object.assign(window,{releasePhoto:release});Object.defineProperty(window,"createImageBitmap",{configurable:true,value:async(...args:Parameters<typeof createImageBitmap>)=>{const bitmap=await original(...args);await gate;Object.assign(window,{dismissedBitmap:bitmap});return bitmap;}});});
- await mock(page,true);await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")}));await openChat(page);await page.locator(".instant-card").first().click();
+ await mock(page,true);await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==","base64")}));await openChat(page);await page.locator(".instant-card").first().click();
  await page.getByRole("img",{name:"One-view photo"}).evaluate(node=>Object.assign(window,{dismissedCanvas:node}));await page.evaluate(()=>window.dispatchEvent(new Event("blur")));await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toHaveCount(0);
  await page.evaluate(()=>(window as unknown as {releasePhoto:()=>void}).releasePhoto());await expect.poll(()=>page.evaluate(()=>(window as unknown as {dismissedBitmap?:ImageBitmap}).dismissedBitmap?.width)).toBe(0);
  expect(await page.evaluate(()=>{const canvas=(window as unknown as {dismissedCanvas:HTMLCanvasElement}).dismissedCanvas;return[canvas.width,canvas.height];})).toEqual([0,0]);
+});
+
+test("damaged one-view bytes show an error without blank pixels or a crash",async({page})=>{
+ const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));await mock(page,true);
+ await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")}));
+ await openChat(page);await page.locator(".instant-card").first().click();const viewer=page.getByRole("dialog",{name:"Instant",exact:true});await expect(viewer.getByRole("alert")).toBeVisible();expect(await viewer.locator("canvas").evaluate((node:HTMLCanvasElement)=>[node.width,node.height])).toEqual([0,0]);
+ await viewer.getByRole("button",{name:"Close",exact:true}).click();await expect(page.locator(".instant-card").first()).toBeDisabled();expect(errors).toEqual([]);
 });
