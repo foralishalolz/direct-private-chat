@@ -2,7 +2,7 @@ name: Published website check
 on:
   push:
     branches: [bitchat-production]
-    paths: [.github/workflows/published.yml, scripts/published-check.mjs]
+    paths: [.github/workflows/published.yml, scripts/published-check.mjs, public/release.json]
   workflow_dispatch:
 permissions:
   contents: read

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect, type Page, type Locator } from "@playwright/test";
 const uid="11111111-1111-4111-8111-111111111111",other="22222222-2222-4222-8222-222222222222",third="55555555-5555-4555-8555-555555555555";
 const cid="33333333-3333-4333-8333-333333333333",gid="66666666-6666-4666-8666-666666666666";
 const stamp=new Date(Date.now()-60000).toISOString(),code="abcdef0123456789abcdef0123456789";
@@ -10,7 +10,7 @@ const group={...direct,id:gid,kind:"group",title:"Weekend crew",member_a:null,me
 const messages=[{id:"77777777-7777-4777-8777-777777777777",conversation_id:cid,user_id:other,content:"Coffee after work? ☕",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:new Date(Date.now()-120000).toISOString()},{id:"88888888-8888-4888-8888-888888888888",conversation_id:cid,user_id:uid,content:"Absolutely. Same place, 6:30?",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:stamp}];
 async function mock(page:Page,instants=false,pro=true){
  const me={...self,is_pro:pro};let rows=messages.map(m=>({...m}));let reactions:{message_id:string;user_id:string;emoji:string}[]=[];
- const calls:{name:string;body:Record<string,unknown>}[]=[];let hidden=false,left=false;let privacy={revision:0,share_online:true,share_last_active:true,share_typing:true,share_receipts:true};
+ const calls:{name:string;body:Record<string,unknown>}[]=[];let hidden=false,left=false;const archived=new Set<string>();let privacy={revision:0,share_online:true,share_last_active:true,share_typing:true,share_receipts:true};
  await page.addInitScript(({uid})=>{const token=btoa(JSON.stringify({alg:"HS256"}))+"."+btoa(JSON.stringify({sub:uid,exp:Math.floor(Date.now()/1000)+3600,aud:"authenticated",role:"authenticated"}))+".test";localStorage.setItem("sb-llweydgvtpwgnslvgnqm-auth-token",JSON.stringify({access_token:token,refresh_token:"test",expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,token_type:"bearer",user:{id:uid,aud:"authenticated",role:"authenticated",app_metadata:{},user_metadata:{}}}));},{uid});
  await page.route("**/rest/v1/**",async route=>{
   const url=new URL(route.request().url()),name=url.pathname.split("/").at(-1)!;const bodyIn=route.request().postDataJSON()??{};let body:unknown=[];
@@ -19,7 +19,8 @@ async function mock(page:Page,instants=false,pro=true){
   if(name==="set_privacy_option"){privacy={...privacy,[String(bodyIn.p_setting)]:!!bodyIn.p_enabled,revision:privacy.revision+1};body=privacy;}
   if(name==="member_activity")body=[{user_id:other,online:false,last_active:new Date(Date.now()-7260000).toISOString()}];
   if(name==="profiles")body=url.searchParams.get("id")?.startsWith("in.")?[me,alex,maya]:me;
-  if(name==="inbox_page")body=[...(!hidden?[direct]:[]),...(!left?[group]:[])];
+  if(name==="inbox_page")body=[...(!hidden?[direct]:[]),...(!left?[group]:[])].map(c=>({...c,archived:archived.has(c.id)}));
+  if(name==="set_chat_archived"){const id=String(bodyIn.p_conversation);if(bodyIn.p_archived)archived.add(id);else archived.delete(id);body=!!bodyIn.p_archived;}
   if(name==="conversations")body=url.searchParams.get("id")?.includes(gid)?group:direct;
   if(name==="conversation_members")body=[self,alex,maya].map(p=>({user_id:p.id,last_read_at:stamp}));
   if(name==="messages"&&route.request().method()==="PATCH"){const id=url.searchParams.get("id")?.slice(3);rows=rows.map(m=>m.id===id?{...m,content:String(bodyIn.content)}:m);body=rows.find(m=>m.id===id);}
@@ -42,6 +43,17 @@ async function mock(page:Page,instants=false,pro=true){
  return calls;
 }
 async function openChat(page:Page,isGroup=false){await page.locator(".conversation").filter({hasText:isGroup?"Weekend crew":"Alex"}).click();await expect(page.locator(".message-text").filter({hasText:"Absolutely"})).toBeVisible();}
+
+async function dragChat(page:Page, row:Locator, mobile:boolean, dx:number, dy=0){
+ const box=await row.boundingBox();if(!box)throw new Error("Chat row unavailable.");
+ const x=box.x+Math.min(box.width-15,220),y=box.y+box.height/2;
+ if(mobile){const session=await page.context().newCDPSession(page);
+  try{await session.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x,y,id:1}]});
+   for(let i=1;i<=6;i++)await session.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:x+dx*i/6,y:y+dy*i/6,id:1}]});
+   await session.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});
+  }finally{await session.detach();}
+ }else{await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+dx,y+dy,{steps:12});await page.mouse.up();}
+}
 
 test("read receipts show member status without an edited label in chat",async({page})=>{
  await mock(page);await openChat(page);await page.getByRole("button",{name:"Read receipts",exact:true}).click();
@@ -125,8 +137,8 @@ test("chat history loads while the realtime handshake is still pending",async({p
 test("inbox shortcuts open group creation, invite entry and confirmed deletion",async({page})=>{
  const calls=await mock(page);await page.locator(".inbox-group-actions").getByRole("button",{name:"New group",exact:true}).click();await expect(page.getByRole("textbox",{name:"Group name"})).toBeVisible();await page.getByRole("button",{name:"Close",exact:true}).click();
  await page.locator(".inbox-group-actions").getByRole("button",{name:"Join group",exact:true}).click();await expect(page.getByRole("textbox",{name:"Invite code"})).toBeVisible();await page.getByRole("button",{name:"Close",exact:true}).click();
- await page.getByRole("button",{name:"Delete chat with Alex",exact:true}).click();await page.getByRole("button",{name:"Cancel",exact:true}).click();expect(calls.some(c=>c.name==="clear_chat")).toBe(false);
- await page.getByRole("button",{name:"Delete chat with Alex",exact:true}).click();await page.getByRole("button",{name:"Delete for me",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(1);
+ await page.locator(".conversation").filter({hasText:"Alex"}).focus();await page.keyboard.press("ArrowLeft");await page.getByRole("button",{name:"Delete chat with Alex",exact:true}).click();await page.getByRole("button",{name:"Cancel",exact:true}).click();expect(calls.some(c=>c.name==="clear_chat")).toBe(false);
+ await page.locator(".conversation").filter({hasText:"Alex"}).focus();await page.keyboard.press("ArrowLeft");await page.getByRole("button",{name:"Delete chat with Alex",exact:true}).click();await page.getByRole("button",{name:"Delete for me",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(1);
 });
 
 test("group leave is reachable directly from the chat menu",async({page})=>{
@@ -205,4 +217,65 @@ test("backgrounding releases the camera and resuming requires a fresh tap",async
 test("emoji insertion respects the caret and never splits a draft at its length limit",async({page})=>{
  await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Hello there");await input.evaluate((node:HTMLTextAreaElement)=>node.setSelectionRange(6,6));await page.getByRole("button",{name:"Emoji",exact:true}).click();await page.locator(".emoji-picker").getByRole("button",{name:"🫶",exact:true}).click();await expect(input).toHaveValue("Hello 🫶there");
  await input.fill("x".repeat(3999));await page.locator(".emoji-picker").getByRole("button",{name:"🫶",exact:true}).click();await expect(input).toHaveValue("x".repeat(3999));
+});
+
+test("swipe reveals private chat actions without opening a conversation",async({page},info)=>{
+ const calls=await mock(page);const alexRow=page.locator(".conversation").filter({hasText:"Alex"});
+ await expect(page.getByRole("button",{name:"Delete chat with Alex",exact:true})).toHaveCount(0);
+ await dragChat(page,alexRow,info.project.name==="mobile",-130);
+ await expect(page.getByRole("button",{name:"Archive chat with Alex",exact:true})).toBeVisible();await expect(alexRow).toHaveAttribute("aria-expanded","true");
+ await expect(page.locator(".thread-person")).toHaveCount(0);
+ await dragChat(page,page.locator(".conversation").filter({hasText:"Weekend crew"}),info.project.name==="mobile",-130);
+ await expect(page.locator(".conversation-item.actions-open")).toHaveCount(1);await expect(alexRow).toHaveAttribute("aria-expanded","false");
+ await page.locator(".conversation").filter({hasText:"Weekend crew"}).focus();await page.keyboard.press("Escape");
+ await dragChat(page,alexRow,info.project.name==="mobile",-130);await page.getByRole("button",{name:"Delete chat with Alex",exact:true}).click();
+ await page.getByRole("button",{name:"Cancel",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(2);expect(calls.some(c=>c.name==="clear_chat")).toBe(false);
+});
+
+test("archive survives reload and unarchive preserves messages",async({page},info)=>{
+ const calls=await mock(page);await dragChat(page,page.locator(".conversation").filter({hasText:"Alex"}),info.project.name==="mobile",-130);
+ await page.getByRole("button",{name:"Archive chat with Alex",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(1);
+ await expect(page.locator(".recent-people").getByRole("button",{name:"Open chat with Alex"})).toHaveCount(0);
+ expect(calls.find(c=>c.name==="set_chat_archived")?.body).toEqual({p_conversation:cid,p_archived:true});expect(calls.some(c=>c.name==="clear_chat")).toBe(false);
+ await page.reload();await expect(page.locator(".conversation")).toHaveCount(1);await page.getByRole("button",{name:"Archived",exact:true}).click();
+ await expect(page.locator(".conversation").filter({hasText:"Alex"})).toBeVisible();await dragChat(page,page.locator(".conversation").filter({hasText:"Alex"}),info.project.name==="mobile",-130);
+ await page.getByRole("button",{name:"Unarchive chat with Alex",exact:true}).click();await expect(page.getByText("No archived chats",{exact:true})).toBeVisible();
+ await page.getByRole("button",{name:"All",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(2);await openChat(page);await expect(page.locator(".message-text")).toHaveCount(2);
+ expect(calls.filter(c=>c.name==="set_chat_archived").map(c=>c.body.p_archived)).toEqual([true,false]);
+});
+
+test("vertical gestures keep swipe actions hidden and never open a chat",async({page},info)=>{
+ await mock(page);const row=page.locator(".conversation").filter({hasText:"Alex"});await dragChat(page,row,info.project.name==="mobile",8,58);
+ await expect(row).toHaveAttribute("aria-expanded","false");await expect(page.locator(".conversation-item.actions-open")).toHaveCount(0);await expect(page.locator(".thread-person")).toHaveCount(0);
+});
+
+test("failed archive leaves the row and its history untouched",async({page})=>{
+ await mock(page);await page.route("**/rest/v1/rpc/set_chat_archived",route=>route.fulfill({status:403,contentType:"application/json",body:JSON.stringify({message:"Conversation unavailable."})}));
+ const row=page.locator(".conversation").filter({hasText:"Alex"});await row.focus();await page.keyboard.press("ArrowLeft");await page.getByRole("button",{name:"Archive chat with Alex",exact:true}).click();
+ await expect(page.getByRole("alert")).toHaveText("Conversation unavailable.");await expect(page.locator(".conversation")).toHaveCount(2);await expect(row).toHaveAttribute("aria-expanded","true");
+ await page.keyboard.press("Escape");await expect(row).toHaveAttribute("aria-expanded","false");await row.click();await expect(page.locator(".message-text")).toHaveCount(2);
+});
+
+test("received stickers have a visible save action and enter the local square collection",async({page})=>{
+ await mock(page);const path=other+"/"+cid+"/received.png",png=Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64");
+ await page.route("**/rest/v1/messages?**",route=>route.request().method()==="GET"?route.fulfill({status:200,contentType:"application/json",body:JSON.stringify([...messages,{...messages[0],id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",content:"",kind:"sticker",media_kind:"image",media_url:path}])}):route.fallback());
+ await page.route("**/storage/v1/**",route=>route.request().method()==="POST"?route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({signedURL:"/object/sign/chat-media/"+path+"?token=test"})}):route.fulfill({status:200,contentType:"image/png",body:png}));
+ await openChat(page);const save=page.getByRole("button",{name:"Save sticker",exact:true});await expect(save).toBeVisible();await save.click();await expect(page.getByRole("button",{name:"Sticker saved",exact:true})).toBeDisabled();
+ await page.getByRole("button",{name:"Attachments"}).click();await page.getByRole("button",{name:"Sticker",exact:true}).click();const tile=page.getByRole("button",{name:"Send saved sticker",exact:true});await expect(tile).toHaveCount(1);
+ await expect.poll(()=>tile.locator("img").evaluate((img:HTMLImageElement)=>[img.naturalWidth,img.naturalHeight])).toEqual([512,512]);
+});
+
+test("one-view pixels clear synchronously on backgrounding and cannot reopen",async({page})=>{
+ await mock(page,true);let opens=0;await page.route("**/functions/v1/open-instant",route=>{opens++;return route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")});});
+ await openChat(page);await page.locator(".instant-card").first().click();await expect.poll(()=>page.getByRole("img",{name:"One-view photo"}).evaluate((node:HTMLCanvasElement)=>node.width)).toBe(1);
+ expect(await page.evaluate(()=>{const canvas=document.querySelector<HTMLCanvasElement>(".instant-photo")!;Object.defineProperty(document,"visibilityState",{configurable:true,value:"hidden"});document.dispatchEvent(new Event("visibilitychange"));return[canvas.width,canvas.height];})).toEqual([0,0]);
+ await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toHaveCount(0);await expect(page.locator(".instant-card").first()).toBeDisabled();expect(opens).toBe(1);
+});
+
+test("a delayed one-view decode never redraws pixels after focus loss",async({page})=>{
+ await page.addInitScript(()=>{const original=createImageBitmap;let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});Object.assign(window,{releasePhoto:release});Object.defineProperty(window,"createImageBitmap",{configurable:true,value:async(...args:Parameters<typeof createImageBitmap>)=>{const bitmap=await original(...args);await gate;Object.assign(window,{dismissedBitmap:bitmap});return bitmap;}});});
+ await mock(page,true);await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")}));await openChat(page);await page.locator(".instant-card").first().click();
+ await page.getByRole("img",{name:"One-view photo"}).evaluate(node=>Object.assign(window,{dismissedCanvas:node}));await page.evaluate(()=>window.dispatchEvent(new Event("blur")));await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toHaveCount(0);
+ await page.evaluate(()=>(window as unknown as {releasePhoto:()=>void}).releasePhoto());await expect.poll(()=>page.evaluate(()=>(window as unknown as {dismissedBitmap?:ImageBitmap}).dismissedBitmap?.width)).toBe(0);
+ expect(await page.evaluate(()=>{const canvas=(window as unknown as {dismissedCanvas:HTMLCanvasElement}).dismissedCanvas;return[canvas.width,canvas.height];})).toEqual([0,0]);
 });

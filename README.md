@@ -1,4 +1,4 @@
-# BitchAt 2.5
+# BitchAt 2.6
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -59,6 +59,12 @@ The 2.4 release passed 79 live assertions on 2026-09-29, including regular-user 
 The 2.2 live Supabase check passed 55 assertions, including two real browser sessions exchanging messages, reconnecting an offline outbox, actual Storage uploads, one-view consumption, server-enforced capsules, Pro authorization, and privacy boundaries. The test run also covered individual group instant views, replay consent, read-through boundaries, group invite revocation, ownership transfer, and per-user chat clearing. Test accounts and uploaded test media are removed after verification; existing chats are retained. The live workflow is manual because it creates disposable accounts in the connected project. Its QA_CLEANUP output identifies the exact test accounts and objects for an administrator to remove; normal CI uses isolated mocked data.
 
 The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the production build, and the dependency audit (zero known vulnerabilities).
+
+## Version 2.6
+
+Inbox rows reveal Archive and Delete when swiped left. Right-click or focus a row and press Left Arrow for the same actions; Escape or Right Arrow closes them. Vertical movement keeps native list scrolling and cannot delete a chat. Only one row is revealed at a time. Deletion still requires confirmation and clears only the caller's history. The Archived tab exposes saved conversations; swiping one reveals Unarchive. Archive state is stored per authenticated account, stays archived when new messages arrive, and synchronizes across devices. Archiving preserves all text, queued sends, and the other participants' inboxes. Failed archive requests leave the row intact. Existing media retention and privacy rules are unchanged.
+
+Sticker previews and received stickers now have a visible Save action. Saved collections remain private to the account on that browser. One-view canvas pixels are cleared synchronously on focus loss, page hiding, and close; delayed decoding cannot redraw a dismissed photo. Print layouts omit the viewer. These measures do not block operating-system screenshots or recipient-controlled capture. Camera and microphone use always require a visible, intentional action. Pro cannot override privacy, blocking, or strict one-view permissions.
 
 ## Version 2.5
 
