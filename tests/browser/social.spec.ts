@@ -287,3 +287,13 @@ test("damaged one-view bytes show an error without blank pixels or a crash",asyn
  await openChat(page);await page.locator(".instant-card").first().click();const viewer=page.getByRole("dialog",{name:"Instant",exact:true});await expect(viewer.getByRole("alert")).toBeVisible();expect(await viewer.locator("canvas").evaluate((node:HTMLCanvasElement)=>[node.width,node.height])).toEqual([0,0]);
  await viewer.getByRole("button",{name:"Close",exact:true}).click();await expect(page.locator(".instant-card").first()).toBeDisabled();expect(errors).toEqual([]);
 });
+
+test("old inbox responses cannot undo archiving and newer device changes still apply",async({page})=>{
+ await mock(page);let reads=0,releaseOld!:()=>void,releaseNew!:()=>void;
+ const old=new Promise<void>(resolve=>{releaseOld=resolve;}),fresh=new Promise<void>(resolve=>{releaseNew=resolve;});
+ await page.route("**/rest/v1/rpc/inbox_page",async route=>{reads++;if(reads===1)await old;else if(reads===2)await fresh;await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify([{...direct,archived:false},group])});});
+ await page.evaluate(()=>window.dispatchEvent(new Event("online")));await expect.poll(()=>reads).toBe(1);
+ const row=page.locator(".conversation").filter({hasText:"Alex"});await row.focus();await page.keyboard.press("ArrowLeft");await page.getByRole("button",{name:"Archive chat with Alex",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(1);
+ releaseOld();await expect.poll(()=>reads).toBe(2);await expect(page.locator(".conversation")).toHaveCount(1);
+ releaseNew();await expect(page.locator(".conversation")).toHaveCount(2);await expect(page.locator(".conversation").filter({hasText:"Alex"})).toBeVisible();
+});

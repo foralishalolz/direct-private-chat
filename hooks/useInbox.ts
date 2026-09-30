@@ -8,17 +8,17 @@ export function useInbox(userId:string,onMessage?:(message:Partial<Message>)=>vo
  const notify=useRef(onMessage);notify.current=onMessage;
  const [items,setItems]=useState<Conversation[]>([]),[loading,setLoading]=useState(true),[more,setMore]=useState(false),[error,setError]=useState("");
  const alive=useRef(true),flight=useRef(false),queued=useRef(false),last=useRef<Conversation|undefined>(undefined),total=useRef(60);
- const latest=useRef<Conversation[]>([]),archiveOverrides=useRef(new Map<string,boolean>()),archiveLocks=useRef(new Set<string>());
+ const latest=useRef<Conversation[]>([]),archiveRevision=useRef(0),archiveOverrides=useRef(new Map<string,{value:boolean;revision:number}>()),archiveLocks=useRef(new Set<string>());
  const commit=useCallback((rows:Conversation[])=>{latest.current=rows;setItems(rows);void cache(userId,"inbox",rows);},[userId]);
- const normalize=useCallback((rows:Conversation[])=>rows.map(c=>{
- const override=archiveOverrides.current.get(c.id);if(override!==undefined&&!!c.archived===override)archiveOverrides.current.delete(c.id);
- return{...c,archived:override??!!c.archived,partner:c.kind==="direct"?c.members?.find(p=>p.id!==userId):undefined,unread:!!c.preview&&(!c.read_at||c.read_at<c.last_activity)};
+ const normalize=useCallback((rows:Conversation[],revision=archiveRevision.current)=>rows.map(c=>{
+ const override=archiveOverrides.current.get(c.id);if(override&&override.revision<=revision)archiveOverrides.current.delete(c.id);
+ return{...c,archived:override&&override.revision>revision?override.value:!!c.archived,partner:c.kind==="direct"?c.members?.find(p=>p.id!==userId):undefined,unread:!!c.preview&&(!c.read_at||c.read_at<c.last_activity)};
  }),[userId]);
  const refresh=useCallback(async()=>{
- if(flight.current){queued.current=true;return;}flight.current=true;
+ if(flight.current){queued.current=true;return;}flight.current=true;const revision=archiveRevision.current;
  try{const all:Conversation[]=[];let cursor:Conversation|undefined;
  do{const rows=await rpc<Conversation[]>("inbox_page",cursor?{p_before:cursor.last_activity,p_before_id:cursor.id}:{});all.push(...rows);cursor=rows.at(-1);if(rows.length<60)break;}while(all.length<total.current);
- if(alive.current){const rows=normalize(all);commit(rows);last.current=rows.at(-1);setMore(all.length>=total.current);setError("");}}
+ if(alive.current){const rows=normalize(all,revision);commit(rows);last.current=rows.at(-1);setMore(all.length>=total.current);setError("");}}
  catch(e){if(alive.current)setError(errorText(e));}finally{flight.current=false;if(alive.current){setLoading(false);if(queued.current){queued.current=false;void refresh();}}}
  },[normalize,commit]);
  useEffect(()=>{alive.current=true;let timer:ReturnType<typeof setTimeout>;let generation=0;
@@ -34,7 +34,7 @@ export function useInbox(userId:string,onMessage?:(message:Partial<Message>)=>vo
  const setArchived=useCallback(async(id:string,archived:boolean)=>{
  if(archiveLocks.current.has(id))return;archiveLocks.current.add(id);
  try{await rpc<boolean>("set_chat_archived",{p_conversation:id,p_archived:archived});
- if(alive.current){archiveOverrides.current.set(id,archived);commit(latest.current.map(c=>c.id===id?{...c,archived}:c));void refresh();}}
+ if(alive.current){archiveOverrides.current.set(id,{value:archived,revision:++archiveRevision.current});commit(latest.current.map(c=>c.id===id?{...c,archived}:c));void refresh();}}
  finally{archiveLocks.current.delete(id);}
  },[commit,refresh]);
  async function loadMore(){total.current+=60;await refresh();}

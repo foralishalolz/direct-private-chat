@@ -38,8 +38,14 @@ export default function SwipeChat({ conversation, selected, open, busy, onReveal
     const outside = (event: globalThis.PointerEvent) => {
       if (event.target instanceof Node && !root.current?.contains(event.target)) onReveal(null);
     };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !document.querySelector('[aria-modal="true"]')) {
+        event.preventDefault(); onReveal(null); track.current?.focus();
+      }
+    };
     document.addEventListener("pointerdown", outside, { passive: true });
-    return () => document.removeEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape); };
   }, [open, onReveal]);
 
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
