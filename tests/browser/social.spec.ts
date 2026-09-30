@@ -200,3 +200,9 @@ test("backgrounding releases the camera and resuming requires a fresh tap",async
  await page.evaluate(()=>{Object.defineProperty(document,"visibilityState",{configurable:true,get:()=>"visible"});document.dispatchEvent(new Event("visibilitychange"));});expect(await page.evaluate(()=>(window as unknown as {cameraStats:{starts:number}}).cameraStats.starts)).toBe(1);
  await page.getByRole("button",{name:"Resume camera"}).click();await expect(page.getByRole("button",{name:"Take and send one-view photo"})).toBeEnabled();expect(await page.evaluate(()=>(window as unknown as {cameraStats:{starts:number}}).cameraStats.starts)).toBe(2);await page.getByRole("button",{name:"Close",exact:true}).click();
 });
+
+
+test("emoji insertion respects the caret and never splits a draft at its length limit",async({page})=>{
+ await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Hello there");await input.evaluate((node:HTMLTextAreaElement)=>node.setSelectionRange(6,6));await page.getByRole("button",{name:"Emoji",exact:true}).click();await page.locator(".emoji-picker").getByRole("button",{name:"🫶",exact:true}).click();await expect(input).toHaveValue("Hello 🫶there");
+ await input.fill("x".repeat(3999));await page.locator(".emoji-picker").getByRole("button",{name:"🫶",exact:true}).click();await expect(input).toHaveValue("x".repeat(3999));
+});

@@ -33,7 +33,7 @@ export default function ChatThread({conversation:c,profile:p,onBack,onRefresh}:{
  if(anchor.current){const node=document.getElementById(anchor.current.id);if(node)el.scrollTop+=node.getBoundingClientRect().top-anchor.current.top;if(!state.older)anchor.current=null;return;}
  const last=state.messages.at(-1);if(last&&(initial.current||last.id!==previous.current)){if(initial.current||near.current||last.user_id===p.id){bottom();initial.current=false;}else setJump(true);previous.current=last.id;}
  },[state.messages,state.older,p.id,bottom]);
- useEffect(()=>{const el=scroll.current;if(!el)return;const observer=new ResizeObserver(()=>{if(near.current&&!anchor.current)el.scrollTop=el.scrollHeight;});const content=el.firstElementChild;if(content)observer.observe(content);return()=>observer.disconnect();},[]);
+ useEffect(()=>{const el=scroll.current;if(!el)return;const observer=new ResizeObserver(()=>{if(near.current&&!anchor.current)el.scrollTop=el.scrollHeight;});observer.observe(el);const content=el.firstElementChild;if(content)observer.observe(content);return()=>observer.disconnect();},[]);
  const latest=state.messages.filter(m=>!m.status).at(-1)?.id??"";
  useEffect(()=>{const author=state.messages.find(m=>m.id===latest)?.user_id;if(author)presence.clearTyping(author);},[latest,presence.clearTyping]);
  const markRead=useCallback(()=>{if(!latest||readAt.current===latest||!near.current||document.visibilityState!=="visible")return;readAt.current=latest;void rpc("mark_read_through",{p_conversation:c.id,p_message:latest}).then(onRefresh).catch(()=>{readAt.current="";});},[latest,c.id,onRefresh]);

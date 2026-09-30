@@ -24,6 +24,14 @@ export default memo(function Composer({ busy, reply, replyName, onCancelReply, o
     catch (cause) { if (alive.current) { if (revision.current === current) setText(draft); setError(errorText(cause)); } }
     finally { lock.current = false; }
   }
+  function insertEmoji(value: string) {
+    const node = input.current, start = node?.selectionStart ?? text.length, end = node?.selectionEnd ?? text.length;
+    const next = text.slice(0, start) + value + text.slice(end);
+    if (next.length > 4000) return;
+    const current = ++revision.current;
+    setText(next); onTyping(); node?.focus();
+    requestAnimationFrame(() => { if (alive.current && revision.current === current) node?.setSelectionRange(start + value.length, start + value.length); });
+  }
   function keys(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229 && window.matchMedia("(pointer:fine)").matches) { event.preventDefault(); void send(); }
   }
@@ -31,7 +39,7 @@ export default memo(function Composer({ busy, reply, replyName, onCancelReply, o
     <ErrorNote text={error}/>
     {reply && <div className="composer-reply"><span><small>Replying to {replyName}</small><p>{reply.content || "Photo"}</p></span><IconButton label="Cancel reply" onClick={onCancelReply}><X size={17}/></IconButton></div>}
     {tools && <div className="attachment-tray">{TOOLS.map(({ id, label, Icon }) => <button key={id} disabled={busy} onClick={() => { setTools(false); onTool(id); }}><Icon/><small>{label}</small></button>)}</div>}
-    {emoji && <div className="emoji-picker">{EMOJI.map(value => <button key={value} aria-label={value} onClick={() => { revision.current++; setText(previous => (previous + value).slice(0, 4000)); onTyping(); input.current?.focus(); }}>{value}</button>)}</div>}
+    {emoji && <div className="emoji-picker">{EMOJI.map(value => <button key={value} aria-label={value} onClick={() => insertEmoji(value)}>{value}</button>)}</div>}
     <form className="composer" onSubmit={event => { event.preventDefault(); void send(); }}>
       <IconButton label="Attachments" aria-expanded={tools} className={tools ? "selected" : ""} onClick={() => { setTools(!tools); setEmoji(false); }}>{busy ? <Spinner/> : <Plus size={23}/>}</IconButton>
       <textarea ref={input} rows={1} aria-label="Message" placeholder="Message…" value={text} maxLength={4000} autoComplete="on" autoCorrect="on" autoCapitalize="sentences" spellCheck onChange={event => { revision.current++; setText(event.target.value); onTyping(); }} onKeyDown={keys}/>
