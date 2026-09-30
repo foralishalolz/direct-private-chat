@@ -33,6 +33,13 @@ export async function imageFile(file:Blob,max=1600):Promise<Blob>{
     return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(x=>x?resolve(x):reject(new Error("Could not prepare photo.")),"image/webp",0.82));
   }finally{bitmap.close();}
 }
+export async function squareSticker(file:Blob):Promise<Blob>{
+  const prepared=await imageFile(file,512),bitmap=await createImageBitmap(prepared);
+  try{const canvas=document.createElement("canvas");canvas.width=512;canvas.height=512;const ctx=canvas.getContext("2d");if(!ctx)throw new Error("Sticker unavailable.");
+    const scale=Math.max(512/bitmap.width,512/bitmap.height);ctx.drawImage(bitmap,(512-bitmap.width*scale)/2,(512-bitmap.height*scale)/2,bitmap.width*scale,bitmap.height*scale);
+    return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Sticker unavailable.")),"image/webp",.88));
+  }finally{bitmap.close();}
+}
 export async function upload(user:string,conversation:string|null,blob:Blob,bucket="chat-media"){
   const limit=bucket==="avatars"?5:bucket==="chat-media"?25:10;
   if(blob.size>limit*1024*1024)throw new Error("File must be under "+limit+" MB.");

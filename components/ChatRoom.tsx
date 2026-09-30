@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { ArrowLeft, BookHeart, ChevronDown, Heart, MessageCircle, Search, SquarePen, Users, WifiOff } from "lucide-react";
+import { ArrowLeft, BookHeart, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Trash2, Users, WifiOff, X } from "lucide-react";
+import { useNotifications } from "@/hooks/useNotifications";
 import { useInbox } from "@/hooks/useInbox";
 import { loadConversation } from "@/lib/conversation";
 import { errorText, label, time, title, type Conversation, type Profile } from "@/lib/types";
@@ -13,6 +14,7 @@ const ChatThread = dynamic(() => import("./ChatThread"), {
 });
 const Discover = dynamic(() => import("./DiscoverModal"));
 const ProfileEditor = dynamic(() => import("./ProfileModal"));
+const ChatActionModal = dynamic(() => import("./ChatActionModal"));
 const Journal = dynamic(() => import("./JournalModal"));
 
 export default function ChatRoom({ profile, onProfile, onLogout }: {
@@ -20,8 +22,11 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   onProfile: (profile: Profile) => void;
   onLogout: () => Promise<void>;
 }) {
-  const { items, loading, more, error, refresh, loadMore } = useInbox(profile.id);
   const [selected, setSelected] = useState<string | null>(null);
+  const notifications = useNotifications(profile.id, selected, setSelected);
+  const { items, loading, more, error, refresh, loadMore } = useInbox(profile.id, notifications.onMessage);
+  const [chatAction, setChatAction] = useState<{ id: string; action: "clear" | "leave" } | null>(null);
+  const [discoverMode, setDiscoverMode] = useState<"direct" | "group" | "join">("direct");
   const [opened, setOpened] = useState<Conversation | null>(null);
   const [openError, setOpenError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -37,6 +42,8 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
     window.addEventListener("offline", update);
     return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
   }, []);
+
+  function openDiscover(mode: "direct" | "group" | "join" = "direct") { setDiscoverMode(mode); setModal("new"); }
 
   const inInbox = items.find(conversation => conversation.id === selected);
   useEffect(() => {
@@ -63,7 +70,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
       <nav className="rail" aria-label="Main navigation">
         <a href="/" aria-label="BitchAt" className="rail-brand"><Brand small /></a>
         <IconButton label="Messages" className="active" onClick={() => setSelected(null)}><MessageCircle size={24} /><span className="rail-label">Messages</span></IconButton>
-        <IconButton label="New message" onClick={() => setModal("new")}><Users size={24} /><span className="rail-label">People</span></IconButton>
+        <IconButton label="New message" onClick={() => openDiscover()}><Users size={24} /><span className="rail-label">People</span></IconButton>
         <IconButton label="Journal" onClick={() => setModal("journal")}><BookHeart size={24} /><span className="rail-label">Journal</span></IconButton>
         <button className="rail-profile" aria-label="Profile" onClick={() => setModal("profile")}><Avatar profile={profile} size={36} /><span className="rail-label">Profile</span></button>
       </nav>
@@ -72,7 +79,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         <header className="inbox-header">
           <div className="mobile-brand"><Brand small /></div>
           <h1>Messages{items.some(c=>c.unread)&&<span className="inbox-count">{items.filter(c=>c.unread).length}</span>}</h1>
-          <IconButton label="New message" onClick={() => setModal("new")}><SquarePen size={24} /></IconButton>
+          <IconButton label="New message" onClick={() => openDiscover()}><SquarePen size={24} /></IconButton>
         </header>
         <div className="inbox-search"><label className="input-icon"><Search size={18} aria-hidden="true" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
 
@@ -84,16 +91,17 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         </div>}
 
         <div className="inbox-filters" aria-label="Filter chats">{[["all", "All"], ["unread", "Unread"], ["groups", "Groups"]].map(([id, text]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => setFilter(id)}>{text}</button>)}</div>
+        <div className="inbox-group-actions"><button onClick={() => openDiscover("group")}><Users size={16}/>New group</button><button onClick={() => openDiscover("join")}><Link2 size={16}/>Join group</button></div>
         <div className="conversation-list">
           {loading && <div className="inbox-skeleton" aria-label="Loading chats" role="status">{[0, 1, 2, 3].map(index => <div key={index}><span /><i /></div>)}</div>}
-          {visible.map(conversation => <button key={conversation.id} className={"conversation " + (conversation.id === selected ? "selected" : "")} onClick={() => setSelected(conversation.id)}>
+          {visible.map(conversation => <div key={conversation.id} className="conversation-item"><button className={"conversation " + (conversation.id === selected ? "selected" : "")} onClick={() => setSelected(conversation.id)}>
             <span className="avatar-wrap"><Avatar profile={conversation.partner} group={conversation.kind === "group"} size={49} />{conversation.partner?.mood && <span className="mood-badge">{conversation.partner.mood}</span>}</span>
             <span className="conversation-copy">
               <span className="row"><strong>{title(conversation)}</strong><small className="push">{time(conversation.last_activity)}</small></span>
               <span className="row"><span className={"preview " + (conversation.unread ? "unread" : "")}>{conversation.preview || (conversation.kind === "group" ? String(conversation.members?.length ?? 0) + " members" : "@" + (conversation.partner?.username ?? ""))}</span>{conversation.unread && <i className="unread-dot" />}</span>
             </span>
-          </button>)}
-          {!loading && !visible.length && <button className="empty-inbox" aria-label="Start a conversation" onClick={() => setModal("new")}><span className="empty-inbox-icon"><SquarePen size={29} /></span><span>{needle || filter !== "all" ? "No chats found" : "New message"}</span></button>}
+          </button><IconButton label={"Delete chat with " + title(conversation)} className="conversation-delete" onClick={() => setChatAction({ id: conversation.id, action: "clear" })}><Trash2 size={16}/></IconButton></div>)}
+          {!loading && !visible.length && <button className="empty-inbox" aria-label="Start a conversation" onClick={() => openDiscover()}><span className="empty-inbox-icon"><SquarePen size={29} /></span><span>{needle || filter !== "all" ? "No chats found" : "New message"}</span></button>}
           {more && <IconButton label="More chats" onClick={() => void loadMore()}><ChevronDown size={20} /></IconButton>}
           <ErrorNote text={error} />
         </div>
@@ -113,10 +121,12 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         <section className="thread-empty">
           <span className="empty-glyph"><MessageCircle size={49} strokeWidth={1.3} /><Heart size={20} /></span>
           <h2>Your messages</h2>
-          <button className="primary" onClick={() => setModal("new")}><SquarePen size={18} />New message</button>
+          <button className="primary" onClick={() => openDiscover()}><SquarePen size={18} />New message</button>
         </section>
       )}
-      {modal === "new" && <Discover userId={profile.id} onClose={() => setModal(null)} onOpen={id => { setSelected(id); void refresh(); }} />}
+      {notifications.toast && <div className="message-toast" role="status"><button onClick={() => { setSelected(notifications.toast); notifications.dismiss(); }}><MessageCircle size={20}/><span>New message</span></button><IconButton label="Dismiss notification" onClick={notifications.dismiss}><X size={17}/></IconButton></div>}
+      {chatAction && <ChatActionModal conversationId={chatAction.id} userId={profile.id} action={chatAction.action} onClose={() => setChatAction(null)} onDone={async () => { if (selected === chatAction.id) { setSelected(null); setOpened(null); } await refresh(); }}/>}
+      {modal === "new" && <Discover initialMode={discoverMode} userId={profile.id} onClose={() => setModal(null)} onOpen={id => { setSelected(id); void refresh(); }} />}
       {modal === "profile" && <ProfileEditor profile={profile} onChange={onProfile} onClose={() => setModal(null)} onLogout={onLogout} />}
       {modal === "journal" && <Journal userId={profile.id} onClose={() => setModal(null)} />}
     </main>

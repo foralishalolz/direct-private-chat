@@ -171,7 +171,7 @@ create table if not exists public.goals (
 create index if not exists goals_conversation on public.goals(conversation_id,created_at desc);
 create unique index if not exists goals_one_pending on public.goals(conversation_id) where completed_a is null or completed_b is null;
 create table if not exists private.pro_config (id boolean primary key default true check(id), password_hash text not null);
-insert into private.pro_config(id,password_hash) values(true,extensions.crypt('1162',extensions.gen_salt('bf',12))) on conflict(id) do nothing;
+insert into private.pro_config(id,password_hash) values(true,extensions.crypt(extensions.gen_random_uuid()::text,extensions.gen_salt('bf',12))) on conflict(id) do nothing;
 create table if not exists private.pro_attempts (user_id uuid primary key references auth.users(id) on delete cascade, attempts integer not null default 0, window_start timestamptz not null default now());
 create table if not exists private.media_cleanup_jobs (
   bucket_id text not null, object_path text not null, created_at timestamptz not null default now(),

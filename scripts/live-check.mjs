@@ -5,6 +5,8 @@ import {spawn} from "node:child_process";
 import {createClient} from "@supabase/supabase-js";
 import {chromium,expect} from "@playwright/test";
 import {SUPABASE_URL as url,SUPABASE_KEY as key} from "../lib/config.ts";
+const proCode=process.env.BITCHAT_QA_PRO_CODE;
+if(!proCode)throw new Error("Set BITCHAT_QA_PRO_CODE privately before running live Pro checks.");
 const prefix="qa"+(process.env.GITHUB_RUN_ID||Date.now()),accounts=[],clients=[],objects=[],conversations=[];
 let browser,server,count=0;
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
@@ -44,7 +46,7 @@ try{
  await rpc(b,"set_reaction",{p_message:message.id,p_emoji:null});assert.equal(value(await a.from("reactions").select("emoji").eq("message_id",message.id)).length,0);ok("reaction removes cleanly");
  value(await a.from("messages").delete().eq("id",message.id).select("id").single());await pause(1500);assert.ok(events.some(e=>e.eventType==="DELETE"&&e.old.id===message.id));ok("regular owner deletes and DELETE reaches recipient");
  assert.ok((await a.rpc("deleted_history",{p_conversation:room})).error);ok("regular members cannot read retained deleted history");
- assert.equal(await rpc(a,"unlock_pro",{p_code:"1162"}),true);ok("server-side Pro PIN");
+ assert.equal(await rpc(a,"unlock_pro",{p_code:proCode}),true);ok("server-side Pro password");
  assert.ok((await rpc(a,"deleted_history",{p_conversation:room})).some(m=>m.message_id===message.id));ok("Pro history includes a regular member deletion");
  assert.ok((await a.from("messages").insert({id:message.id,conversation_id:room,user_id:aa.id,content:"resurrection"})).error);ok("deleted UUID cannot be resurrected");
  const png=new Blob([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")],{type:"image/png"});
@@ -115,7 +117,7 @@ try{
  const replayId=randomUUID();await rpc(a,"send_instant_v2",{p_id:replayId,p_conversation:room,p_media:replayPath,p_source:"file",p_allow_replay:true});
  const openAs=async(c,id)=>{const token=(await c.auth.getSession()).data.session.access_token;return fetch(url+"/functions/v1/open-instant",{method:"POST",headers:{apikey:key,Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({messageId:id})});};
  assert.equal((await openAs(b,replayId)).status,200);assert.equal((await openAs(b,replayId)).status,410);assert.equal((await openAs(x,replayId)).status,410);ok("opt-in photos remain single-view for non-Pro recipients");
- await rpc(b,"unlock_pro",{p_code:"1162"});assert.equal((await openAs(b,replayId)).status,200);assert.equal((await openAs(b,replayId)).status,200);assert.equal((await openAs(b,instant)).status,410);ok("Pro replay requires sender consent and cannot reopen a strict instant");
+ await rpc(b,"unlock_pro",{p_code:proCode});assert.equal((await openAs(b,replayId)).status,200);assert.equal((await openAs(b,replayId)).status,200);assert.equal((await openAs(b,instant)).status,410);ok("Pro replay requires sender consent and cannot reopen a strict instant");
  const groupPhoto=aa.id+"/"+group+"/"+randomUUID()+".png";value(await a.storage.from("instant-media").upload(groupPhoto,png,{contentType:"image/png"}));objects.push({bucket:"instant-media",path:groupPhoto});
  const groupInstant=randomUUID();await rpc(a,"send_instant_v2",{p_id:groupInstant,p_conversation:group,p_media:groupPhoto,p_source:"file",p_allow_replay:false});
  assert.equal((await openAs(b,groupInstant)).status,200);assert.equal((await openAs(b,groupInstant)).status,410);assert.equal((await openAs(x,groupInstant)).status,200);assert.equal((await openAs(x,groupInstant)).status,410);ok("each group recipient gets one strict view even when another viewer is Pro");

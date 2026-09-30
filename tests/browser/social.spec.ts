@@ -120,3 +120,60 @@ test("chat history loads while the realtime handshake is still pending",async({p
  await mock(page);await page.routeWebSocket("wss://llweydgvtpwgnslvgnqm.supabase.co/**",socket=>socket.onMessage(()=>{}));
  await page.locator(".conversation").filter({hasText:"Alex"}).click();await expect(page.locator(".message-text").filter({hasText:"Absolutely"})).toBeVisible({timeout:1300});
 });
+
+
+test("inbox shortcuts open group creation, invite entry and confirmed deletion",async({page})=>{
+ const calls=await mock(page);await page.locator(".inbox-group-actions").getByRole("button",{name:"New group",exact:true}).click();await expect(page.getByRole("textbox",{name:"Group name"})).toBeVisible();await page.getByRole("button",{name:"Close",exact:true}).click();
+ await page.locator(".inbox-group-actions").getByRole("button",{name:"Join group",exact:true}).click();await expect(page.getByRole("textbox",{name:"Invite code"})).toBeVisible();await page.getByRole("button",{name:"Close",exact:true}).click();
+ await page.getByRole("button",{name:"Delete chat with Alex",exact:true}).click();await page.getByRole("button",{name:"Cancel",exact:true}).click();expect(calls.some(c=>c.name==="clear_chat")).toBe(false);
+ await page.getByRole("button",{name:"Delete chat with Alex",exact:true}).click();await page.getByRole("button",{name:"Delete for me",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(1);
+});
+
+test("group leave is reachable directly from the chat menu",async({page})=>{
+ const calls=await mock(page);await openChat(page,true);await page.getByRole("button",{name:"Chat menu"}).click();await page.getByRole("button",{name:"Leave group",exact:true}).click();await page.getByRole("dialog",{name:"Leave group?"}).getByRole("button",{name:"Leave group",exact:true}).click();await expect(page.getByRole("textbox",{name:"Search chats"})).toBeVisible();expect(calls.some(c=>c.name==="leave_group")).toBe(true);
+});
+
+test("saved square stickers persist locally after a reload and can be removed",async({page})=>{
+ await mock(page);await openChat(page);await page.getByRole("button",{name:"Attachments"}).click();await page.getByRole("button",{name:"Sticker",exact:true}).click();await page.getByRole("button",{name:"Create sticker",exact:true}).click();
+ const dialog=page.getByRole("dialog",{name:"Create sticker"});await dialog.getByRole("button",{name:"Save sticker",exact:true}).click();await expect(dialog.getByRole("button",{name:"Sticker saved",exact:true})).toBeDisabled();
+ expect(await dialog.locator("canvas").evaluate((node:HTMLCanvasElement)=>[node.width,node.height])).toEqual([512,512]);await dialog.getByRole("button",{name:"Close",exact:true}).click();await expect(page.getByRole("button",{name:"Send saved sticker",exact:true})).toHaveCount(1);
+ await page.getByRole("button",{name:"Close",exact:true}).click();await page.reload();await openChat(page);await page.getByRole("button",{name:"Attachments"}).click();await page.getByRole("button",{name:"Sticker",exact:true}).click();await expect(page.getByRole("button",{name:"Send saved sticker",exact:true})).toHaveCount(1);
+ await page.getByRole("button",{name:"Manage stickers"}).click();await page.getByRole("button",{name:"Remove saved sticker"}).click();await expect(page.getByRole("button",{name:"Create sticker",exact:true})).toBeVisible();
+});
+
+test("Pro password accepts a normal keyboard and submits symbols unchanged",async({page})=>{
+ await mock(page);let submitted:unknown;
+ await page.route("**/rest/v1/rpc/unlock_pro",route=>{submitted=route.request().postDataJSON();return route.fulfill({status:200,contentType:"application/json",body:"true"});});
+ await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Settings",exact:true}).click();const password=page.getByLabel("Pro password",{exact:true});await expect(password).toHaveAttribute("inputmode","text");await password.fill("A-private**password");await page.getByRole("button",{name:"Submit",exact:true}).click();await expect(password).toHaveCount(0);expect(submitted).toEqual({p_code:"A-private**password"});
+});
+
+test("notification permission is requested only by an explicit switch tap",async({page})=>{
+ await page.addInitScript(()=>{let requests=0;Object.defineProperty(window,"Notification",{configurable:true,value:{permission:"default",requestPermission:async()=>{requests++;return "denied";}}});Object.defineProperty(window,"notificationRequests",{get:()=>requests});});
+ await mock(page);expect(await page.evaluate(()=>(window as unknown as {notificationRequests:number}).notificationRequests)).toBe(0);
+ await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts"}).click();await expect(page.getByRole("dialog",{name:"Notifications"}).getByRole("alert")).toContainText("blocked");expect(await page.evaluate(()=>(window as unknown as {notificationRequests:number}).notificationRequests)).toBe(1);await expect(page.getByRole("switch",{name:"Message alerts"})).toHaveAttribute("aria-checked","false");
+});
+
+test("camera starts only when requested and stops on close with flash available",async({page})=>{
+ await page.addInitScript(()=>{
+  const stats={starts:0,stops:0};Object.assign(window,{cameraStats:stats});
+  Object.defineProperty(navigator.mediaDevices,"getUserMedia",{configurable:true,value:async()=>{stats.starts++;const canvas=document.createElement("canvas");canvas.width=320;canvas.height=240;const ctx=canvas.getContext("2d")!;ctx.fillStyle="#ffd2c8";ctx.fillRect(0,0,320,240);const stream=canvas.captureStream(15);for(const track of stream.getTracks()){const stop=track.stop.bind(track);track.stop=()=>{stats.stops++;stop();};}return stream;}});
+ });
+ await mock(page);await openChat(page);expect(await page.evaluate(()=>(window as unknown as {cameraStats:{starts:number}}).cameraStats.starts)).toBe(0);
+ await page.getByRole("button",{name:"Attachments"}).click();await page.getByRole("button",{name:"Instant",exact:true}).click();await expect(page.getByRole("button",{name:"Take and send one-view photo"})).toBeEnabled();await page.getByRole("button",{name:"Screen flash",exact:true}).click();await expect(page.getByRole("button",{name:"Screen flash",exact:true})).toHaveAttribute("aria-pressed","true");await page.getByRole("button",{name:"Close",exact:true}).click();await expect.poll(()=>page.evaluate(()=>(window as unknown as {cameraStats:{stops:number}}).cameraStats.stops)).toBe(1);
+});
+
+test("instant viewer has no image link and wipes canvas pixels on close",async({page})=>{
+ await mock(page,true);await page.route("**/functions/v1/open-instant",route=>route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/N9sAAAAASUVORK5CYII=","base64")}));await openChat(page);await page.locator(".instant-card").first().click();const viewer=page.getByRole("dialog",{name:"Instant",exact:true});await expect(viewer.locator("canvas")).toBeVisible();await expect(viewer.locator("img,a")).toHaveCount(0);await viewer.locator("canvas").evaluate(node=>Object.assign(window,{closedInstantCanvas:node}));await viewer.getByRole("button",{name:"Close",exact:true}).click();expect(await page.evaluate(()=>{const node=(window as unknown as {closedInstantCanvas:HTMLCanvasElement}).closedInstantCanvas;return [node.width,node.height];})).toEqual([0,0]);
+});
+
+test("composer preserves new text while an earlier send waits for local storage",async({page})=>{
+ await page.addInitScript(()=>{
+  const property=Object.getOwnPropertyDescriptor(IDBTransaction.prototype,"oncomplete")!;
+  Object.defineProperty(IDBTransaction.prototype,"oncomplete",{...property,set:function(this:IDBTransaction,handler:((event:Event)=>void)|null){
+   const shouldDelay=(window as unknown as {delayOutbox?:boolean}).delayOutbox&&this.mode==="readwrite"&&this.objectStoreNames.contains("outbox");
+   if(shouldDelay)(window as unknown as {delayOutbox?:boolean}).delayOutbox=false;
+   property.set!.call(this,shouldDelay&&handler?function(this:IDBTransaction,event:Event){setTimeout(()=>handler.call(this,event),700);}:handler);
+  }});
+ });
+ await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await page.evaluate(()=>Object.assign(window,{delayOutbox:true}));await input.fill("First draft");await page.getByRole("button",{name:"Send message",exact:true}).click();await input.fill("Second draft");await expect(page.locator(".message-text").filter({hasText:"First draft"})).toBeVisible();await expect(input).toHaveValue("Second draft");await expect(page.getByRole("button",{name:"Record voice note"})).toHaveCount(0);await input.fill("");await expect(page.getByRole("button",{name:"Record voice note"})).toBeVisible();await expect(page.getByRole("button",{name:"Emoji",exact:true})).toBeVisible();
+});

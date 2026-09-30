@@ -3,8 +3,9 @@
 import {useCallback,useEffect,useRef,useState} from "react";
 import {db,rpc} from "@/lib/supabase";
 import {cache,cached} from "@/lib/offline";
-import {errorText,type Conversation} from "@/lib/types";
-export function useInbox(userId:string){
+import {errorText,type Message,type Conversation} from "@/lib/types";
+export function useInbox(userId:string,onMessage?:(message:Partial<Message>)=>void){
+ const notify=useRef(onMessage);notify.current=onMessage;
  const [items,setItems]=useState<Conversation[]>([]),[loading,setLoading]=useState(true),[more,setMore]=useState(false),[error,setError]=useState("");
  const alive=useRef(true),flight=useRef(false),queued=useRef(false),last=useRef<Conversation|undefined>(undefined),total=useRef(60);
  const normalize=useCallback((rows:Conversation[])=>rows.map(c=>({...c,partner:c.kind==="direct"?c.members?.find(p=>p.id!==userId):undefined,unread:!!c.preview&&(!c.read_at||c.read_at<c.last_activity)})),[userId]);
@@ -20,7 +21,7 @@ export function useInbox(userId:string){
  const update=()=>{clearTimeout(timer);timer=setTimeout(()=>{generation++;void refresh();},350);};
  const c=db(),ch=c.channel("inbox:"+userId+":"+crypto.randomUUID(),{config:{postgres_changes_options:{wait:true}}});
  for(const table of ["conversations","conversation_members","profiles","chat_preferences"])ch.on("postgres_changes",{event:"*",schema:"public",table},update);
- ch.on("postgres_changes",{event:"*",schema:"public",table:"messages"},update);
+ ch.on("postgres_changes",{event:"*",schema:"public",table:"messages"},event=>{if(event.eventType==="INSERT")notify.current?.(event.new as Partial<Message>);update();});
  ch.subscribe(status=>{if(status==="SUBSCRIBED")update();});
  update();const focus=()=>{if(document.visibilityState==="visible")update();};window.addEventListener("online",focus);document.addEventListener("visibilitychange",focus);
  return()=>{alive.current=false;clearTimeout(timer);void c.removeChannel(ch);window.removeEventListener("online",focus);document.removeEventListener("visibilitychange",focus);};},[refresh,userId]);

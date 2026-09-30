@@ -2,7 +2,7 @@
 name: BitchAt checks
 on:
   push:
-    branches: [bitchat-production]
+    branches: [bitchat-production, bitchat-2-5-checks]
   workflow_dispatch:
 permissions:
   contents: read

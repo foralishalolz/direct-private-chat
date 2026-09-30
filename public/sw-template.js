@@ -10,3 +10,14 @@ self.addEventListener("fetch",event=>{
  event.respondWith(caches.open(VERSION).then(async cache=>(await cache.match(url.pathname))||fetch(request)).catch(()=>fetch(request)));
 });
 
+
+self.addEventListener("notificationclick",event=>{
+ event.notification.close();const data=event.notification.data||{};
+ const valid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+ if(!valid.test(data.userId||"")||!valid.test(data.conversationId||""))return;
+ event.waitUntil((async()=>{
+  const windows=await self.clients.matchAll({type:"window",includeUncontrolled:true});
+  for(const client of windows){if(new URL(client.url).origin===self.location.origin){await client.focus();client.postMessage({type:"bitchat-open-chat",userId:data.userId,conversationId:data.conversationId});return;}}
+  await self.clients.openWindow("/?chat="+encodeURIComponent(data.conversationId)+"&account="+encodeURIComponent(data.userId));
+ })());
+});

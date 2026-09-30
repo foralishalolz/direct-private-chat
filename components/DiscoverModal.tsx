@@ -5,9 +5,9 @@ import {rpc} from "@/lib/supabase";
 import {errorText,label,type Profile} from "@/lib/types";
 import {Avatar,Modal,ErrorNote,Spinner} from "./UI";
 
-export default function DiscoverModal({userId,onOpen,onClose}:{userId:string;onOpen:(id:string)=>void;onClose:()=>void}){
+export default function DiscoverModal({userId,onOpen,onClose,initialMode="direct"}:{initialMode?:"direct"|"group"|"join";userId:string;onOpen:(id:string)=>void;onClose:()=>void}){
  const [query,setQuery]=useState(""),[results,setResults]=useState<Profile[]>([]),[selected,setSelected]=useState<Profile[]>([]);
- const [mode,setMode]=useState<"direct"|"group"|"join">("direct"),[name,setName]=useState(""),[code,setCode]=useState("");
+ const [mode,setMode]=useState<"direct"|"group"|"join">(initialMode),[name,setName]=useState(""),[code,setCode]=useState("");
  const [busy,setBusy]=useState(false),[searching,setSearching]=useState(false),[error,setError]=useState("");
  const generation=useRef(0),lock=useRef(false);
  useEffect(()=>{

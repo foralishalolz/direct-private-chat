@@ -1,4 +1,4 @@
-# BitchAt 2.3
+# BitchAt 2.5
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -59,6 +59,20 @@ The 2.4 release passed 79 live assertions on 2026-09-29, including regular-user 
 The 2.2 live Supabase check passed 55 assertions, including two real browser sessions exchanging messages, reconnecting an offline outbox, actual Storage uploads, one-view consumption, server-enforced capsules, Pro authorization, and privacy boundaries. The test run also covered individual group instant views, replay consent, read-through boundaries, group invite revocation, ownership transfer, and per-user chat clearing. Test accounts and uploaded test media are removed after verification; existing chats are retained. The live workflow is manual because it creates disposable accounts in the connected project. Its QA_CLEANUP output identifies the exact test accounts and objects for an administrator to remove; normal CI uses isolated mocked data.
 
 The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the production build, and the dependency audit (zero known vulnerabilities).
+
+## Version 2.5
+
+The composer owns its draft and emoji state separately from the chat screen. Keystrokes no longer rerender the thread, textarea sizing is batched with animation frames, and a delayed send cannot clear newer draft text. IME composition is preserved; desktop Enter sends, Shift+Enter inserts a line, and touch keyboards retain multiline input. The voice note icon is smaller while retaining a 44-pixel touch target. Emoji controls work on mobile.
+
+New group and Join group are visible in the inbox. Each chat has a Delete chat action with confirmation; Delete chat and Leave group also appear directly in the thread menu. Deletion clears only the caller's messages and queued sends. Group exit remains enforced by the database.
+
+Stickers can be created, saved, reused, and removed locally, including received stickers that are still available on the server. Photo stickers are cropped to a 512 × 512 square. IndexedDB keeps separate collections per account, with content deduplication, 60 stickers/16 MB per account, 512 KB per sticker, and a 32 MB device budget. Collections survive logout; private text caches are still cleared. They are device-local and clearing browser storage removes them.
+
+Instant cameras offer hardware torch when supported and screen flash otherwise. Leaving the app stops the camera; returning requires a Resume camera tap. Streams are stopped on close and camera switches. Strict instant viewers render bytes to canvas with no image URL or link in the DOM, clear their pixels on close, and close on backgrounding. Ordinary photos remain inline. No browser can guarantee prevention of OS screenshots, external recording, or capture by a recipient who controls their device. Strict instants remain one-view for Pro; replay/save requires the sender's explicit choice.
+
+Profile → Notifications enables opt-in, generic message alerts without message content. In-app alerts and service-worker system notifications use the existing Realtime subscription; clicking an alert opens the chat only for the matching account. Notifications are supported while a BitchAt tab remains running, including backgrounded tabs. Delivery when every tab is closed requires a separate Web Push backend and is not implemented. iPhone system notifications require adding the site to the Home Screen and browser support.
+
+The connected project's Pro password was rotated on 2026-09-30. Its plaintext is never included in application source, database migrations, or client bundles. New database installs seed an unusable random password until an administrator configures their own hash. Live Pro QA requires the private `BITCHAT_QA_PRO_CODE` environment variable (or GitHub Actions secret); it fails before creating test accounts if the variable is missing. Existing Pro accounts remain Pro. Pro access does not override other people's blocking/privacy settings, strict one-view consent, or camera/microphone permissions.
 
 ## Version 2.4
 
