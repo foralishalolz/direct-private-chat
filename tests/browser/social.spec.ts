@@ -366,3 +366,11 @@ test("a failed push registration rolls back the subscription and keeps the chat 
  expect(await page.evaluate(()=>(window as unknown as {pushStats:{unsubscribed:number}}).pushStats.unsubscribed)).toBe(1);
  await page.getByRole("dialog",{name:"Notifications",exact:true}).getByRole("button",{name:"Close",exact:true}).click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Close",exact:true}).click();await openChat(page);await page.getByRole("textbox",{name:"Message",exact:true}).fill("Still works");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect(page.locator(".message-text").filter({hasText:"Still works"})).toBeVisible();
 });
+
+
+test("sign-out from another tab revokes device alerts and removes the local notification owner",async({page})=>{
+ await pushDevice(page);await mock(page);await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts",exact:true}).click();await expect(page.getByRole("switch",{name:"Message alerts",exact:true})).toHaveAttribute("aria-checked","true");
+ await page.evaluate(()=>{const authKey="sb-llweydgvtpwgnslvgnqm-auth-token";localStorage.removeItem(authKey);const channel=new BroadcastChannel(authKey);channel.postMessage({event:"SIGNED_OUT",session:null});setTimeout(()=>channel.close(),100);});
+ await expect(page.getByRole("button",{name:"Log in",exact:true})).toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as unknown as {pushStats:{unsubscribed:number}}).pushStats.unsubscribed)).toBe(1);
+ expect(await page.evaluate(()=>localStorage.getItem("bitchat-push-owner"))).toBe(null);
+});

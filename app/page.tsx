@@ -16,8 +16,10 @@ const ChatRoom=dynamic(()=>import("@/components/ChatRoom"),{loading:()=> <div cl
 export default function Home(){
  const [session,setSession]=useState<Session|null>(null),[profile,setProfile]=useState<Profile|null>(null),[ready,setReady]=useState(false),[error,setError]=useState(""),[version,setVersion]=useState(0);
  useOutbox(session?.user.id);
- useEffect(()=>{let alive=true;const client=db();void client.auth.getSession().then(({data,error})=>{if(alive){setSession(data.session);if(error)setError(errorText(error));setReady(true);}}).catch(cause=>{if(alive){setError(errorText(cause));setReady(true);}});
- const {data}=client.auth.onAuthStateChange((_event,next)=>{if(alive){setSession(next);setReady(true);}});
+ useEffect(()=>{let alive=true,authRevision=0,activeAccount:string|null=null;const client=db();
+ const applySession=(next:Session|null)=>{if(!alive)return;const previous=activeAccount;activeAccount=next?.user.id??null;if(previous&&previous!==activeAccount)queueMicrotask(()=>{void disableNotifications(previous).catch(()=>{});});setSession(next);setReady(true);};
+ void client.auth.getSession().then(({data,error})=>{if(alive&&authRevision===0){applySession(data.session);if(error)setError(errorText(error));}}).catch(cause=>{if(alive&&authRevision===0){setError(errorText(cause));setReady(true);}});
+ const {data}=client.auth.onAuthStateChange((_event,next)=>{authRevision++;applySession(next);});
  if("serviceWorker" in navigator&&process.env.NODE_ENV==="production")void navigator.serviceWorker.register("/sw.js").catch(()=>{});
  return()=>{alive=false;data.subscription.unsubscribe();};},[]);
  useEffect(()=>{let active=true;setProfile(null);if(!session?.user.id)return;const id=session.user.id;activate(id);
