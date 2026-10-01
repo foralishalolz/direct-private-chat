@@ -1,6 +1,6 @@
 
 "use client";
-import {useEffect,useRef,useState,type ReactNode,type ButtonHTMLAttributes} from "react";
+import {useEffect,useLayoutEffect,useRef,useState,type ReactNode,type ButtonHTMLAttributes} from "react";
 import {createPortal} from "react-dom";
 import {ArrowLeft,LoaderCircle,X,Users,MessageCircle,Heart} from "lucide-react";
 import {signed} from "@/lib/media";
@@ -23,10 +23,9 @@ function syncModals(){
 }
 export function Modal({children,onClose,title,wide=false}:{children:ReactNode;onClose:()=>void;title?:string;wide?:boolean}){
  const ref=useRef<HTMLDivElement>(null),cover=useRef<HTMLDivElement>(null),close=useRef(onClose),drag=useRef<{id:number;y:number;offset:number;travel:number}|null>(null),suppressClick=useRef(0);
- const [mounted,setMounted]=useState(false);close.current=onClose;
- useEffect(()=>{setMounted(true);},[]);
- useEffect(()=>{
-  if(!mounted||!cover.current)return;const root=cover.current,previous=document.activeElement as HTMLElement|null;modalRoots.add(root);syncModals();
+ close.current=onClose;
+ useLayoutEffect(()=>{
+  if(!cover.current)return;const root=cover.current,previous=document.activeElement as HTMLElement|null;modalRoots.add(root);syncModals();
   const first=[...(ref.current?.querySelectorAll<HTMLElement>("input,textarea,button,select,[tabindex='0']")??[])].find(node=>node.offsetParent!==null&&node.className!=="sheet-handle");(first??ref.current)?.focus({preventScroll:true});
   const listener=(event:KeyboardEvent)=>{
    if([...modalRoots].at(-1)!==root)return;
@@ -40,9 +39,9 @@ export function Modal({children,onClose,title,wide=false}:{children:ReactNode;on
   };
   document.addEventListener("keydown",listener);
   return()=>{document.removeEventListener("keydown",listener);modalRoots.delete(root);syncModals();if(previous?.isConnected)previous.focus({preventScroll:true});};
- },[mounted]);
+ },[]);
  function end(cancelled=false){const offset=drag.current?.offset??0;if((drag.current?.travel??0)>8)suppressClick.current=Date.now()+350;drag.current=null;ref.current?.classList.remove("sheet-dragging");if(ref.current)ref.current.style.transform="";if(!cancelled&&offset>70)close.current();}
- if(!mounted)return null;
+ if(typeof document==="undefined")return null;
  return createPortal(<div ref={cover} className="modal-backdrop" onPointerDown={event=>{if(event.target===event.currentTarget)onClose();}}><div className={"modal "+(wide?"wide":"")} ref={ref} role="dialog" aria-modal="true" aria-label={title??"Settings"} tabIndex={-1}>
   <button type="button" className="sheet-handle" aria-label="Dismiss sheet" onClick={event=>{if(Date.now()>=suppressClick.current)onClose();else event.preventDefault();}} onPointerDown={event=>{if(!event.isPrimary||event.button!==0)return;drag.current={id:event.pointerId,y:event.clientY,offset:0,travel:0};event.currentTarget.setPointerCapture(event.pointerId);ref.current?.classList.add("sheet-dragging");}} onPointerMove={event=>{if(!drag.current||drag.current.id!==event.pointerId)return;drag.current.travel=Math.max(drag.current.travel,Math.abs(event.clientY-drag.current.y));drag.current.offset=Math.max(0,Math.min(160,event.clientY-drag.current.y));if(ref.current)ref.current.style.transform=`translate3d(0,${drag.current.offset}px,0)`;}} onPointerUp={()=>end()} onPointerCancel={()=>end(true)} onLostPointerCapture={()=>{if(drag.current)end(true);}}><span/></button>
   {title&&<header className="modal-header"><h2>{title}</h2><IconButton label="Close" onClick={onClose}><X size={20}/></IconButton></header>}{children}
