@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { Archive, ArrowLeft, Bell, BookHeart, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
-import { watchDeviceMode } from "@/lib/device";
+import { watchDeviceMode, watchViewport } from "@/lib/device";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useInbox } from "@/hooks/useInbox";
 import { loadConversation } from "@/lib/conversation";
@@ -41,6 +41,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const [modal, setModal] = useState<"new" | "profile" | "journal" | "notifications" | null>(null);
   const [online, setOnline] = useState(true);
   useEffect(() => watchDeviceMode(profile.id), [profile.id]);
+  useEffect(() => watchViewport(), []);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);

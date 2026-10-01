@@ -15,18 +15,21 @@ export function Avatar({profile,size=44,group=false}:{profile?:Partial<Profile>;
  const colors=["#49436a","#325963","#685049","#4c596e","#655077"];const seed=(profile?.id||profile?.username||"group").split("").reduce((sum,char)=>sum+char.charCodeAt(0),0);
  return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.38),background:colors[seed%colors.length],color:"#f6f3ff"}}>{url?<img src={url} alt="" width={size} height={size} loading="lazy" onError={()=>setUrl("")}/>:group?<Users size={size*.45}/>:label(profile).slice(0,1).toUpperCase()||<MessageCircle size={size*.4}/>}</span>;
 }
-const modalRoots=new Set<HTMLElement>(),inertBefore=new Map<HTMLElement,boolean>();
+const modalRoots=new Set<HTMLElement>(),inertBefore=new Map<HTMLElement,{inert:boolean;hidden:string|null}>();
+let modalObserver:MutationObserver|null=null;
+function restoreHidden(element:HTMLElement,value:string|null){if(value===null)element.removeAttribute("aria-hidden");else element.setAttribute("aria-hidden",value);}
 function syncModals(){
  const top=[...modalRoots].at(-1);
- if(!top){for(const [element,value] of inertBefore)element.inert=value;inertBefore.clear();return;}
- for(const element of [...document.body.children])if(element instanceof HTMLElement){if(!inertBefore.has(element))inertBefore.set(element,element.inert);element.inert=element!==top;}
+ if(!top){modalObserver?.disconnect();modalObserver=null;for(const [element,value] of inertBefore){element.inert=value.inert;restoreHidden(element,value.hidden);}inertBefore.clear();return;}
+ if(!modalObserver){modalObserver=new MutationObserver(syncModals);modalObserver.observe(document.body,{childList:true});}
+ for(const element of [...document.body.children])if(element instanceof HTMLElement){if(!inertBefore.has(element))inertBefore.set(element,{inert:element.inert,hidden:element.getAttribute("aria-hidden")});element.inert=element!==top;if(element===top)restoreHidden(element,inertBefore.get(element)!.hidden);else element.setAttribute("aria-hidden","true");}
 }
 export function Modal({children,onClose,title,wide=false}:{children:ReactNode;onClose:()=>void;title?:string;wide?:boolean}){
  const ref=useRef<HTMLDivElement>(null),cover=useRef<HTMLDivElement>(null),close=useRef(onClose),drag=useRef<{id:number;y:number;offset:number;travel:number}|null>(null),suppressClick=useRef(0);
  close.current=onClose;
  useLayoutEffect(()=>{
-  if(!cover.current)return;const root=cover.current,previous=document.activeElement as HTMLElement|null;modalRoots.add(root);syncModals();
-  const first=[...(ref.current?.querySelectorAll<HTMLElement>("input,textarea,button,select,[tabindex='0']")??[])].find(node=>node.offsetParent!==null&&node.className!=="sheet-handle");(first??ref.current)?.focus({preventScroll:true});
+  if(!cover.current)return;const root=cover.current,previous=document.activeElement as HTMLElement|null;modalRoots.add(root);
+  const first=[...(ref.current?.querySelectorAll<HTMLElement>("input,textarea,button,select,[tabindex='0']")??[])].find(node=>node.offsetParent!==null&&node.className!=="sheet-handle");(first??ref.current)?.focus({preventScroll:true});syncModals();
   const listener=(event:KeyboardEvent)=>{
    if([...modalRoots].at(-1)!==root)return;
    if(event.key==="Escape"){event.preventDefault();close.current();}

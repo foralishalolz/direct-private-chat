@@ -167,7 +167,7 @@ test("Pro password accepts a normal keyboard and submits symbols unchanged",asyn
 test("notification permission is requested only by an explicit switch tap",async({page})=>{
  await page.addInitScript(()=>{let requests=0;Object.defineProperty(window,"Notification",{configurable:true,value:{permission:"default",requestPermission:async()=>{requests++;return "denied";}}});Object.defineProperty(window,"notificationRequests",{get:()=>requests});});
  await mock(page);expect(await page.evaluate(()=>(window as unknown as {notificationRequests:number}).notificationRequests)).toBe(0);
- await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts"}).click();await expect(page.getByRole("dialog",{name:"Notifications"}).getByRole("alert")).toContainText("blocked");expect(await page.evaluate(()=>(window as unknown as {notificationRequests:number}).notificationRequests)).toBe(1);await expect(page.getByRole("switch",{name:"Message alerts"})).toHaveAttribute("aria-checked","false");
+ await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts"}).click();await expect(page.getByRole("dialog",{name:"Notifications"}).getByRole("alert")).toContainText("blocked");expect(await page.evaluate(()=>(window as unknown as {notificationRequests:number}).notificationRequests)).toBe(1);await expect(page.getByRole("switch",{name:"Message alerts"})).toHaveAttribute("aria-checked","false");
 });
 
 test("camera starts only when requested and stops on close with flash available",async({page})=>{
@@ -355,21 +355,21 @@ async function pushDevice(page:Page){
 }
 test("push opt-in registers one device and disabling removes it without another permission prompt",async({page})=>{
  await pushDevice(page);const calls=await mock(page);expect(await page.evaluate(()=>(window as unknown as {pushStats:{requests:number}}).pushStats.requests)).toBe(0);
- await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Notifications",exact:true}).click();const toggle=page.getByRole("switch",{name:"Message alerts",exact:true});await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","true");
+ await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Notifications",exact:true}).click();const toggle=page.getByRole("switch",{name:"Message alerts",exact:true});await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","true");
  expect(calls.find(c=>c.name==="register_push_subscription")?.body).toEqual({p_endpoint:"https://fcm.googleapis.com/fcm/send/test-device",p_p256dh:"B"+"A".repeat(86),p_auth:"A".repeat(22)});
  await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","false");await expect.poll(()=>calls.filter(c=>c.name==="unregister_push_subscription").length).toBe(1);
  expect(await page.evaluate(()=>(window as unknown as {pushStats:unknown}).pushStats)).toEqual({requests:1,subscribed:1,unsubscribed:1});
 });
 test("a failed push registration rolls back the subscription and keeps the chat usable",async({page})=>{
  await pushDevice(page);await mock(page);await page.route("**/rest/v1/rpc/register_push_subscription",route=>route.fulfill({status:503,contentType:"application/json",body:JSON.stringify({message:"Connection lost. Try again."})}));
- await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts",exact:true}).click();await expect(page.getByRole("dialog",{name:"Notifications",exact:true}).getByRole("alert")).toBeVisible();await expect(page.getByRole("switch",{name:"Message alerts",exact:true})).toHaveAttribute("aria-checked","false");
+ await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts",exact:true}).click();await expect(page.getByRole("dialog",{name:"Notifications",exact:true}).getByRole("alert")).toBeVisible();await expect(page.getByRole("switch",{name:"Message alerts",exact:true})).toHaveAttribute("aria-checked","false");
  expect(await page.evaluate(()=>(window as unknown as {pushStats:{unsubscribed:number}}).pushStats.unsubscribed)).toBe(1);
  await page.getByRole("dialog",{name:"Notifications",exact:true}).getByRole("button",{name:"Close",exact:true}).click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Close",exact:true}).click();await openChat(page);await page.getByRole("textbox",{name:"Message",exact:true}).fill("Still works");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect(page.locator(".message-text").filter({hasText:"Still works"})).toBeVisible();
 });
 
 
 test("sign-out from another tab revokes device alerts and removes the local notification owner",async({page})=>{
- await pushDevice(page);await mock(page);await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts",exact:true}).click();await expect(page.getByRole("switch",{name:"Message alerts",exact:true})).toHaveAttribute("aria-checked","true");
+ await pushDevice(page);await mock(page);await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Notifications",exact:true}).click();await page.getByRole("switch",{name:"Message alerts",exact:true}).click();await expect(page.getByRole("switch",{name:"Message alerts",exact:true})).toHaveAttribute("aria-checked","true");
  await page.evaluate(()=>{const authKey="sb-llweydgvtpwgnslvgnqm-auth-token";localStorage.removeItem(authKey);const channel=new BroadcastChannel(authKey);channel.postMessage({event:"SIGNED_OUT",session:null});setTimeout(()=>channel.close(),100);});
  await expect(page.getByRole("button",{name:"Log in",exact:true})).toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as unknown as {pushStats:{unsubscribed:number}}).pushStats.unsubscribed)).toBe(1);
  expect(await page.evaluate(()=>localStorage.getItem("bitchat-push-owner"))).toBe(null);
@@ -440,7 +440,7 @@ test("a failed shared pick cannot award a treat or lock the rest of the chat",as
 
 test("glass sheets isolate background controls and restore them on close",async({page},info)=>{
  await mock(page);await page.locator(".inbox-header").getByRole("button",{name:"Notifications",exact:true}).click();await expect(page.getByRole("button",{name:"New message",exact:true})).toHaveCount(0);
- if(info.project.name==="mobile"){const box=await page.getByRole("dialog",{name:"Notifications",exact:true}).boundingBox();expect(Math.abs((box?.y??0)+(box?.height??0)-(page.viewportSize()?.height??0))).toBeLessThan(3);const handle=page.getByRole("button",{name:"Dismiss sheet",exact:true});await dragChat(page,handle,true,0,30);await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await dragChat(page,handle,true,0,-40);await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await dragChat(page,handle,true,0,110);}
+ if(info.project.name==="mobile"){await expect.poll(async()=>{const box=await page.getByRole("dialog",{name:"Notifications",exact:true}).boundingBox();return Math.abs((box?.y??0)+(box?.height??0)-(page.viewportSize()?.height??0));}).toBeLessThan(3);const handle=page.getByRole("button",{name:"Dismiss sheet",exact:true});await dragChat(page,handle,true,0,30);await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await dragChat(page,handle,true,0,-40);await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await dragChat(page,handle,true,0,110);}
  else await page.keyboard.press("Escape");
  await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toHaveCount(0);await expect(page.locator(".inbox-header").getByRole("button",{name:"New message",exact:true})).toBeVisible();
 });
@@ -464,4 +464,14 @@ test("a delayed inbox snapshot cannot restore an older preview or unread marker"
  const row=page.locator(".conversation").filter({hasText:"Alex"});await expect(row.locator(".preview")).toHaveText("Our newest thought");await expect(row.locator(".preview.unread")).toHaveCount(1);
  await page.evaluate(({uid,newer})=>{window.dispatchEvent(new CustomEvent("bitchat-outbox",{detail:{userId:uid,row:{...newer,id:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",content:"Late old thought",created_at:new Date(Date.parse(newer.created_at)-2000).toISOString()}}}));window.dispatchEvent(new CustomEvent("bitchat-inbox-read",{detail:{userId:uid,conversationId:newer.conversation_id,stamp:newer.created_at}}));},{uid,newer});
  release();await expect.poll(()=>finished).toBe(true);await page.waitForTimeout(300);await expect(row.locator(".preview")).toHaveText("Our newest thought");await expect(row.locator(".preview.unread")).toHaveCount(0);
+});
+
+
+test("a shrinking iPhone visual viewport keeps the composer and its draft visible",async({page})=>{
+ await page.setViewportSize({width:390,height:664});await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Keep this thought");
+ await page.evaluate(()=>{const viewport=window.visualViewport!;Object.defineProperty(viewport,"height",{configurable:true,value:420});Object.defineProperty(viewport,"offsetTop",{configurable:true,value:36});viewport.dispatchEvent(new Event("resize"));});
+ await expect.poll(()=>page.locator(".app-shell").evaluate(node=>Math.round(node.getBoundingClientRect().height))).toBe(420);
+ const box=await page.locator(".composer").boundingBox();expect((box?.y??0)+(box?.height??0)).toBeLessThanOrEqual(457);await expect(input).toHaveValue("Keep this thought");await expect(page.locator(".chat-shortcuts")).toBeHidden();
+ await page.evaluate(()=>{const viewport=window.visualViewport!;Reflect.deleteProperty(viewport,"height");Reflect.deleteProperty(viewport,"offsetTop");viewport.dispatchEvent(new Event("resize"));});
+ await expect(page.locator(".chat-shortcuts")).toBeVisible();await expect(input).toHaveValue("Keep this thought");
 });
