@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { Archive, ArrowLeft, BookHeart, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
+import { Archive, ArrowLeft, Bell, BookHeart, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
+import { watchDeviceMode } from "@/lib/device";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useInbox } from "@/hooks/useInbox";
 import { loadConversation } from "@/lib/conversation";
@@ -17,6 +18,7 @@ const Discover = dynamic(() => import("./DiscoverModal"));
 const ProfileEditor = dynamic(() => import("./ProfileModal"));
 const ChatActionModal = dynamic(() => import("./ChatActionModal"));
 const Journal = dynamic(() => import("./JournalModal"));
+const NotificationSettings = dynamic(() => import("./NotificationsModal"));
 
 export default function ChatRoom({ profile, onProfile, onLogout }: {
   profile: Profile;
@@ -36,8 +38,9 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const [retry, setRetry] = useState(0);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
-  const [modal, setModal] = useState<"new" | "profile" | "journal" | null>(null);
+  const [modal, setModal] = useState<"new" | "profile" | "journal" | "notifications" | null>(null);
   const [online, setOnline] = useState(true);
+  useEffect(() => watchDeviceMode(profile.id), [profile.id]);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -92,7 +95,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         <header className="inbox-header">
           <div className="mobile-brand"><Brand small /></div>
           <h1>Messages{unread > 0 && <span className="inbox-count">{unread}</span>}</h1>
-          <IconButton label="New message" onClick={() => openDiscover()}><SquarePen size={24} /></IconButton>
+          <div className="inbox-header-actions"><IconButton label="Notifications" onClick={() => setModal("notifications")}><Bell size={21}/></IconButton><IconButton label="New message" className="new-chat-button" onClick={() => openDiscover()}><SquarePen size={22} /></IconButton></div>
         </header>
         <div className="inbox-search"><label className="input-icon"><Search size={18} aria-hidden="true" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
 
@@ -137,6 +140,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
       {modal === "new" && <Discover initialMode={discoverMode} userId={profile.id} onClose={() => setModal(null)} onOpen={id => { setSelected(id); void refresh(); }} />}
       {modal === "profile" && <ProfileEditor profile={profile} onChange={onProfile} onClose={() => setModal(null)} onLogout={onLogout} />}
       {modal === "journal" && <Journal userId={profile.id} onClose={() => setModal(null)} />}
+      {modal === "notifications" && <NotificationSettings userId={profile.id} onClose={() => setModal(null)} />}
     </main>
   );
 }

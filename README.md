@@ -1,4 +1,4 @@
-# BitchAt 2.7
+# BitchAt 2.8
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -59,6 +59,16 @@ The 2.4 release passed 79 live assertions on 2026-09-29, including regular-user 
 The 2.2 live Supabase check passed 55 assertions, including two real browser sessions exchanging messages, reconnecting an offline outbox, actual Storage uploads, one-view consumption, server-enforced capsules, Pro authorization, and privacy boundaries. The test run also covered individual group instant views, replay consent, read-through boundaries, group invite revocation, ownership transfer, and per-user chat clearing. Test accounts and uploaded test media are removed after verification; existing chats are retained. The live workflow is manual because it creates disposable accounts in the connected project. Its QA_CLEANUP output identifies the exact test accounts and objects for an administrator to remove; normal CI uses isolated mocked data.
 
 The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the production build, and the dependency audit (zero known vulnerabilities).
+
+## Version 2.8
+
+The interface uses a system-font glass design with rounded panels, a floating mobile navigation dock, safe-area-aware chat controls, and swipe-down bottom sheets. Sheets isolate and trap focus inside the active dialog. Animations are short and limited to opacity/transform; reduced-motion and reduced-transparency preferences are respected. Data saver disables expensive backdrop effects, reduces image resolution and compression size, and limits offscreen media loading. Emoji rendering follows the device's native font.
+
+Kiss/hug requests include a reply action that preserves the text draft. Muahh, ILY, and food gifts remain readable, exportable messages. Both people must enable couple mode to open Us. Sweet match uses the existing authenticated poll/vote functions for shared treat choices; matching choices award bounded, account-scoped local cosmetic stamps. No camera/microphone privacy override or explicit sexual content is included.
+
+Slow sends remain visible immediately in the existing bounded IndexedDB outbox. New drafts drain immediately after an in-flight send finishes, with stable UUID retries and account-level ordering. Inbox previews update locally instead of waiting for a full HTTP snapshot; delayed responses retain newer previews, read markers, and archive choices. Realtime HTTP reconciliation and local cache writes are coalesced. Older iOS browsers without AbortSignal.any keep request cancellation and deadlines. Rapid sticker saves use a transaction-scoped monotonic timestamp so FIFO eviction remains deterministic even within one millisecond.
+
+The inbox bell opens notification settings directly. Permission is requested only by tapping Message alerts; the existing Supabase Web Push queue and service worker handle background delivery. The browser checks cover opt-in, failure rollback, slow sends, modal gestures, reduced motion, data saver, couple matching, and permission boundaries. Physical-device notification delivery still requires supported OS/browser settings; mobile browser simulation does not verify the phone's notification center.
 
 ## Version 2.7
 

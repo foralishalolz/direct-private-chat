@@ -56,7 +56,7 @@ export default function AuthScreen({ initialError = "" }: { initialError?: strin
 
   return (
     <main className="auth-screen">
-      <div className="auth-glow" aria-hidden="true" />
+      <div className="auth-glow" aria-hidden="true" /><div className="auth-glass-orb" aria-hidden="true" />
       <section className="auth-card" aria-label="BitchAt account">
         <Brand />
         <form onSubmit={submit} className="auth-form" aria-busy={busy}>

@@ -23,10 +23,14 @@ test("saved stickers survive logout while private text is cleared", async () => 
   await deleteSticker("stickers-logout");
 });
 test("sticker collection evicts the oldest at its count limit", async () => {
-  const first = await saveSticker("stickers-count", photo("first"));
-  for (let i = 0; i < STICKER_LIMIT; i++) await saveSticker("stickers-count", photo(String(i)));
-  const rows = await listStickers("stickers-count"); assert.equal(rows.length, STICKER_LIMIT);
-  assert.equal(rows.some(row => row.id === first), false); await deleteSticker("stickers-count");
+  const now = Date.now; Date.now = () => 1700000000000;
+  try {
+    const first = await saveSticker("stickers-count", photo("first"));
+    for (let i = 0; i < STICKER_LIMIT; i++) await saveSticker("stickers-count", photo(String(i)));
+    const rows = await listStickers("stickers-count"); assert.equal(rows.length, STICKER_LIMIT);
+    assert.equal(rows.some(row => row.id === first), false);
+    assert.equal(new Set(rows.map(row => row.created_at)).size, STICKER_LIMIT);
+  } finally { Date.now = now; await deleteSticker("stickers-count"); }
 });
 test("sticker byte budget holds even when every file reaches the maximum", async () => {
   for (let i = 0; i < 40; i++) await saveSticker("stickers-bytes", photo(String(i), STICKER_BYTES));

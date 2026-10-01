@@ -374,3 +374,94 @@ test("sign-out from another tab revokes device alerts and removes the local noti
  await expect(page.getByRole("button",{name:"Log in",exact:true})).toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as unknown as {pushStats:{unsubscribed:number}}).pushStats.unsubscribed)).toBe(1);
  expect(await page.evaluate(()=>localStorage.getItem("bitchat-push-owner"))).toBe(null);
 });
+
+test("the inbox bell asks for permission only after an explicit alert toggle",async({page})=>{
+ await pushDevice(page);const calls=await mock(page);
+ await page.locator(".inbox-header").getByRole("button",{name:"Notifications",exact:true}).click();
+ expect(await page.evaluate(()=>(window as unknown as {pushStats:{requests:number}}).pushStats.requests)).toBe(0);
+ await page.getByRole("switch",{name:"Message alerts",exact:true}).click();await expect(page.getByRole("switch",{name:"Message alerts",exact:true})).toHaveAttribute("aria-checked","true");
+ expect(calls.some(call=>call.name==="register_push_subscription")).toBe(true);
+ await page.getByRole("button",{name:"Close",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(2);
+});
+
+test("a received kiss request has a muah reply action that preserves the draft",async({page})=>{
+ const calls=await mock(page);await page.route("**/rest/v1/messages?*",async route=>{
+  if(route.request().method()!=="GET")return route.fallback();
+  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify([...messages,{...messages[0],id:"99999999-9999-4999-8999-999999999999",content:"🥺 A kiss, please?",created_at:new Date().toISOString()}])});
+ });
+ await openChat(page);await page.getByRole("textbox",{name:"Message",exact:true}).fill("My little thought");await page.getByRole("button",{name:"Send a kiss back",exact:true}).click();
+ await expect.poll(()=>calls.some(call=>call.name==="messages"&&call.body.content==="💋 Muahh!")).toBe(true);
+ await expect(page.getByRole("textbox",{name:"Message",exact:true})).toHaveValue("My little thought");await expect(page.locator(".affection-caption").filter({hasText:"Muahh!"})).toBeVisible();
+});
+
+test("slow sends stay optimistic and the next draft drains without a five-second pause",async({page})=>{
+ const errors:string[]=[];page.on("pageerror",error=>errors.push(error.message));const calls=await mock(page);await openChat(page);
+ let release!:()=>void,posts=0;const gate=new Promise<void>(resolve=>{release=resolve;});
+ await page.route("**/rest/v1/messages?*",async route=>{if(route.request().method()==="POST"){posts++;if(posts===1)await gate;}await route.fallback();});
+ const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Slow first");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect.poll(()=>posts).toBe(1);
+ await input.fill("Fast second");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect(page.locator(".message-text").filter({hasText:"Fast second"})).toBeVisible();
+ expect(posts).toBe(1);release();await expect.poll(()=>calls.filter(call=>call.name==="messages"&&["Slow first","Fast second"].includes(String(call.body.content))).map(call=>call.body.content),{timeout:2500}).toEqual(["Slow first","Fast second"]);
+ expect(errors).toEqual([]);
+});
+
+test("data saver persists per account and removes backdrop work from the chat header",async({page})=>{
+ await mock(page);await page.getByRole("button",{name:"Profile",exact:true}).last().click();const toggle=page.getByRole("switch",{name:"Data saver",exact:true});await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","true");
+ expect(await page.evaluate(()=>document.documentElement.dataset.dataSaver)).toBe("true");await page.getByRole("button",{name:"Close",exact:true}).click();await openChat(page);
+ expect(await page.locator(".thread-header").evaluate(node=>getComputedStyle(node).backdropFilter)).toBe("none");
+ expect(await page.evaluate(()=>localStorage.getItem("bitchat-data-saver:11111111-1111-4111-8111-111111111111"))).toBe("true");
+});
+
+test("couple moments require both opt-ins and keep ordinary friend chats available",async({page})=>{
+ await mock(page);await openChat(page);await expect(page.getByRole("button",{name:"Us",exact:true})).toHaveCount(0);await expect(page.locator(".chat-shortcuts").getByRole("button",{name:"Play",exact:true})).toBeVisible();
+});
+
+test("shared treat picks award a local stamp only after both people match",async({page},info)=>{
+ await mock(page,false,false,true);let poll:Record<string,unknown>|null=null,choice:number|null=null;
+ await page.route("**/rest/v1/**",async route=>{
+  const name=new URL(route.request().url()).pathname.split("/").at(-1),body=route.request().postDataJSON()??{};let result:unknown;
+  if(name==="create_poll"){poll={id:body.p_id,conversation_id:cid,question:body.p_question,options:body.p_options,created_at:new Date().toISOString(),closes_at:new Date(Date.now()+86400000).toISOString()};choice=null;result=body.p_id;}
+  else if(name==="polls")result=poll;
+  else if(name==="poll_votes")result=poll?[{poll_id:poll.id,user_id:other,choice:2},...(choice===null?[]:[{poll_id:poll.id,user_id:uid,choice}])]:[];
+  else if(name==="vote_poll"){choice=Number(body.p_choice);result=null;}
+  else return route.fallback();
+  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(result)});
+ });
+ await openChat(page);await page.getByRole("button",{name:"Us",exact:true}).click();await page.getByRole("dialog",{name:"Us",exact:true}).getByRole("button",{name:"Play",exact:true}).click();
+ await expect(page.locator(".treat-collection .earned")).toHaveCount(0);await page.getByRole("button",{name:"Pick strawberries",exact:true}).click();await expect(page.getByText("Stamp collected",{exact:true})).toBeVisible();await expect(page.locator('[aria-label="Strawberries collected"]')).toBeVisible();
+ if(info.project.name==="mobile")console.log("IOS_MOMENT "+(await page.screenshot({type:"jpeg",quality:80})).toString("base64"));
+ await page.getByRole("button",{name:"Close",exact:true}).click();await page.getByRole("button",{name:"Us",exact:true}).click();await expect(page.locator('[aria-label="Strawberries collected"]')).toBeVisible();await page.getByRole("button",{name:"New round",exact:true}).click();await expect(page.locator(".treat-collection .earned")).toHaveCount(1);await expect(page.getByText("Stamp collected",{exact:true})).toHaveCount(0);
+});
+
+test("a failed shared pick cannot award a treat or lock the rest of the chat",async({page})=>{
+ await mock(page,false,false,true);const poll={id:"99999999-9999-4999-8999-999999999999",conversation_id:cid,question:"🍓 Pick our treat",options:["🍪 Cookie","🍦 Ice cream","🍓 Strawberries","🥞 Pancakes"],created_at:stamp,closes_at:new Date(Date.now()+86400000).toISOString()};
+ await page.route("**/rest/v1/polls?*",route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(poll)}));await page.route("**/rest/v1/poll_votes?*",route=>route.fulfill({status:200,contentType:"application/json",body:JSON.stringify([{poll_id:poll.id,user_id:other,choice:2}])}));await page.route("**/rest/v1/rpc/vote_poll",route=>route.fulfill({status:403,contentType:"application/json",body:JSON.stringify({message:"Pick unavailable",code:"42501"})}));
+ await openChat(page);await page.getByRole("button",{name:"Us",exact:true}).click();await page.getByRole("button",{name:"Pick strawberries",exact:true}).click();await expect(page.getByRole("alert")).toBeVisible();await expect(page.locator(".treat-collection .earned")).toHaveCount(0);await expect(page.getByRole("button",{name:"Pick strawberries",exact:true})).toBeEnabled();await page.getByRole("button",{name:"Close",exact:true}).click();await expect(page.getByRole("textbox",{name:"Message",exact:true})).toBeVisible();
+});
+
+test("glass sheets isolate background controls and restore them on close",async({page},info)=>{
+ await mock(page);await page.locator(".inbox-header").getByRole("button",{name:"Notifications",exact:true}).click();await expect(page.getByRole("button",{name:"New message",exact:true})).toHaveCount(0);
+ if(info.project.name==="mobile"){const box=await page.getByRole("dialog",{name:"Notifications",exact:true}).boundingBox();expect(Math.abs((box?.y??0)+(box?.height??0)-(page.viewportSize()?.height??0))).toBeLessThan(3);const handle=page.getByRole("button",{name:"Dismiss sheet",exact:true});await dragChat(page,handle,true,0,30);await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await dragChat(page,handle,true,0,-40);await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await dragChat(page,handle,true,0,110);}
+ else await page.keyboard.press("Escape");
+ await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toHaveCount(0);await expect(page.locator(".inbox-header").getByRole("button",{name:"New message",exact:true})).toBeVisible();
+});
+
+test("reduced motion disables decorative animation while affection remains usable",async({page})=>{
+ await page.emulateMedia({reducedMotion:"reduce"});await mock(page);await openChat(page);await page.getByRole("button",{name:"I miss you",exact:true}).click();const glyph=page.locator(".affection-glyph");await expect(glyph).toBeVisible();expect(await glyph.evaluate(node=>getComputedStyle(node).animationName)).toBe("none");
+});
+
+
+test("older iOS cancellation support still allows the chat to send",async({page})=>{
+ await page.addInitScript(()=>Object.defineProperty(AbortSignal,"any",{configurable:true,value:undefined}));const calls=await mock(page);await openChat(page);await page.getByRole("textbox",{name:"Message",exact:true}).fill("Hello from an older phone");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect.poll(()=>calls.some(call=>call.name==="messages"&&call.body.content==="Hello from an older phone")).toBe(true);
+});
+
+
+test("a delayed inbox snapshot cannot restore an older preview or unread marker",async({page})=>{
+ await mock(page);let release!:()=>void,requested=false,finished=false;const gate=new Promise<void>(resolve=>{release=resolve;});
+ await page.route("**/rest/v1/rpc/inbox_page",async route=>{requested=true;await gate;await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify([direct,group])});finished=true;},{times:1});
+ await page.evaluate(()=>document.dispatchEvent(new Event("visibilitychange")));await expect.poll(()=>requested).toBe(true);
+ const newer={...messages[0],id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",content:"Our newest thought",created_at:new Date(Date.now()+1000).toISOString()};
+ await page.evaluate(({uid,newer})=>window.dispatchEvent(new CustomEvent("bitchat-outbox",{detail:{userId:uid,row:newer}})),{uid,newer});
+ const row=page.locator(".conversation").filter({hasText:"Alex"});await expect(row.locator(".preview")).toHaveText("Our newest thought");await expect(row.locator(".preview.unread")).toHaveCount(1);
+ await page.evaluate(({uid,newer})=>{window.dispatchEvent(new CustomEvent("bitchat-outbox",{detail:{userId:uid,row:{...newer,id:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",content:"Late old thought",created_at:new Date(Date.parse(newer.created_at)-2000).toISOString()}}}));window.dispatchEvent(new CustomEvent("bitchat-inbox-read",{detail:{userId:uid,conversationId:newer.conversation_id,stamp:newer.created_at}}));},{uid,newer});
+ release();await expect.poll(()=>finished).toBe(true);await page.waitForTimeout(300);await expect(row.locator(".preview")).toHaveText("Our newest thought");await expect(row.locator(".preview.unread")).toHaveCount(0);
+});

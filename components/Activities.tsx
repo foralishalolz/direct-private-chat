@@ -1,6 +1,8 @@
 
 "use client";
 import {useEffect,useRef,useState} from "react";
+import dynamic from "next/dynamic";
+import type {AffectionId} from "@/lib/affection";
 import {ArrowUp,BarChart3,Check,ChevronDown,Flame,Heart,ImagePlus,LockKeyhole,Plus,Search,ShieldCheck,Trash2,UnlockKeyhole} from "lucide-react";
 import {db,rpc} from "@/lib/supabase";
 import {useLive} from "@/hooks/useLive";
@@ -9,10 +11,11 @@ import {day,errorText,label,time,type Capsule,type Conversation,type Game,type M
 import {Modal,IconButton,ErrorNote,Spinner} from "./UI";
 import {ChatDetails,MessageHistory,QuickPlay} from "./ChatFeatures";
 import {PrivateMedia} from "./MessageBubble";
-export type ActivityTab="capsules"|"games"|"polls"|"stats"|"search"|"archive"|"chat";
-export default function Activities({tab,conversation:c,profile:p,onClose,onRefresh,onExit}:{tab:ActivityTab;conversation:Conversation;profile:Profile;onClose:()=>void;onRefresh:()=>Promise<void>;onExit:()=>void}){
- const titles:Record<ActivityTab,string>={capsules:"Capsules",games:"Play",polls:"Polls",stats:"Together",search:"Search messages",archive:"Message history",chat:"Chat"};
- return <Modal title={titles[tab]} onClose={onClose} wide><div className="panel-pad">{tab==="capsules"?<Capsules c={c} p={p}/>:tab==="games"?<><QuickPlay c={c}/>{c.kind==="direct"&&<Games c={c} p={p}/>}</>:tab==="polls"?<Polls c={c} p={p}/>:tab==="stats"?<Stats c={c} p={p}/>:tab==="archive"?<MessageHistory c={c}/>:tab==="search"?<MessageSearch c={c} archive={false}/>:<ChatDetails c={c} p={p} onRefresh={onRefresh} onExit={onExit}/>}</div></Modal>;
+const CoupleMoment=dynamic(()=>import("./CoupleMoment"),{loading:()=> <div className="center pad"><Spinner/></div>});
+export type ActivityTab="capsules"|"games"|"polls"|"stats"|"search"|"archive"|"chat"|"moment";
+export default function Activities({tab,conversation:c,profile:p,onClose,onRefresh,onExit,onAffection}:{tab:ActivityTab;conversation:Conversation;profile:Profile;onClose:()=>void;onRefresh:()=>Promise<void>;onExit:()=>void;onAffection:(id:AffectionId)=>Promise<void>}){
+ const titles:Record<ActivityTab,string>={capsules:"Capsules",games:"Play",polls:"Polls",stats:"Together",search:"Search messages",archive:"Message history",chat:"Chat",moment:"Us"};
+ return <Modal title={titles[tab]} onClose={onClose} wide><div className="panel-pad">{tab==="moment"?<CoupleMoment c={c} p={p} onAffection={onAffection}/>:tab==="capsules"?<Capsules c={c} p={p}/>:tab==="games"?<><QuickPlay c={c}/>{c.kind==="direct"&&<Games c={c} p={p}/>}</>:tab==="polls"?<Polls c={c} p={p}/>:tab==="stats"?<Stats c={c} p={p}/>:tab==="archive"?<MessageHistory c={c}/>:tab==="search"?<MessageSearch c={c} archive={false}/>:<ChatDetails c={c} p={p} onRefresh={onRefresh} onExit={onExit}/>}</div></Modal>;
 }
 function Capsules({c,p}:{c:Conversation;p:Profile}){
  const [limit,setLimit]=useState(30),[body,setBody]=useState(""),[date,setDate]=useState(""),[photo,setPhoto]=useState<File|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[opened,setOpened]=useState<{content:string;media_url:string|null}|null>(null),[now,setNow]=useState(Date.now());const input=useRef<HTMLInputElement>(null),id=useRef(crypto.randomUUID());
@@ -57,4 +60,3 @@ export function GoalCard({c,p}:{c:Conversation;p:Profile}){
  const done=c.member_a===p.id?g.completed_a:g.completed_b;
  return <aside className="goal-card"><span className="goal-icon"><Heart size={21}/></span><div><small>Together</small><p>{g.prompt}</p><div className="goal-checks"><span className={g.completed_a?"done":""}><Check size={12}/>{label(c.members?.find(x=>x.id===c.member_a))}</span><span className={g.completed_b?"done":""}><Check size={12}/>{label(c.members?.find(x=>x.id===c.member_b))}</span></div><ErrorNote text={error}/></div><IconButton label="Complete goal" disabled={!!done||busy} className={done?"completed":""} onClick={async()=>{setBusy(true);try{await rpc("complete_goal",{p_id:g.id});await live.refresh();}catch(e){setError(errorText(e));}finally{setBusy(false);}}}><Check size={20}/></IconButton></aside>;
 }
-

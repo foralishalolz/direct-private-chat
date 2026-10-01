@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { SUPABASE_KEY, SUPABASE_URL } from "./config";
+import { requestSignal } from "./request";
 let client: SupabaseClient | undefined;
 export function db() {
   if (client) return client;
@@ -8,7 +9,7 @@ export function db() {
     auth:{ persistSession:true,autoRefreshToken:true,detectSessionInUrl:false },
     realtime:{ params:{ eventsPerSecond:10 } },
     global:{ fetch:(input,init) => {
-      const signal=init?.signal ? AbortSignal.any([init.signal,AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000);
+      const signal=requestSignal(init?.signal);
       return fetch(input,{...init,signal});
     }}
   });
@@ -29,4 +30,3 @@ export async function endpoint(name: string,body: unknown,authenticated=true) {
   if(!response.ok){const data=await response.json().catch(()=>({error:"Please try again."}));throw new Error(data.error??"Please try again.");}
   return response;
 }
-

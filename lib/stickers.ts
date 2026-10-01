@@ -37,7 +37,10 @@ export async function saveSticker(userId: string, blob: Blob): Promise<string> {
     const request = store.getAll();
     request.onsuccess = () => {
       const rows: SavedSticker[] = request.result.filter((row: SavedSticker) => row.id !== id);
-      const next: SavedSticker = { id, user_id: userId, blob, bytes: blob.size, created_at: Date.now() };
+      // IndexedDB serializes this transaction across tabs. A monotonic stamp
+      // keeps FIFO eviction correct when saves share a millisecond or the clock changes.
+      const created_at = rows.reduce((latest, row) => Math.max(latest, row.created_at + 1), Date.now());
+      const next: SavedSticker = { id, user_id: userId, blob, bytes: blob.size, created_at };
       rows.push(next);
       rows.sort((a, b) => a.created_at - b.created_at);
       let own = rows.filter(row => row.user_id === userId);

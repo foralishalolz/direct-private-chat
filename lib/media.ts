@@ -1,4 +1,5 @@
 import {imageDimensions} from "./imageDimensions";
+import {dataSaver} from "./device";
 
 import {db} from "./supabase";
 const links=new Map<string,{url:string;until:number}>();
@@ -17,6 +18,7 @@ export async function signed(bucket:string,path:string){
   })().finally(()=>inflight.delete(key));inflight.set(key,promise);return promise;
 }
 export async function imageFile(file:Blob,max=1600):Promise<Blob>{
+  if(dataSaver())max=Math.min(max,1000);
   if(file.size>12*1024*1024)throw new Error("Photo must be under 12 MB.");
   const b=new Uint8Array(await file.slice(0,32).arrayBuffer());
   const png=b[0]===137&&b[1]===80&&b[2]===78&&b[3]===71;
@@ -30,7 +32,7 @@ export async function imageFile(file:Blob,max=1600):Promise<Blob>{
     const scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));
     const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
     const ctx=canvas.getContext("2d");if(!ctx)throw new Error("Photo unavailable.");ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
-    return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(x=>x?resolve(x):reject(new Error("Could not prepare photo.")),"image/webp",0.82));
+    return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(x=>x?resolve(x):reject(new Error("Could not prepare photo.")),"image/webp",dataSaver() ? .72 : .82));
   }finally{bitmap.close();}
 }
 export async function squareSticker(file:Blob):Promise<Blob>{
