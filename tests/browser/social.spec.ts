@@ -439,10 +439,10 @@ test("a failed shared pick cannot award a treat or lock the rest of the chat",as
 });
 
 test("glass sheets isolate background controls and restore them on close",async({page},info)=>{
- await mock(page);await page.locator(".inbox-header").getByRole("button",{name:"Notifications",exact:true}).click();await expect(page.getByRole("button",{name:"New message",exact:true})).toHaveCount(0);
+ await mock(page);await page.locator(".inbox-header").getByRole("button",{name:"Notifications",exact:true}).click();await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await expect(page.locator(".app-shell")).toHaveAttribute("aria-hidden","true");await expect(page.getByRole("button",{name:"New message",exact:true})).toHaveCount(0);
  if(info.project.name==="mobile"){await expect.poll(async()=>{const box=await page.getByRole("dialog",{name:"Notifications",exact:true}).boundingBox();return Math.abs((box?.y??0)+(box?.height??0)-(page.viewportSize()?.height??0));}).toBeLessThan(3);const handle=page.getByRole("button",{name:"Dismiss sheet",exact:true});await dragChat(page,handle,true,0,30);await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await dragChat(page,handle,true,0,-40);await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toBeVisible();await dragChat(page,handle,true,0,110);}
  else await page.keyboard.press("Escape");
- await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toHaveCount(0);await expect(page.locator(".inbox-header").getByRole("button",{name:"New message",exact:true})).toBeVisible();
+ await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toHaveCount(0);await expect(page.locator(".app-shell")).not.toHaveAttribute("aria-hidden","true");await expect(page.locator(".inbox-header").getByRole("button",{name:"New message",exact:true})).toBeVisible();
 });
 
 test("reduced motion disables decorative animation while affection remains usable",async({page})=>{
