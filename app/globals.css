@@ -234,3 +234,10 @@ input:focus,textarea:focus,select:focus,.input-icon:focus-within{border-color:#a
 @media(max-width:760px){.conversation-item .conversation{background:#13161e}.conversation-item .conversation.selected{background:#2a273d}}
 
 .romantic-chat .message-row.own .bubble:not(.affection-bubble):not(.sticker-bubble){background:linear-gradient(130deg,#743866,#594063)}
+
+/* Install prompt sheet */
+.install-content{display:flex;flex-direction:column;gap:14px;align-items:stretch;text-align:center}
+.install-line{font-size:14px;line-height:1.6;color:#cfc3d4;margin:0;max-width:280px;align-self:center}
+.install-manual{font-size:13px;line-height:1.6;color:#b9adc2;margin:0;display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap}
+.install-manual svg{vertical-align:-3px}
+.install-content .quiet-button{align-self:center;min-width:44px}

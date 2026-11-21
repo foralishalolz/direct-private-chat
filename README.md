@@ -1,4 +1,4 @@
-# BitchAt 2.8
+# BitchAt 2.9
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -62,7 +62,7 @@ The 2.2 CI run also passed 19 unit tests, 32 desktop/mobile browser checks, the 
 
 ## Version 2.8
 
-Next.js is pinned to 16.3.8, including the next/og ImageResponse security fix. The lockfile is regenerated and production dependencies are checked by CI. The application exports static files and does not expose an ImageResponse endpoint. Seventeen live, rolled-back SQL checks verify shared treat polls, idempotent creation, authenticated choices, expiry, and outsider rejection; see `supabase/tests/couple_moments.sql`.
+Next.js is pinned to 16.4.6, including the cross-client response injection and cache-disclosure security fixes for 16.3.8. The lockfile is regenerated and production dependencies are checked by CI. The application exports static files and does not expose an ImageResponse endpoint. Seventeen live, rolled-back SQL checks verify shared treat polls, idempotent creation, authenticated choices, expiry, and outsider rejection; see `supabase/tests/couple_moments.sql`.
 
 The interface uses a system-font glass design with rounded panels, a floating mobile navigation dock, safe-area-aware chat controls, keyboard-aware viewport sizing, and swipe-down bottom sheets. Sheets isolate and trap focus inside the active dialog. Animations are short and limited to opacity/transform; reduced-motion and reduced-transparency preferences are respected. Data saver disables expensive backdrop effects, reduces image resolution and compression size, and limits offscreen media loading. Emoji rendering follows the device's native font.
 
@@ -71,6 +71,16 @@ Kiss/hug requests include a reply action that preserves the text draft. Muahh, I
 Slow sends remain visible immediately in the existing bounded IndexedDB outbox. New drafts drain immediately after an in-flight send finishes, with stable UUID retries and account-level ordering. Inbox previews update locally instead of waiting for a full HTTP snapshot; delayed responses retain newer previews, read markers, and archive choices. Realtime HTTP reconciliation and local cache writes are coalesced. Older iOS browsers without AbortSignal.any keep request cancellation and deadlines. Rapid sticker saves use a transaction-scoped monotonic timestamp so FIFO eviction remains deterministic even within one millisecond.
 
 The inbox bell opens notification settings directly. Permission is requested only by tapping Message alerts; the existing Supabase Web Push queue and service worker handle background delivery. The browser checks cover opt-in, failure rollback, slow sends, modal gestures, reduced motion, data saver, couple matching, and permission boundaries. Physical-device notification delivery still requires supported OS/browser settings; mobile browser simulation does not verify the phone's notification center.
+
+## Version 2.9
+
+The cleaned-up release builds on the 2.8 line without changing the database schema, Edge Functions, Web Push backend, or the Vercel static-export deployment model.
+
+- Next.js bumped from 16.3.8 to 16.4.6 (critical advisory GHSA-rhh4-g77r-r9qj and related fixes); CI audit gate now passes with zero known vulnerabilities. Lockfile regenerated.
+- New native-feel affordances: an install prompt (beforeinstallprompt + an iPhone share-sheet hint that persists its dismissal) and a live app-icon unread badge that mirrors the inbox unread count and clears when the tab is visible or the count is zero. Both are guarded no-ops where the platform does not support them.
+- The direct-private-chat Vercel project now carries explicit NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (plain, browser-safe) matching the committed config fallback; the empty URL variable was replaced rather than left dangling.
+- CI now runs the full BitchAt verification suite on this release branch as well.
+- Behavior, privacy boundaries, push delivery, realtime/outbox semantics and data retention of 2.8 are unchanged; the only intentional code changes are the two additive surfaces above.
 
 ## Version 2.7
 

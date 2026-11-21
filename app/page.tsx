@@ -12,6 +12,7 @@ import {useOutbox} from "@/hooks/useOutbox";
 import {errorText,type Profile} from "@/lib/types";
 import AuthScreen from "@/components/AuthScreen";
 import {Brand,ErrorNote,Spinner} from "@/components/UI";
+import InstallPrompt from "@/components/InstallPrompt";
 const ChatRoom=dynamic(()=>import("@/components/ChatRoom"),{loading:()=> <div className="loading-screen"><Brand/><Spinner/></div>});
 export default function Home(){
  const [session,setSession]=useState<Session|null>(null),[profile,setProfile]=useState<Profile|null>(null),[ready,setReady]=useState(false),[error,setError]=useState(""),[version,setVersion]=useState(0);
@@ -29,5 +30,5 @@ export default function Home(){
  if(!ready)return <main className="loading-screen"><Brand/><Spinner/></main>;
  if(!session)return <AuthScreen initialError={error}/>;
  if(!profile)return <main className="loading-screen"><Brand/>{error?<><ErrorNote text={error}/><button className="primary" onClick={()=>setVersion(x=>x+1)}>Retry</button><button onClick={()=>void logout()}>Log out</button></>:<Spinner/>}</main>;
- return <PrivacyProvider key={session.user.id} userId={session.user.id}><ChatRoom key={session.user.id} profile={profile} onProfile={p=>{setProfile(current=>current?.id===p.id?p:current);void cache(p.id,"profile",p);}} onLogout={logout}/></PrivacyProvider>;
+ return <><PrivacyProvider key={session.user.id} userId={session.user.id}><ChatRoom key={session.user.id} profile={profile} onProfile={p=>{setProfile(current=>current?.id===p.id?p:current);void cache(p.id,"profile",p);}} onLogout={logout}/></PrivacyProvider><InstallPrompt/></>;
 }

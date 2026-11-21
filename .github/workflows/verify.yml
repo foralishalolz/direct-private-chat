@@ -2,7 +2,7 @@
 name: BitchAt checks
 on:
   push:
-    branches: [bitchat-production, bitchat-2-5-checks]
+    branches: [bitchat-production, bitchat-2-5-checks, arena/d3c74abe-direct-private-chat]
   workflow_dispatch:
 permissions:
   contents: read

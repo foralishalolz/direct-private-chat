@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { Archive, ArrowLeft, Bell, BookHeart, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
 import { watchDeviceMode, watchViewport } from "@/lib/device";
 import { useNotifications } from "@/hooks/useNotifications";
+import { useAppBadge } from "@/hooks/useAppBadge";
 import { useInbox } from "@/hooks/useInbox";
 import { loadConversation } from "@/lib/conversation";
 import { errorText, label, title, type Conversation, type Profile } from "@/lib/types";
@@ -81,6 +82,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   );
   const recent = items.filter(conversation => !conversation.archived && conversation.kind === "direct" && conversation.partner).slice(0, 8);
   const unread = items.filter(conversation => !conversation.archived && conversation.unread).length;
+  useAppBadge(unread);
 
   return (
     <main className={"app-shell " + (selected ? "has-thread" : "")}>
