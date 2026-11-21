@@ -158,6 +158,12 @@ export function ChatRoom({ group, onBack }: ChatRoomProps) {
   }, [group.id, markGroupRead]);
 
   // ------------------------------------------------------------------ sending
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const element = scrollRef.current;
+    if (!element) return;
+    element.scrollTo({ top: element.scrollHeight, behavior });
+  }, []);
+
   const notifyRecipients = useCallback(
     async (messageId: string) => {
       if (!client) return;
@@ -286,12 +292,6 @@ export function ChatRoom({ group, onBack }: ChatRoomProps) {
     [client, group.id],
   );
 
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
-    const element = scrollRef.current;
-    if (!element) return;
-    element.scrollTo({ top: element.scrollHeight, behavior });
-  }, []);
-
   const ensureProfiles = useCallback(
     async (userIds: string[]) => {
       if (!client) return;
@@ -328,18 +328,16 @@ export function ChatRoom({ group, onBack }: ChatRoomProps) {
       if (!data) return;
 
       setReactions((current) => {
-        const next = { ...current };
+        const next: Record<string, Reaction[]> = { ...current };
         for (const row of data) {
           const key = row.message_id as string;
-          const list = next[key] ?? [];
-          if (
-            !list.some(
-              (reaction) =>
-                reaction.user_id === row.user_id && reaction.emoji === row.emoji,
-            )
-          ) {
-            list.push(row as Reaction);
-          }
+          // Always clone the list — never mutate the array held in state.
+          const list = [...(next[key] ?? [])];
+          const already = list.some(
+            (reaction) =>
+              reaction.user_id === row.user_id && reaction.emoji === row.emoji,
+          );
+          if (!already) list.push(row as Reaction);
           next[key] = list;
         }
         return next;
@@ -359,11 +357,13 @@ export function ChatRoom({ group, onBack }: ChatRoomProps) {
       if (!data) return;
 
       setReads((current) => {
-        const next = { ...current };
+        const next: Record<string, string[]> = { ...current };
         for (const row of data) {
           const key = row.message_id as string;
-          const list = next[key] ?? [];
-          if (!list.includes(row.user_id as string)) list.push(row.user_id as string);
+          const list = [...(next[key] ?? [])];
+          if (!list.includes(row.user_id as string)) {
+            list.push(row.user_id as string);
+          }
           next[key] = list;
         }
         return next;

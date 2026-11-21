@@ -1,6 +1,7 @@
 "use client";
 
 import { CalendarHeart, Check, Clock, MapPin, PartyPopper } from "lucide-react";
+import { useEffect, useState } from "react";
 import { formatCountdown } from "@/lib/utils";
 import type { Plan } from "@/types/chat";
 
@@ -25,9 +26,17 @@ export function PlanCard({
   onToggleComplete?: () => void;
 }) {
   const startsAt = new Date(plan.starts_at);
-  const isPast = startsAt.getTime() < Date.now();
-  const soon =
-    !isPast && startsAt.getTime() - Date.now() < 60 * 60 * 1000 && !plan.completed;
+  // "now" lives in state so render stays pure and the card updates on a timer
+  // instead of reading the clock mid-render.
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const isPast = startsAt.getTime() < now;
+  const soon = !isPast && startsAt.getTime() - now < 60 * 60 * 1000 && !plan.completed;
 
   if (compact) {
     return (

@@ -29,24 +29,44 @@ interface UseOutboxOptions<T> {
 
 const MAX_ATTEMPTS = 6;
 
+function readStoredQueue<T>(storageKey: string): OutboxItem<T>[] {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as OutboxItem<T>[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export function useOutbox<T>({
   storageKey,
   send,
   onSent,
   onFailed,
 }: UseOutboxOptions<T>) {
-  const [queue, setQueue] = useState<OutboxItem<T>[]>([]);
+  // Hydrate synchronously on the client so a queued message from a previous
+  // session is visible immediately, then keep it in sync below.
+  const [queue, setQueue] = useState<OutboxItem<T>[]>(() =>
+    typeof window === "undefined" ? [] : readStoredQueue<T>(storageKey),
+  );
   const [flushing, setFlushing] = useState(false);
   const queueRef = useRef<OutboxItem<T>[]>([]);
   const sendRef = useRef(send);
   const onSentRef = useRef(onSent);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable indirection so the retry timer can call the latest flush without
+  // referencing it before its declaration.
+  const flushRef = useRef<() => Promise<void>>(async () => {});
   // Guards against overlapping drains: without this, two "online" events can
   // both start flushing and send the same message twice.
   const drainingRef = useRef(false);
 
-  sendRef.current = send;
-  onSentRef.current = onSent;
+  useEffect(() => {
+    sendRef.current = send;
+    onSentRef.current = onSent;
+  }, [send, onSent]);
 
   const persist = useCallback(
     (items: OutboxItem<T>[]) => {
@@ -65,21 +85,11 @@ export function useOutbox<T>({
     [storageKey],
   );
 
-  // Rehydrate anything left over from a previous session.
+  // Seed the ref from the hydrated state once, so flushing works immediately.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as OutboxItem<T>[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          queueRef.current = parsed;
-          setQueue(parsed);
-        }
-      }
-    } catch {
-      /* ignore corrupt payloads */
-    }
-  }, [storageKey]);
+    queueRef.current = queue;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const flush = useCallback(async () => {
     if (drainingRef.current || queueRef.current.length === 0) return;
@@ -114,7 +124,7 @@ export function useOutbox<T>({
         // Exponential backoff: 800ms, 1.6s, 3.2s, 6.4s, 12.8s.
         const delay = Math.min(800 * 2 ** (attempts - 1), 12_800);
         if (timerRef.current) clearTimeout(timerRef.current);
-        timerRef.current = setTimeout(() => void flush(), delay);
+        timerRef.current = setTimeout(() => void flushRef.current(), delay);
         break;
       }
     }
@@ -123,6 +133,10 @@ export function useOutbox<T>({
     drainingRef.current = false;
     setFlushing(false);
   }, [onFailed, persist]);
+
+  useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
 
   const enqueue = useCallback(
     (id: string, payload: T) => {

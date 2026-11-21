@@ -48,6 +48,7 @@ export function CoupleHub({ onOpenGroup }: CoupleHubProps) {
   const [gamesOpen, setGamesOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
   const [pokeSent, setPokeSent] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const [poking, setPoking] = useState(false);
 
   const partnerGroup = useMemo(
@@ -155,6 +156,12 @@ export function CoupleHub({ onOpenGroup }: CoupleHubProps) {
     void loadNotes();
   }, [loadNotes, loadPlans]);
 
+  // Keeps "in 2h" countdowns honest without reading the clock during render.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Live plan + note updates, plus the "date is starting" nudge.
   useEffect(() => {
     if (!supabase || !groupId) return;
@@ -203,7 +210,8 @@ export function CoupleHub({ onOpenGroup }: CoupleHubProps) {
   }, [groupId, loadNotes, loadPlans, plans, user?.id]);
 
   const upcoming = plans.filter(
-    (plan) => !plan.completed && new Date(plan.starts_at).getTime() > Date.now() - 3_600_000,
+    (plan) =>
+      !plan.completed && new Date(plan.starts_at).getTime() > now - 3_600_000,
   );
   const nextPlan = upcoming[0];
   const past = plans.filter((plan) => plan.completed);
