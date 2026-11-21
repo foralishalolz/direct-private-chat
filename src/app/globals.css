@@ -1,27 +1,72 @@
 @import "tailwindcss";
 
+/*
+  BitchAt design system
+  ---------------------
+  A warm, modern, Instagram-inspired surface for a private couple/group chat.
+  Deep plum night background, lifted card surfaces, a rose→violet accent
+  gradient, and generous rounded geometry for a native-feeling mobile app.
+*/
+
 :root {
   color-scheme: dark;
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
-  --chat-header-height: calc(4rem + var(--safe-top));
-  --chat-composer-height: calc(4.5rem + var(--safe-bottom));
 
-  /* Telegram-inspired dark palette */
-  --tg-bg: #0e1621;
-  --tg-panel: #17212b;
-  --tg-panel-2: #1c2733;
-  --tg-border: #24313f;
-  --tg-hover: #1e2a36;
-  --tg-text: #e9edf1;
-  --tg-text-muted: #7d8b99;
-  --tg-accent: #2ea6ff;
-  --tg-accent-strong: #1d8fe0;
-  --tg-bubble-in: #182533;
-  --tg-bubble-out: #2b5278;
-  --tg-danger: #ff5c5c;
+  --app-header-height: calc(3.75rem + var(--safe-top));
+  --app-tab-height: calc(3.9rem + var(--safe-bottom));
+  --app-composer-height: calc(4.25rem + var(--safe-bottom));
+
+  /* Surfaces */
+  --bg: #0a0812;
+  --bg-elevated: #120e1e;
+  --panel: #17121f;
+  --panel-2: #1f1829;
+  --panel-3: #2a2036;
+  --border: #2c2339;
+  --border-strong: #3b2f4d;
+
+  /* Text */
+  --text: #f5f2fa;
+  --text-soft: #cfc6dc;
+  --text-muted: #948aa5;
+  --text-faint: #6b6179;
+
+  /* Accents */
+  --accent: #f472b6;
+  --accent-2: #a855f7;
+  --accent-3: #7c5cff;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(244, 114, 182, 0.14);
+  --accent-glow: rgba(244, 114, 182, 0.32);
+
+  --bubble-in: #1e1929;
+  --bubble-out: linear-gradient(135deg, #f472b6 0%, #b45cf5 55%, #8b5cf6 100%);
+  --bubble-out-solid: #c05ce0;
+
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+  --info: #60a5fa;
+
+  --radius-sm: 0.75rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.375rem;
+  --radius-xl: 1.75rem;
+
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 40px -24px rgba(0, 0, 0, 0.9);
+  --shadow-pop: 0 24px 60px -20px rgba(0, 0, 0, 0.85);
+  --hero-gradient: radial-gradient(
+      120% 100% at 12% 0%,
+      rgba(244, 114, 182, 0.22) 0%,
+      transparent 55%
+    ),
+    radial-gradient(120% 120% at 92% 8%, rgba(124, 92, 255, 0.26) 0%, transparent 58%),
+    linear-gradient(180deg, #141020 0%, var(--bg) 62%);
 }
 
 * {
@@ -33,56 +78,74 @@ body {
   width: 100%;
   min-height: 100%;
   margin: 0;
-  background: var(--tg-bg);
-  color: var(--tg-text);
+  background: var(--bg);
+  color: var(--text);
   overscroll-behavior: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-touch-callout: none;
 }
 
 body {
   min-height: 100dvh;
   font-family:
-    Arial,
-    Helvetica,
+    ui-rounded,
+    "SF Pro Rounded",
+    "Segoe UI Variable",
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
     sans-serif;
+  letter-spacing: -0.01em;
 }
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
+  color: inherit;
 }
 
 button,
 a {
   -webkit-tap-highlight-color: transparent;
-}
-
-button {
   touch-action: manipulation;
 }
 
 input,
-textarea {
+textarea,
+select {
   font-size: 16px;
 }
 
 ::selection {
-  background: rgba(46, 166, 255, 0.35);
+  background: rgba(244, 114, 182, 0.35);
 }
+
+/* ---------------------------------------------------------------- utilities */
 
 .no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
-
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.thin-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
 }
 
 .chat-scroll {
@@ -91,18 +154,109 @@ textarea {
   overflow-anchor: none;
 }
 
-.safe-header {
-  height: var(--chat-header-height);
+.safe-top {
   padding-top: var(--safe-top);
-  padding-right: max(1rem, var(--safe-right));
-  padding-left: max(1rem, var(--safe-left));
+}
+.safe-bottom {
+  padding-bottom: var(--safe-bottom);
+}
+.pb-safe {
+  padding-bottom: max(1rem, var(--safe-bottom));
 }
 
-.safe-composer {
-  min-height: var(--chat-composer-height);
+.app-header {
+  padding-top: var(--safe-top);
   padding-right: max(0.75rem, var(--safe-right));
-  padding-bottom: max(0.75rem, var(--safe-bottom));
   padding-left: max(0.75rem, var(--safe-left));
+}
+
+.app-tabbar {
+  padding-right: max(0.5rem, var(--safe-right));
+  padding-bottom: max(0.35rem, var(--safe-bottom));
+  padding-left: max(0.5rem, var(--safe-left));
+}
+
+.app-composer {
+  padding-right: max(0.65rem, var(--safe-right));
+  padding-bottom: max(0.65rem, var(--safe-bottom));
+  padding-left: max(0.65rem, var(--safe-left));
+}
+
+.glass {
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+
+.accent-gradient {
+  background-image: var(--bubble-out);
+}
+
+.accent-text {
+  background-image: linear-gradient(120deg, #fda4d4 0%, #d8a4ff 50%, #a5b4ff 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero-bg {
+  background: var(--hero-gradient);
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-card);
+}
+
+.press {
+  transition: transform 140ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 140ms ease,
+    background-color 140ms ease;
+}
+.press:active {
+  transform: scale(0.965);
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Instagram-style story ring */
+.story-ring {
+  background: conic-gradient(
+    from 210deg,
+    #f9a8d4,
+    #f472b6,
+    #a855f7,
+    #6366f1,
+    #f9a8d4
+  );
+}
+
+/* Dotted "typing" indicator */
+.typing-dot {
+  animation: typing-bounce 1.15s infinite ease-in-out;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
 }
 
 @keyframes chat-shake {
@@ -110,18 +264,21 @@ textarea {
   100% {
     transform: translateX(0);
   }
-  25% {
-    transform: translateX(-5px);
+  20% {
+    transform: translateX(-6px);
   }
-  75% {
-    transform: translateX(5px);
+  60% {
+    transform: translateX(6px);
+  }
+  80% {
+    transform: translateX(-3px);
   }
 }
 
 @keyframes chat-pop {
   from {
     opacity: 0;
-    transform: translateY(5px) scale(0.985);
+    transform: translateY(6px) scale(0.985);
   }
   to {
     opacity: 1;
@@ -129,12 +286,98 @@ textarea {
   }
 }
 
-.animate-chat-shake {
-  animation: chat-shake 180ms ease-in-out;
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 var(--accent-glow);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(244, 114, 182, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 114, 182, 0);
+  }
+}
+
+@keyframes float-heart {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.6) rotate(-8deg);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-120px) scale(1.25) rotate(12deg);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-chat-shake {
+  animation: chat-shake 320ms ease-in-out;
+}
 .animate-chat-pop {
-  animation: chat-pop 180ms ease-out both;
+  animation: chat-pop 200ms ease-out both;
+}
+.animate-fade-up {
+  animation: fade-up 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.animate-fade-in {
+  animation: fade-in 200ms ease-out both;
+}
+.animate-sheet-up {
+  animation: sheet-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-pulse-ring {
+  animation: pulse-ring 2.2s infinite;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--panel) 25%,
+    var(--panel-3) 37%,
+    var(--panel) 63%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

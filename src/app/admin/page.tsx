@@ -1,10 +1,24 @@
 "use client";
 
-import { LoaderCircle, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Crown,
+  LoaderCircle,
+  Plus,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { Avatar } from "@/components/ui/Avatar";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Pill, SectionTitle } from "@/components/ui/Misc";
+import { timeAgo } from "@/lib/utils";
 import type { Group, UserRole } from "@/types/chat";
 
 interface AdminUser {
@@ -153,6 +167,10 @@ export default function AdminPage() {
   }
 
   async function handleDeleteGroup(groupId: string) {
+    if (!confirm("Delete this circle and every message in it? This can't be undone.")) {
+      return;
+    }
+
     setDeletingGroupId(groupId);
     const response = await authorizedFetch(`/api/admin/groups/${groupId}`, {
       method: "DELETE",
@@ -193,200 +211,279 @@ export default function AdminPage() {
 
   if (isChecking || !isAuthorized) {
     return (
-      <main className="grid h-dvh w-full place-items-center bg-[var(--tg-panel)]">
+      <main className="hero-bg grid min-h-dvh w-full place-items-center">
         <LoaderCircle
-          aria-hidden="true"
-          className="size-5 animate-spin text-[var(--tg-text-muted)]"
-          strokeWidth={1.75}
+          className="size-5 animate-spin text-[var(--text-muted)]"
+          strokeWidth={1.8}
         />
       </main>
     );
   }
 
   return (
-    <main className="min-h-dvh bg-[var(--tg-bg)] pb-16">
-      <header className="border-b border-[var(--tg-border)] bg-[var(--tg-panel)]">
-        <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck aria-hidden="true" className="size-5 text-[var(--tg-text)]" strokeWidth={1.8} />
-            <span className="text-[15px] font-semibold text-[var(--tg-text)]">Admin dashboard</span>
+    <main className="min-h-dvh bg-[var(--bg)] pb-20">
+      <header className="app-header glass sticky top-0 z-20 border-b border-[var(--border)]">
+        <div className="mx-auto flex h-[3.75rem] w-full max-w-2xl items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <Link
+              href="/"
+              aria-label="Back to chat"
+              className="press grid size-9 place-items-center rounded-full text-[var(--text)] hover:bg-[var(--panel-2)]"
+            >
+              <ArrowLeft className="size-5" strokeWidth={2.2} />
+            </Link>
+            <div>
+              <h1 className="flex items-center gap-1.5 text-[16px] font-extrabold tracking-tight text-[var(--text)]">
+                <ShieldCheck className="size-4 text-[var(--accent)]" strokeWidth={2.4} />
+                Admin
+              </h1>
+              <p className="text-[11px] font-medium text-[var(--text-muted)]">
+                Circles & access
+              </p>
+            </div>
           </div>
-          <Link
-            href="/"
-            className="text-[14px] font-medium text-[var(--tg-text-muted)] transition hover:text-[var(--tg-text)]"
-          >
-            Back to chat
-          </Link>
+
+          <div className="flex items-center gap-1.5">
+            <Pill tone="accent">
+              <Crown className="size-2.5" strokeWidth={2.6} />
+              god mode
+            </Pill>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-6">
+      <div className="mx-auto w-full max-w-2xl space-y-5 px-3 py-5">
         {loadError && (
-          <div className="rounded-xl border border-[var(--tg-danger)]/40 bg-[var(--tg-danger)]/10 px-4 py-3 text-sm text-[var(--tg-danger)]">
+          <div className="rounded-2xl border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-3 text-[13px] text-[var(--danger)]">
             {loadError}
           </div>
         )}
 
-        <section className="rounded-2xl border border-[var(--tg-border)] bg-[var(--tg-panel)] p-5">
-          <h2 className="text-[15px] font-semibold text-[var(--tg-text)]">Create a group</h2>
-          <p className="mt-0.5 text-[13px] text-[var(--tg-text-muted)]">
-            Only you can create groups. New groups start empty — add members below.
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { label: "Circles", value: groups.length, icon: Users },
+            { label: "People", value: users.length, icon: Sparkles },
+            {
+              label: "Admins",
+              value: users.filter((user) => user.role === "admin").length,
+              icon: Crown,
+            },
+          ].map(({ label, value, icon: Icon }) => (
+            <div
+              key={label}
+              className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-3"
+            >
+              <Icon className="size-4 text-[var(--accent)]" strokeWidth={2.2} />
+              <p className="mt-1.5 text-[19px] font-extrabold leading-none text-[var(--text)]">
+                {value}
+              </p>
+              <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-[var(--text-faint)]">
+                {label}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Create group */}
+        <section className="card p-4">
+          <SectionTitle>Create a circle</SectionTitle>
+          <p className="-mt-1 mb-3 px-1 text-[12px] leading-relaxed text-[var(--text-muted)]">
+            Only you can create circles. Add members below once it exists.
           </p>
 
-          <form onSubmit={handleCreateGroup} className="mt-4 space-y-3">
-            <input
+          <form onSubmit={handleCreateGroup} className="space-y-2.5">
+            <Input
               value={newGroupName}
               onChange={(event) => setNewGroupName(event.target.value)}
-              placeholder="Group name (e.g. Valorant)"
+              placeholder="Circle name (e.g. Our gang, Study crew)"
               maxLength={60}
-              className="w-full rounded-xl border border-[var(--tg-border)] px-3.5 py-2.5 text-[14px] text-[var(--tg-text)] outline-none placeholder:text-[var(--tg-text-muted)] focus:border-[var(--tg-accent)]"
+              aria-label="Circle name"
             />
-            <input
+            <Input
               value={newGroupDescription}
               onChange={(event) => setNewGroupDescription(event.target.value)}
               placeholder="Description (optional)"
               maxLength={200}
-              className="w-full rounded-xl border border-[var(--tg-border)] px-3.5 py-2.5 text-[14px] text-[var(--tg-text)] outline-none placeholder:text-[var(--tg-text-muted)] focus:border-[var(--tg-accent)]"
+              aria-label="Circle description"
             />
 
-            {createError && <p className="text-[13px] text-[var(--tg-danger)]">{createError}</p>}
+            {createError && (
+              <p className="text-[12.5px] font-medium text-[var(--danger)]">
+                {createError}
+              </p>
+            )}
 
-            <button
+            <Button
               type="submit"
-              disabled={isCreatingGroup || !newGroupName.trim()}
-              className="flex items-center gap-1.5 rounded-xl bg-[var(--tg-accent)] px-4 py-2.5 text-[14px] font-medium text-white transition hover:bg-[var(--tg-accent-strong)] disabled:opacity-40"
+              loading={isCreatingGroup}
+              disabled={!newGroupName.trim()}
+              icon={<Plus className="size-4" strokeWidth={2.6} />}
             >
-              {isCreatingGroup ? (
-                <LoaderCircle aria-hidden="true" className="size-4 animate-spin" strokeWidth={2} />
-              ) : (
-                <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
-              )}
-              Create group
-            </button>
+              Create circle
+            </Button>
           </form>
         </section>
 
-        <section className="rounded-2xl border border-[var(--tg-border)] bg-[var(--tg-panel)] p-5">
-          <h2 className="text-[15px] font-semibold text-[var(--tg-text)]">Groups</h2>
+        {/* Groups */}
+        <section>
+          <SectionTitle>Circles</SectionTitle>
 
           {isLoadingData ? (
-            <div className="mt-4 grid place-items-center py-6">
-              <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-[var(--tg-text-muted)]" strokeWidth={1.8} />
+            <div className="grid place-items-center rounded-2xl border border-[var(--border)] bg-[var(--panel)] py-8">
+              <LoaderCircle className="size-4 animate-spin text-[var(--text-muted)]" strokeWidth={1.8} />
             </div>
           ) : groups.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[var(--tg-text-muted)]">No groups yet.</p>
+            <p className="rounded-2xl border border-dashed border-[var(--border-strong)] px-4 py-6 text-center text-[12.5px] text-[var(--text-muted)]">
+              No circles yet. Create your first one above.
+            </p>
           ) : (
-            <ul className="mt-3 divide-y divide-[var(--tg-border)]">
-              {groups.map((group) => (
-                <li key={group.id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-[14px] font-medium text-[var(--tg-text)]">{group.name}</div>
-                    {group.description && (
-                      <div className="truncate text-[12px] text-[var(--tg-text-muted)]">{group.description}</div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleDeleteGroup(group.id)}
-                    disabled={deletingGroupId === group.id}
-                    aria-label={`Delete ${group.name}`}
-                    className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--tg-text-muted)] transition hover:bg-[var(--tg-danger)]/10 hover:text-[var(--tg-danger)] disabled:opacity-40"
-                  >
-                    {deletingGroupId === group.id ? (
-                      <LoaderCircle aria-hidden="true" className="size-4 animate-spin" strokeWidth={1.8} />
-                    ) : (
-                      <Trash2 aria-hidden="true" className="size-4" strokeWidth={1.8} />
-                    )}
-                  </button>
-                </li>
-              ))}
+            <ul className="divide-y divide-[var(--border)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--panel)]">
+              {groups.map((group) => {
+                const memberCount = users.filter((user) =>
+                  user.groupIds.includes(group.id),
+                ).length;
+
+                return (
+                  <li key={group.id} className="flex items-center gap-3 px-3.5 py-3">
+                    <Avatar name={group.name} seed={group.id} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[14px] font-semibold text-[var(--text)]">
+                        {group.name}
+                      </div>
+                      <div className="truncate text-[11.5px] text-[var(--text-muted)]">
+                        {memberCount} member{memberCount === 1 ? "" : "s"}
+                        {group.description ? ` · ${group.description}` : ""}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteGroup(group.id)}
+                      disabled={deletingGroupId === group.id}
+                      aria-label={`Delete ${group.name}`}
+                      className="press grid size-8 shrink-0 place-items-center rounded-full text-[var(--text-faint)] hover:bg-[var(--danger)]/10 hover:text-[var(--danger)]"
+                    >
+                      {deletingGroupId === group.id ? (
+                        <LoaderCircle className="size-4 animate-spin" strokeWidth={2} />
+                      ) : (
+                        <Trash2 className="size-4" strokeWidth={2} />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
 
-        <section className="rounded-2xl border border-[var(--tg-border)] bg-[var(--tg-panel)] p-5">
-          <h2 className="text-[15px] font-semibold text-[var(--tg-text)]">Users &amp; group access</h2>
-          <p className="mt-0.5 text-[13px] text-[var(--tg-text-muted)]">
-            Pick which groups each person can see and chat in. Unchecking a group removes their access to it immediately.
-          </p>
+        {/* Users */}
+        <section>
+          <SectionTitle>People & access</SectionTitle>
 
           {isLoadingData ? (
-            <div className="mt-4 grid place-items-center py-6">
-              <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-[var(--tg-text-muted)]" strokeWidth={1.8} />
+            <div className="grid place-items-center rounded-2xl border border-[var(--border)] bg-[var(--panel)] py-8">
+              <LoaderCircle className="size-4 animate-spin text-[var(--text-muted)]" strokeWidth={1.8} />
             </div>
           ) : users.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[var(--tg-text-muted)]">No users yet.</p>
+            <p className="rounded-2xl border border-dashed border-[var(--border-strong)] px-4 py-6 text-center text-[12.5px] text-[var(--text-muted)]">
+              No accounts yet.
+            </p>
           ) : (
-            <ul className="mt-3 divide-y divide-[var(--tg-border)]">
+            <ul className="space-y-1.5">
               {users.map((user) => (
-                <li key={user.id} className="py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
+                <li
+                  key={user.id}
+                  className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <Avatar name={user.username} seed={user.id} size={36} />
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="truncate text-[14px] font-medium text-[var(--tg-text)]">
+                        <span className="truncate text-[14px] font-semibold text-[var(--text)]">
                           {user.username}
                         </span>
                         {user.role === "admin" && (
-                          <span className="shrink-0 rounded-full bg-[var(--tg-accent)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
-                            Admin
-                          </span>
+                          <Pill tone="accent">
+                            <Crown className="size-2.5" strokeWidth={2.6} />
+                            admin
+                          </Pill>
                         )}
                       </div>
-                      <div className="truncate text-[12px] text-[var(--tg-text-muted)]">
-                        {user.groupIds.length} group{user.groupIds.length === 1 ? "" : "s"}
+                      <div className="truncate text-[11.5px] text-[var(--text-muted)]">
+                        {user.groupIds.length} circle
+                        {user.groupIds.length === 1 ? "" : "s"} · joined{" "}
+                        {timeAgo(user.created_at)}
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => openAccessMenu(user)}
-                      className="shrink-0 rounded-full border border-[var(--tg-border)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--tg-text)] transition hover:bg-[var(--tg-bg)]"
+                      className="press shrink-0 rounded-full border border-[var(--border-strong)] px-3 py-1.5 text-[12px] font-semibold text-[var(--text-soft)]"
                     >
-                      Manage groups
+                      {openUserId === user.id ? "Close" : "Access"}
                     </button>
                   </div>
 
                   {openUserId === user.id && (
-                    <div className="mt-3 rounded-xl border border-[var(--tg-border)] bg-[var(--tg-bg)] p-3">
+                    <div className="animate-fade-up mt-3 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-3">
                       {groups.length === 0 ? (
-                        <p className="text-[13px] text-[var(--tg-text-muted)]">Create a group first.</p>
+                        <p className="text-[12.5px] text-[var(--text-muted)]">
+                          Create a circle first.
+                        </p>
                       ) : (
                         <div className="space-y-2">
-                          {groups.map((group) => (
-                            <label
-                              key={group.id}
-                              className="flex cursor-pointer items-center gap-2.5 text-[14px] text-[var(--tg-text)]"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={pendingGroupIds.includes(group.id)}
-                                onChange={() => toggleGroupForPendingUser(group.id)}
-                                className="size-4 rounded border-[var(--tg-border)] accent-[var(--tg-accent)]"
-                              />
-                              {group.name}
-                            </label>
-                          ))}
+                          {groups.map((group) => {
+                            const checked = pendingGroupIds.includes(group.id);
+                            return (
+                              <button
+                                key={group.id}
+                                type="button"
+                                onClick={() => toggleGroupForPendingUser(group.id)}
+                                className="flex w-full items-center gap-2.5 rounded-lg px-1 py-1 text-left"
+                              >
+                                <span
+                                  className={`grid size-[18px] shrink-0 place-items-center rounded-[6px] border transition ${
+                                    checked
+                                      ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                      : "border-[var(--border-strong)] bg-transparent"
+                                  }`}
+                                >
+                                  {checked && (
+                                    <svg viewBox="0 0 12 12" className="size-3" fill="none">
+                                      <path
+                                        d="M2.5 6.2 4.8 8.5 9.5 3.8"
+                                        stroke="currentColor"
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                    </svg>
+                                  )}
+                                </span>
+                                <span className="text-[13.5px] text-[var(--text)]">
+                                  {group.name}
+                                </span>
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
 
                       <div className="mt-3 flex items-center gap-2">
-                        <button
-                          type="button"
+                        <Button
+                          size="sm"
+                          loading={isSavingAccess}
                           onClick={() => void handleSaveAccess(user.id)}
-                          disabled={isSavingAccess}
-                          className="flex items-center gap-1.5 rounded-lg bg-[var(--tg-accent)] px-3.5 py-1.5 text-[13px] font-medium text-white transition hover:bg-[var(--tg-accent-strong)] disabled:opacity-40"
                         >
-                          {isSavingAccess && (
-                            <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" strokeWidth={2} />
-                          )}
-                          Save
-                        </button>
-                        <button
-                          type="button"
+                          Save access
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
                           onClick={() => setOpenUserId(null)}
-                          className="rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-[var(--tg-text-muted)] transition hover:bg-[var(--tg-hover)]"
                         >
                           Cancel
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -395,6 +492,11 @@ export default function AdminPage() {
             </ul>
           )}
         </section>
+
+        <p className="px-2 pb-4 text-center text-[11px] leading-relaxed text-[var(--text-faint)]">
+          Unchecking a circle removes access instantly — that&apos;s how you
+          remove someone from one. Private 1:1 chats stay between the two people.
+        </p>
       </div>
     </main>
   );

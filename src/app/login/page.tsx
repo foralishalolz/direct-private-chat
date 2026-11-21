@@ -2,23 +2,33 @@
 
 import {
   ArrowRight,
+  Eye,
+  EyeOff,
+  Heart,
+  KeyRound,
   LoaderCircle,
   LockKeyhole,
-  MessageCircle,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { primeAudio } from "@/lib/sound";
 
 type Mode = "signin" | "signup";
 
 function normalizeUsername(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/@chat\.local$/i, "");
+  return value.trim().toLowerCase().replace(/@chat\.local$/i, "");
 }
+
+const FLOATERS = [
+  { emoji: "💗", left: "8%", delay: "0s", size: "28px" },
+  { emoji: "✨", left: "24%", delay: "1.4s", size: "20px" },
+  { emoji: "💌", left: "62%", delay: "0.7s", size: "24px" },
+  { emoji: "🌙", left: "82%", delay: "2.1s", size: "22px" },
+  { emoji: "💞", left: "44%", delay: "2.9s", size: "18px" },
+];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,15 +37,15 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shakeKey, setShakeKey] = useState(0);
+  const [justCreated, setJustCreated] = useState(false);
 
   useEffect(() => {
     usernameRef.current?.focus({ preventScroll: true });
-
     if (!supabase) return;
-
     void supabase.auth.getSession().then(({ data }) => {
       if (data.session) router.replace("/");
     });
@@ -57,10 +67,15 @@ export default function LoginPage() {
 
     if (signInError) {
       setPassword("");
-      fail("Incorrect username or password.");
+      fail(
+        signInError.message.toLowerCase().includes("invalid")
+          ? "That username and password don't match."
+          : "Couldn't sign you in. Check your connection and try again.",
+      );
       return;
     }
 
+    primeAudio();
     router.replace("/");
     router.refresh();
   }
@@ -71,17 +86,13 @@ export default function LoginPage() {
     const response = await fetch("/api/signup", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        username: normalizedUsername,
-        password,
-        inviteCode,
-      }),
+      body: JSON.stringify({ username: normalizedUsername, password, inviteCode }),
     });
 
     if (!response.ok) {
-      const payload = (await response
-        .json()
-        .catch(() => ({}))) as { error?: string };
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
       fail(payload.error ?? "Could not create the account.");
       return;
     }
@@ -93,45 +104,40 @@ export default function LoginPage() {
 
     if (signInError) {
       setMode("signin");
+      setJustCreated(true);
       setPassword("");
-      fail("Account created. Please sign in.");
+      fail("Account created — sign in to continue.");
       return;
     }
 
+    primeAudio();
     router.replace("/");
     router.refresh();
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     if (isSubmitting) return;
 
     const normalizedUsername = normalizeUsername(username);
-    const isValidUsername = /^[a-z0-9][a-z0-9._-]{0,31}$/.test(
-      normalizedUsername,
-    );
+    const isValidUsername = /^[a-z0-9][a-z0-9._-]{0,31}$/.test(normalizedUsername);
 
     if (!supabase || !isSupabaseConfigured) {
-      fail("Chat is not configured yet.");
+      fail("Chat isn't configured yet. Add your Supabase keys and redeploy.");
       return;
     }
 
     if (!isValidUsername) {
-      fail("Enter a valid username (letters, numbers, . _ -).");
+      fail("Usernames use letters, numbers, dots, dashes or underscores.");
       return;
     }
 
     if (mode === "signup") {
       const isValidPassword = /^(?=.*[a-zA-Z])(?=.*\d).{8,}$/.test(password);
-
       if (!isValidPassword) {
-        fail(
-          "Password must be at least 8 characters and include a letter and a number.",
-        );
+        fail("Password needs 8+ characters with at least one letter and number.");
         return;
       }
-
       if (inviteCode.trim().length === 0) {
         fail("Enter your invite code.");
         return;
@@ -142,13 +148,10 @@ export default function LoginPage() {
     }
 
     setError(null);
+    setJustCreated(false);
     setIsSubmitting(true);
-
-    if (mode === "signin") {
-      await signIn(normalizedUsername);
-    } else {
-      await signUp(normalizedUsername);
-    }
+    if (mode === "signin") await signIn(normalizedUsername);
+    else await signUp(normalizedUsername);
   }
 
   function switchMode(nextMode: Mode) {
@@ -167,67 +170,77 @@ export default function LoginPage() {
     !isSubmitting;
 
   return (
-    <main className="flex min-h-dvh w-full flex-col items-center justify-center bg-[var(--tg-bg)] px-6 pb-[max(2rem,var(--safe-bottom))] pt-[max(2rem,var(--safe-top))]">
-      <div
-        key={shakeKey}
-        className={`w-full max-w-[360px] ${error ? "animate-chat-shake" : ""}`}
-      >
-        <div className="mb-10 flex flex-col items-center">
-          <div className="mb-5 grid size-16 place-items-center rounded-3xl bg-[var(--tg-accent)] shadow-[0_16px_40px_rgba(46,166,255,0.28)]">
-            <MessageCircle
-              aria-hidden="true"
-              className="size-8 text-white"
-              strokeWidth={2}
-            />
+    <main className="hero-bg relative flex min-h-dvh w-full flex-col overflow-hidden">
+      {/* Floating ambient hearts */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
+        {FLOATERS.map((floater) => (
+          <span
+            key={floater.emoji + floater.left}
+            className="absolute bottom-24 select-none opacity-0"
+            style={{
+              left: floater.left,
+              fontSize: floater.size,
+              animation: `float-heart 7s ease-in-out ${floater.delay} infinite`,
+            }}
+          >
+            {floater.emoji}
+          </span>
+        ))}
+      </div>
+
+      <div className="relative z-10 mx-auto flex w-full max-w-[400px] flex-1 flex-col justify-center px-6 pb-[max(2rem,var(--safe-bottom))] pt-[max(3rem,var(--safe-top))]">
+        <div key={shakeKey} className={error ? "animate-chat-shake" : ""}>
+          <div className="mb-9 flex flex-col items-center text-center">
+            <div className="relative mb-5">
+              <div className="absolute inset-0 animate-pulse-ring rounded-[26px]" />
+              <div className="relative grid size-[68px] place-items-center rounded-[26px] accent-gradient shadow-[0_20px_50px_-16px_rgba(244,114,182,0.7)]">
+                <Heart className="size-8 fill-white text-white" strokeWidth={1.5} />
+              </div>
+            </div>
+            <h1 className="accent-text text-[30px] font-extrabold leading-tight tracking-tight">
+              BitchAt
+            </h1>
+            <p className="mt-2 max-w-[16rem] text-[13.5px] leading-relaxed text-[var(--text-muted)]">
+              {mode === "signin"
+                ? "Your private little corner of the internet."
+                : "Just you and your people. Create your account to begin."}
+            </p>
           </div>
-          <h1 className="text-[22px] font-semibold tracking-tight text-[var(--tg-text)]">
-            {mode === "signin" ? "Welcome back" : "Create your account"}
-          </h1>
-          <p className="mt-1 text-sm text-[var(--tg-text-muted)]">
-            {mode === "signin"
-              ? "Sign in to continue"
-              : "Pick a username and password"}
-          </p>
-        </div>
 
-        <div className="mb-4 flex rounded-2xl bg-[var(--tg-panel-2)] p-1">
-          <button
-            type="button"
-            onClick={() => switchMode("signin")}
-            className={`h-9 flex-1 rounded-xl text-sm font-medium transition ${
-              mode === "signin"
-                ? "bg-[var(--tg-panel)] text-[var(--tg-text)] shadow-sm"
-                : "text-[var(--tg-text-muted)]"
-            }`}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            onClick={() => switchMode("signup")}
-            className={`h-9 flex-1 rounded-xl text-sm font-medium transition ${
-              mode === "signup"
-                ? "bg-[var(--tg-panel)] text-[var(--tg-text)] shadow-sm"
-                : "text-[var(--tg-text-muted)]"
-            }`}
-          >
-            Create account
-          </button>
-        </div>
+          <div className="mb-5 flex rounded-2xl border border-[var(--border)] bg-[var(--panel)]/70 p-1 backdrop-blur">
+            {(
+              [
+                ["signin", "Sign in"],
+                ["signup", "Create account"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => switchMode(value)}
+                className={`h-10 flex-1 rounded-xl text-[13.5px] font-semibold transition-all ${
+                  mode === value
+                    ? "bg-[var(--panel-3)] text-[var(--text)] shadow-sm"
+                    : "text-[var(--text-faint)]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-        <form onSubmit={handleSubmit} aria-label="Authentication" noValidate>
-          <div className="overflow-hidden rounded-[18px] border border-[var(--tg-border)] bg-[var(--tg-panel)]">
-            <label className="flex h-14 items-center gap-3 px-4">
+          <form onSubmit={handleSubmit} noValidate className="space-y-3">
+            <label className="flex h-14 items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--panel)]/80 px-4 backdrop-blur transition focus-within:border-[var(--accent)]/60">
               <UserRound
                 aria-hidden="true"
-                className="size-[18px] shrink-0 text-[var(--tg-text-muted)]"
-                strokeWidth={1.75}
+                className="size-[18px] shrink-0 text-[var(--text-faint)]"
+                strokeWidth={1.8}
               />
               <input
                 ref={usernameRef}
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
-                className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-[var(--tg-text)] outline-none placeholder:text-[var(--tg-text-muted)]"
+                className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-[var(--text)] outline-none placeholder:text-[var(--text-faint)]"
                 type="text"
                 name="username"
                 placeholder="Username"
@@ -241,89 +254,100 @@ export default function LoginPage() {
               />
             </label>
 
-            <div className="mx-4 h-px bg-[var(--tg-panel-2)]" />
-
-            <label className="flex h-14 items-center gap-3 px-4">
+            <label className="flex h-14 items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--panel)]/80 px-4 backdrop-blur transition focus-within:border-[var(--accent)]/60">
               <LockKeyhole
                 aria-hidden="true"
-                className="size-[18px] shrink-0 text-[var(--tg-text-muted)]"
-                strokeWidth={1.75}
+                className="size-[18px] shrink-0 text-[var(--text-faint)]"
+                strokeWidth={1.8}
               />
               <input
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-[var(--tg-text)] outline-none placeholder:text-[var(--tg-text-muted)]"
-                type="password"
+                className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-[var(--text)] outline-none placeholder:text-[var(--text-faint)]"
+                type={showPassword ? "text" : "password"}
                 name="password"
                 placeholder="Password"
                 aria-label="Password"
-                autoComplete={
-                  mode === "signin" ? "current-password" : "new-password"
-                }
-                enterKeyHint="go"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                enterKeyHint={mode === "signin" ? "go" : "next"}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="shrink-0 text-[var(--text-faint)] transition hover:text-[var(--text-muted)]"
+              >
+                {showPassword ? (
+                  <EyeOff className="size-[18px]" strokeWidth={1.8} />
+                ) : (
+                  <Eye className="size-[18px]" strokeWidth={1.8} />
+                )}
+              </button>
             </label>
 
             {mode === "signup" && (
-              <>
-                <div className="mx-4 h-px bg-[var(--tg-panel-2)]" />
-                <label className="flex h-14 items-center gap-3 px-4">
-                  <LockKeyhole
-                    aria-hidden="true"
-                    className="size-[18px] shrink-0 text-[var(--tg-text-muted)]"
-                    strokeWidth={1.75}
-                  />
-                  <input
-                    value={inviteCode}
-                    onChange={(event) => setInviteCode(event.target.value)}
-                    className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-[var(--tg-text)] outline-none placeholder:text-[var(--tg-text-muted)]"
-                    type="text"
-                    name="inviteCode"
-                    placeholder="Invite code"
-                    aria-label="Invite code"
-                    autoComplete="off"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    enterKeyHint="go"
-                    spellCheck={false}
-                  />
-                </label>
-              </>
+              <label className="flex h-14 items-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--panel)]/80 px-4 backdrop-blur transition focus-within:border-[var(--accent)]/60">
+                <KeyRound
+                  aria-hidden="true"
+                  className="size-[18px] shrink-0 text-[var(--text-faint)]"
+                  strokeWidth={1.8}
+                />
+                <input
+                  value={inviteCode}
+                  onChange={(event) => setInviteCode(event.target.value)}
+                  className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-[15px] text-[var(--text)] outline-none placeholder:text-[var(--text-faint)]"
+                  type="text"
+                  name="inviteCode"
+                  placeholder="Invite code"
+                  aria-label="Invite code"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  enterKeyHint="go"
+                  spellCheck={false}
+                />
+              </label>
             )}
-          </div>
 
-          {error && (
-            <p
-              role="alert"
-              className="mt-3 text-center text-[13px] font-medium text-[var(--tg-danger)]"
+            {error && (
+              <p
+                role="alert"
+                className="rounded-xl border border-[var(--danger)]/25 bg-[var(--danger)]/10 px-3.5 py-2.5 text-[13px] font-medium leading-snug text-[var(--danger)]"
+              >
+                {error}
+              </p>
+            )}
+
+            {justCreated && !error && (
+              <p className="rounded-xl border border-[var(--success)]/25 bg-[var(--success)]/10 px-3.5 py-2.5 text-[13px] font-medium text-[var(--success)]">
+                Account created. You can sign in now.
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={!canSubmit}
+              className="press mt-2 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl accent-gradient text-[15px] font-bold text-white shadow-[0_16px_40px_-18px_var(--accent-glow)] transition hover:brightness-110 disabled:opacity-40"
             >
-              {error}
+              {isSubmitting ? (
+                <LoaderCircle className="size-5 animate-spin" strokeWidth={2} />
+              ) : (
+                <>
+                  {mode === "signin" ? "Enter BitchAt" : "Create my account"}
+                  <ArrowRight className="size-[18px]" strokeWidth={2.4} />
+                </>
+              )}
+            </button>
+          </form>
+
+          {mode === "signup" && (
+            <p className="mt-4 flex items-start gap-2 px-1 text-[12px] leading-relaxed text-[var(--text-faint)]">
+              <Sparkles className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+              The very first account on a fresh setup becomes the admin. Invite
+              codes keep strangers out.
             </p>
           )}
-
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[var(--tg-accent)] text-[15px] font-semibold text-white transition duration-200 hover:bg-[var(--tg-accent-strong)] active:scale-[0.99] disabled:cursor-default disabled:bg-[var(--tg-panel-2)] disabled:text-[var(--tg-text-muted)]"
-          >
-            {isSubmitting ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-5 animate-spin"
-                strokeWidth={1.75}
-              />
-            ) : (
-              <>
-                {mode === "signin" ? "Sign in" : "Create account"}
-                <ArrowRight
-                  aria-hidden="true"
-                  className="size-[18px]"
-                  strokeWidth={2}
-                />
-              </>
-            )}
-          </button>
-        </form>
+        </div>
       </div>
     </main>
   );

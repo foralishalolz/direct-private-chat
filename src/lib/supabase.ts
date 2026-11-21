@@ -49,17 +49,23 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
         autoRefreshToken: true,
         detectSessionInUrl: false,
         persistSession: true,
-        storageKey: "private-chat-auth",
+        storageKey: "bitchat-auth",
+        flowType: "pkce",
       },
       realtime: {
+        // Aggregate bursts so a fast typist sending many messages doesn't
+        // trip the per-connection event budget on slow links.
         params: {
-          eventsPerSecond: 20,
+          eventsPerSecond: 12,
         },
       },
       global: {
         headers: {
-          "x-application-name": "private-chat-web",
+          "x-application-name": "bitchat-web",
         },
       },
+      db: { schema: "public" },
     })
   : null;
+
+export const CHAT_MEDIA_BUCKET = "chat-media";

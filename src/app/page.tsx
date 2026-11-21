@@ -1,141 +1,73 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
-import type { User } from "@supabase/supabase-js";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { ChatRoom } from "@/components/ChatRoom";
-import { GroupList } from "@/components/GroupList";
-import { isSupabaseConfigured, supabase } from "@/lib/supabase";
-import type { Group, Profile } from "@/types/chat";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { AppShell } from "@/components/AppShell";
+import { ChatStoreProvider, useChatStore } from "@/hooks/useChatStore";
+import { Spinner } from "@/components/ui/Misc";
+import type { Group } from "@/types/chat";
 
-export default function HomePage() {
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [groups, setGroups] = useState<Group[]>([]);
+function ShellGate() {
+  const params = useSearchParams();
+  const { isReady, user, groups, isLoadingGroups } = useChatStore();
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
-  const [isReady, setIsReady] = useState(false);
-  const [isLoadingGroups, setIsLoadingGroups] = useState(true);
+  const [initialGroupHandled, setInitialGroupHandled] = useState(false);
 
-  const loadGroupsAndProfile = useCallback(async (userId: string) => {
-    if (!supabase) return;
+  const openGroupById = useCallback(
+    (groupId: string | null) => {
+      if (!groupId) return;
+      const match = groups.find((group) => group.id === groupId);
+      if (match) setSelectedGroup(match);
+    },
+    [groups],
+  );
 
-    const [profileResult, membershipResult] = await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id, username, role")
-        .eq("id", userId)
-        .maybeSingle(),
-      supabase.from("group_members").select("group_id").eq("user_id", userId),
-    ]);
-
-    if (profileResult.data) {
-      setProfile(profileResult.data as Profile);
-    }
-
-    const groupIds = (membershipResult.data ?? []).map((row) => row.group_id as string);
-
-    if (groupIds.length === 0) {
-      setGroups([]);
-      setIsLoadingGroups(false);
-      return;
-    }
-
-    const { data: groupsData } = await supabase
-      .from("groups")
-      .select("id, name, description, created_at")
-      .in("id", groupIds)
-      .order("created_at", { ascending: true });
-
-    setGroups((groupsData ?? []) as Group[]);
-    setIsLoadingGroups(false);
-  }, []);
-
+  // Deep links: /?open=<groupId> (used by notification taps).
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) {
-      router.replace("/login");
-      return;
-    }
+    if (initialGroupHandled || groups.length === 0) return;
+    openGroupById(params.get("open"));
+    setInitialGroupHandled(true);
+  }, [groups, initialGroupHandled, openGroupById, params]);
 
-    let active = true;
-
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!active) return;
-
-      const sessionUser = data.session?.user ?? null;
-      setUser(sessionUser);
-      setIsReady(true);
-
-      if (!sessionUser) {
-        router.replace("/login");
-        return;
-      }
-
-      void loadGroupsAndProfile(sessionUser.id);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active) return;
-
-      setUser(session?.user ?? null);
-      setIsReady(true);
-
-      if (!session) {
-        router.replace("/login");
-        return;
-      }
-
-      void loadGroupsAndProfile(session.user.id);
-    });
-
-    return () => {
-      active = false;
-      subscription.unsubscribe();
-    };
-  }, [router, loadGroupsAndProfile]);
-
-  async function handleSignOut() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    router.replace("/login");
-    router.refresh();
-  }
+  // Keep the open group in sync when the inbox refreshes it (unread counts,
+  // partner profile, latest preview) without remounting the whole chat.
+  const liveGroup = selectedGroup
+    ? (groups.find((group) => group.id === selectedGroup.id) ?? selectedGroup)
+    : null;
 
   if (!isReady || !user) {
     return (
-      <main className="grid h-dvh w-full place-items-center bg-[var(--tg-bg)]">
-        <LoaderCircle
-          aria-hidden="true"
-          className="size-5 animate-spin text-[var(--tg-text-muted)]"
-          strokeWidth={1.75}
-        />
+      <main className="hero-bg grid min-h-dvh w-full place-items-center">
+        <div className="flex flex-col items-center gap-3">
+          <Spinner className="size-6" />
+          <p className="text-[13px] text-[var(--text-faint)]">Opening BitchAt…</p>
+        </div>
       </main>
     );
   }
 
-  if (selectedGroup) {
-    return (
-      <ChatRoom
-        key={selectedGroup.id}
-        user={user}
-        currentProfile={profile}
-        group={selectedGroup}
-        onBack={() => setSelectedGroup(null)}
-      />
-    );
-  }
-
   return (
-    <GroupList
-      profile={profile}
-      fallbackUsername={user.email?.split("@")[0] ?? ""}
-      groups={groups}
-      isLoading={isLoadingGroups}
-      onSelect={setSelectedGroup}
-      onSignOut={() => void handleSignOut()}
+    <AppShell
+      selectedGroup={liveGroup}
+      onSelectGroup={setSelectedGroup}
+      onOpenGroupById={openGroupById}
+      isLoadingGroups={isLoadingGroups}
     />
+  );
+}
+
+export default function HomePage() {
+  return (
+    <ChatStoreProvider>
+      <Suspense
+        fallback={
+          <main className="hero-bg grid min-h-dvh w-full place-items-center">
+            <Spinner className="size-6" />
+          </main>
+        }
+      >
+        <ShellGate />
+      </Suspense>
+    </ChatStoreProvider>
   );
 }

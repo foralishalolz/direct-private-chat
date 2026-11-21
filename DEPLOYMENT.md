@@ -1,21 +1,27 @@
-# Deploying Direct
+# Deploying BitchAt
 
-This walks through taking the app from your laptop to a live URL your friends can use, plus how to scale it later if the group grows.
+From your laptop to a live URL your people can install as an app.
 
 ---
 
-## 1. Supabase setup (do this once)
+## 1. Supabase (do this once)
 
-1. Create a project at [supabase.com](https://supabase.com) if you haven't already.
-2. Go to **SQL Editor** → paste in the full contents of `supabase/setup.sql` → **Run**. The script is safe to rerun if you ever need to.
-3. Go to **Project Settings → API Keys** and copy three values:
-   - **Project URL**
-   - **anon / public key**
-   - **service_role key** (click reveal — keep this one secret)
+1. Create a project at [supabase.com](https://supabase.com).
+2. **SQL Editor →** paste the entire contents of `supabase/setup.sql` **→ Run**.
+   The script is idempotent: rerun it any time you pull new code and it will add
+   whatever is missing. It creates:
+   - every table (profiles, groups, messages, reactions, reads, typing,
+     presence, plans, love notes, games, push subscriptions),
+   - all Row Level Security policies and grants,
+   - the `chat-media` storage bucket + upload policies,
+   - Realtime publication entries for the live tables.
+3. **Project Settings → API Keys:** copy the Project URL, the anon/public key
+   and the service_role key.
 
-## 2. Local environment file
+## 2. Environment variables
 
-Create `.env.local` in the project root (this file is gitignored — it never gets committed):
+`.env.local` locally, and the same set in Vercel → *Settings → Environment
+Variables*:
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
@@ -24,6 +30,23 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SIGNUP_INVITE_CODE=pick-a-code-only-your-friends-know
 ```
 
+**For notifications** (optional but recommended):
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+```
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=<publicKey>
+VAPID_PRIVATE_KEY=<privateKey>
+VAPID_SUBJECT=mailto:you@example.com
+CRON_SECRET=<long random string>
+```
+
+`NEXT_PUBLIC_VAPID_PUBLIC_KEY` is safe in the browser. The private key must stay
+server-side only. After adding them, redeploy — the browser needs the public key
+at build time.
+
 ## 3. Become the admin
 
 ```bash
@@ -31,68 +54,92 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`, click **Create account**, and sign up using your invite code. **You must be the very first account created** — the database automatically makes the first signup the admin ("god user"). Every signup after that is a regular user.
+Open the app, **Create account** with your invite code. The *very first* account
+ever created is promoted to admin automatically by a database trigger. Create a
+circle in `/admin`, add yourself, and start chatting.
 
-Go to `/admin` and confirm you can see the dashboard. Create a group or two, and add yourself to them so you can chat right away.
+## 4. Deploy to Vercel
 
-## 4. Push to GitHub
+1. Push this repo to GitHub.
+2. [vercel.com](https://vercel.com) → **Add New → Project** → import it.
+3. Add all environment variables before the first deploy.
+4. Deploy. `vercel.json` already registers the reminders cron:
 
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-```
+   ```json
+   { "crons": [{ "path": "/api/cron/reminders", "schedule": "*/10 * * * *" }] }
+   ```
 
-Create a **private** repo on GitHub (github.com/new, don't initialize with a README), then:
+   Vercel invokes it every 10 minutes with `Authorization: Bearer $CRON_SECRET`
+   when that variable exists. It sends:
+   - plan reminders 15 minutes before a scheduled date,
+   - a gentle "someone misses you" ping for unread messages older than an hour.
 
-```bash
-git remote add origin https://github.com/<your-username>/<repo-name>.git
-git branch -M main
-git push -u origin main
-```
+   *(Hobby plans run crons once a day — the reminders still work, just less
+   tightly timed. Pro/Enterprise run every 10 minutes as configured.)*
 
-GitHub will ask for a username and password on push — use a **personal access token** as the password (Settings → Developer settings → Personal access tokens → Generate new token (classic), `repo` scope). Your real GitHub password won't work here.
+## 5. Installing on phones
 
-## 5. Deploy to Vercel
+- **Android / desktop Chrome, Edge:** open the site → browser menu →
+  *Install app* (or the install icon in the address bar).
+- **iPhone / iPad:** must use **Safari** → Share → *Add to Home Screen*, then
+  open BitchAt from the Home Screen icon and enable notifications from the bell.
 
-1. Go to [vercel.com](https://vercel.com) and sign in with GitHub.
-2. **Add New → Project** → import your repo.
-3. Before deploying, add the same four environment variables from your `.env.local` in the "Environment Variables" section:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-   - `SIGNUP_INVITE_CODE`
-4. Click **Deploy**. You'll get a live URL like `your-app.vercel.app`.
-
-Share that URL and the invite code with your friends. Their accounts will need to be added to groups by you (the admin) via `/admin` before they can see or chat in anything.
+iOS only supports web push for Home-Screen-installed apps, so the app detects
+that case and shows the exact steps.
 
 ## 6. Ongoing admin tasks
 
-All from `/admin` on your deployed URL:
-- **Create a group**: name + optional description.
-- **Delete a group**: removes it and its messages for everyone.
-- **Give/remove someone's access to a group**: open "Manage groups" next to their name, check or uncheck groups, hit Save. Unchecking a group is how you ban someone from it — they lose access immediately, no separate ban step needed.
+All from `/admin`:
+- **Create a circle** — name + optional description.
+- **Delete a circle** — removes it and its messages for everyone.
+- **Grant / revoke access** — open *Access* next to a person and check or
+  uncheck circles. Unchecking is an instant revoke; there's no separate ban.
+
+Private 1:1 chats are created by users themselves and are readable only by the
+two people in them — no admin access, by design.
 
 ---
 
-## Troubleshooting: "account created but can't sign in"
+## Troubleshooting
 
-If sign-up succeeds but signing back in with the same username/password fails:
+**"Account created but can't sign in."**
+- Usernames are lowercased and stripped to `[a-z0-9._-]`; check for stray
+  characters or autocapitalization.
+- Password managers occasionally submit an old password — retype it.
+- Some Supabase projects restrict allowed email domains. Accounts are
+  `username@chat.local`, so if *Authentication → Settings* has a domain
+  allow-list, add `chat.local`.
+- Open DevTools → Network and inspect the `signInWithPassword` response; the
+  exact error message identifies which of the above it is.
 
-- **Check for extra characters.** Usernames are lowercased and stripped of anything but letters, numbers, dots, dashes, and underscores — if you typed something with spaces or capital letters at signup, what actually got saved may differ slightly from what you're typing at sign-in. Try signing up with a simpler username (letters and numbers only) to rule this out.
-- **Check for a typo in the password**, especially if it has symbols — password managers and mobile keyboards autocorrect/autocapitalize in ways that can silently change what gets submitted.
-- **Confirm your Supabase project doesn't restrict email domains.** This app creates accounts as `username@chat.local`, which is not a real, deliverable email address — some Supabase projects have an "allowed email domains" restriction under **Authentication → Settings** that could reject this. If your project has any such restriction enabled, either disable it or add `chat.local` to the allow-list.
-- **Check the browser console and Network tab** (F12 → Console/Network) while attempting to sign in, and look at the response from the `signInWithPassword` call — the exact error message there (e.g. "Invalid login credentials" vs. something about email format) tells you which of the above it is.
+**"Media storage isn't set up yet."**
+Rerun `supabase/setup.sql` — it creates the `chat-media` bucket and policies.
+Check *Storage* in the dashboard to confirm it exists and is public.
 
-If none of those explain it, capture the exact error message shown on-screen and in the browser console — that specifics is what narrows down the actual cause.
+**Photos won't upload on mobile.**
+Check the bucket's `file_size_limit` (50 MB in the script) and that the file is
+an allowed type. Photos are compressed in-browser before upload, so a slow
+connection mostly affects large videos.
 
-## Scaling beyond a small friend group
+**No push notifications.**
+- Confirm both VAPID variables exist in the deployment.
+- iOS: must be installed to the Home Screen, and notifications enabled from the
+  bell menu *after* installing.
+- Desktop: check the site's notification permission in browser settings.
+- The subscription row lives in `push_subscriptions` — confirm it appears after
+  enabling.
 
-The app as built comfortably handles a small circle. If it grows toward hundreds or thousands of users (e.g. a whole school), a few things are worth upgrading — none are urgent at small scale, but flagging them honestly:
+**Notifications stop after a while.**
+Expired subscriptions are pruned automatically on `410 Gone`. Reopen the app and
+toggle notifications off/on to re-register the device.
 
-- **Signup rate limiting is in-memory.** It works per server instance, but Vercel can run multiple instances under load, and the limit resets on redeploys/cold starts. At real scale, swap it for a shared store like Upstash Redis (a few lines of code, free tier available).
-- **Supabase connection pooling.** Supabase's default connection pooler (pgbouncer) handles this automatically for most plans — no action needed unless you outgrow the free tier, at which point Supabase's dashboard will tell you.
-- **Realtime connection limits.** Supabase's free/pro tiers cap concurrent Realtime connections. If you're expecting thousands of simultaneously-open chat windows, check your plan's connection limit in the Supabase dashboard and upgrade if needed.
-- **Indexes are already in place** for the access patterns this app uses (messages by group + time, memberships by user and by group), so query performance shouldn't degrade meaningfully as rows grow into the hundreds of thousands.
+## Scaling notes
 
-None of this requires re-architecting the app — it's config and infrastructure tuning on top of what's already built.
+- **Signup rate limiting is in-memory** (5 accounts/hour/IP). Fine for a small
+  circle; swap for Upstash Redis if you ever open signups publicly.
+- **Realtime connections** — Supabase caps concurrent connections per plan.
+  Each open chat window holds one channel plus a presence channel.
+- **Media** lives in Supabase Storage (public bucket). If you expect heavy
+  video traffic, put a CDN in front of the bucket.
+- **Indexes** cover messages by `(group_id, created_at desc, id desc)` and
+  memberships by user and group, so performance holds as history grows.
