@@ -41,6 +41,9 @@ export function useOutbox<T>({
   const sendRef = useRef(send);
   const onSentRef = useRef(onSent);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guards against overlapping drains: without this, two "online" events can
+  // both start flushing and send the same message twice.
+  const drainingRef = useRef(false);
 
   sendRef.current = send;
   onSentRef.current = onSent;
@@ -79,10 +82,11 @@ export function useOutbox<T>({
   }, [storageKey]);
 
   const flush = useCallback(async () => {
-    if (flushing || queueRef.current.length === 0) return;
+    if (drainingRef.current || queueRef.current.length === 0) return;
+    drainingRef.current = true;
     setFlushing(true);
 
-    let items = [...queueRef.current];
+    let items = queueRef.current;
 
     while (items.length > 0) {
       if (typeof navigator !== "undefined" && !navigator.onLine) break;
@@ -115,8 +119,10 @@ export function useOutbox<T>({
       }
     }
 
+    // Anything enqueued while we were draining starts its own pass.
+    drainingRef.current = false;
     setFlushing(false);
-  }, [flushing, onFailed, persist]);
+  }, [onFailed, persist]);
 
   const enqueue = useCallback(
     (id: string, payload: T) => {

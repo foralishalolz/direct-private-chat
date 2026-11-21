@@ -169,6 +169,40 @@ export default function LoginPage() {
     (mode === "signin" || inviteCode.trim().length > 0) &&
     !isSubmitting;
 
+  if (!isSupabaseConfigured) {
+    return (
+      <main className="hero-bg relative flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden px-6">
+        <div className="w-full max-w-[400px] rounded-[26px] border border-[var(--border)] bg-[var(--panel)]/80 p-6 text-center backdrop-blur">
+          <div className="mx-auto grid size-14 place-items-center rounded-2xl accent-gradient shadow-[0_16px_40px_-18px_var(--accent-glow)]">
+            <Heart className="size-7 fill-white text-white" strokeWidth={1.5} />
+          </div>
+          <h1 className="accent-text mt-4 text-[24px] font-extrabold tracking-tight">
+            BitchAt
+          </h1>
+          <p className="mt-1 text-[13.5px] font-medium text-[var(--text-soft)]">
+            One step left — connect your Supabase project.
+          </p>
+          <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-3 text-left text-[11.5px] leading-relaxed text-[var(--text-muted)]">
+            <p className="font-semibold text-[var(--text-soft)]">
+              Add these in your host&apos;s environment variables:
+            </p>
+            <code className="mt-1.5 block whitespace-pre-wrap break-all font-mono text-[10.5px] leading-relaxed text-[var(--accent)]">
+              NEXT_PUBLIC_SUPABASE_URL
+              {"\n"}NEXT_PUBLIC_SUPABASE_ANON_KEY
+              {"\n"}SUPABASE_SERVICE_ROLE_KEY
+              {"\n"}SIGNUP_INVITE_CODE
+            </code>
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-faint)]">
+            Then run <span className="font-mono">supabase/setup.sql</span> in the
+            Supabase SQL editor and redeploy. See{" "}
+            <span className="font-mono">DEPLOYMENT.md</span> for the full walkthrough.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="hero-bg relative flex min-h-dvh w-full flex-col overflow-hidden">
       {/* Floating ambient hearts */}
