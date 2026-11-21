@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { ArrowLeft, LoaderCircle, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useState } from "react";
@@ -193,10 +193,10 @@ export default function AdminPage() {
 
   if (isChecking || !isAuthorized) {
     return (
-      <main className="grid h-dvh w-full place-items-center bg-[var(--tg-panel)]">
+      <main className="grid h-dvh w-full place-items-center bg-[var(--bg)]">
         <LoaderCircle
           aria-hidden="true"
-          className="size-5 animate-spin text-[var(--tg-text-muted)]"
+          className="size-6 animate-spin text-[var(--text-muted)]"
           strokeWidth={1.75}
         />
       </main>
@@ -204,32 +204,39 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-dvh bg-[var(--tg-bg)] pb-16">
-      <header className="border-b border-[var(--tg-border)] bg-[var(--tg-panel)]">
-        <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck aria-hidden="true" className="size-5 text-[var(--tg-text)]" strokeWidth={1.8} />
-            <span className="text-[15px] font-semibold text-[var(--tg-text)]">Admin dashboard</span>
+    <main className="min-h-dvh bg-[var(--bg)]">
+      <header className="fixed inset-x-0 top-0 z-30 border-b border-[var(--border)] bg-[var(--bg-2)]/85 backdrop-blur-2xl safe-header">
+        <div className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span
+              aria-hidden="true"
+              className="grid size-9 place-items-center rounded-xl text-white"
+              style={{ background: "var(--grad-accent)" }}
+            >
+              <ShieldCheck aria-hidden="true" className="size-4" strokeWidth={2} />
+            </span>
+            <span className="text-[15px] font-semibold text-[var(--text)]">Admin</span>
           </div>
           <Link
             href="/"
-            className="text-[14px] font-medium text-[var(--tg-text-muted)] transition hover:text-[var(--tg-text)]"
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-[var(--text-muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
           >
-            Back to chat
+            <ArrowLeft aria-hidden="true" className="size-4" strokeWidth={2} />
+            Back
           </Link>
         </div>
       </header>
 
-      <div className="mx-auto w-full max-w-3xl space-y-8 px-4 py-6">
+      <div className="mx-auto w-full max-w-3xl space-y-6 px-4 pb-24 pt-[calc(4rem+2rem+var(--safe-top))]">
         {loadError && (
-          <div className="rounded-xl border border-[var(--tg-danger)]/40 bg-[var(--tg-danger)]/10 px-4 py-3 text-sm text-[var(--tg-danger)]">
+          <div className="rounded-2xl border border-[var(--danger)]/40 bg-[var(--danger)]/10 px-4 py-3 text-sm text-[var(--danger)]">
             {loadError}
           </div>
         )}
 
-        <section className="rounded-2xl border border-[var(--tg-border)] bg-[var(--tg-panel)] p-5">
-          <h2 className="text-[15px] font-semibold text-[var(--tg-text)]">Create a group</h2>
-          <p className="mt-0.5 text-[13px] text-[var(--tg-text-muted)]">
+        <section className="card p-5 animate-fade-up">
+          <h2 className="text-[15px] font-semibold text-[var(--text)]">Create a group</h2>
+          <p className="mt-0.5 text-[13px] text-[var(--text-muted)]">
             Only you can create groups. New groups start empty — add members below.
           </p>
 
@@ -239,22 +246,22 @@ export default function AdminPage() {
               onChange={(event) => setNewGroupName(event.target.value)}
               placeholder="Group name (e.g. Valorant)"
               maxLength={60}
-              className="w-full rounded-xl border border-[var(--tg-border)] px-3.5 py-2.5 text-[14px] text-[var(--tg-text)] outline-none placeholder:text-[var(--tg-text-muted)] focus:border-[var(--tg-accent)]"
+              className="input"
             />
             <input
               value={newGroupDescription}
               onChange={(event) => setNewGroupDescription(event.target.value)}
               placeholder="Description (optional)"
               maxLength={200}
-              className="w-full rounded-xl border border-[var(--tg-border)] px-3.5 py-2.5 text-[14px] text-[var(--tg-text)] outline-none placeholder:text-[var(--tg-text-muted)] focus:border-[var(--tg-accent)]"
+              className="input"
             />
 
-            {createError && <p className="text-[13px] text-[var(--tg-danger)]">{createError}</p>}
+            {createError && <p className="text-[13px] text-[var(--danger)]">{createError}</p>}
 
             <button
               type="submit"
               disabled={isCreatingGroup || !newGroupName.trim()}
-              className="flex items-center gap-1.5 rounded-xl bg-[var(--tg-accent)] px-4 py-2.5 text-[14px] font-medium text-white transition hover:bg-[var(--tg-accent-strong)] disabled:opacity-40"
+              className="btn-accent inline-flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-[14px] font-semibold"
             >
               {isCreatingGroup ? (
                 <LoaderCircle aria-hidden="true" className="size-4 animate-spin" strokeWidth={2} />
@@ -266,23 +273,23 @@ export default function AdminPage() {
           </form>
         </section>
 
-        <section className="rounded-2xl border border-[var(--tg-border)] bg-[var(--tg-panel)] p-5">
-          <h2 className="text-[15px] font-semibold text-[var(--tg-text)]">Groups</h2>
+        <section className="card p-5 animate-fade-up" style={{ animationDelay: "60ms" }}>
+          <h2 className="text-[15px] font-semibold text-[var(--text)]">Groups</h2>
 
           {isLoadingData ? (
             <div className="mt-4 grid place-items-center py-6">
-              <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-[var(--tg-text-muted)]" strokeWidth={1.8} />
+              <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-[var(--text-muted)]" strokeWidth={1.8} />
             </div>
           ) : groups.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[var(--tg-text-muted)]">No groups yet.</p>
+            <p className="mt-3 text-[13px] text-[var(--text-muted)]">No groups yet.</p>
           ) : (
-            <ul className="mt-3 divide-y divide-[var(--tg-border)]">
+            <ul className="mt-3 divide-y divide-[var(--border)]">
               {groups.map((group) => (
                 <li key={group.id} className="flex items-center justify-between gap-3 py-3">
                   <div className="min-w-0">
-                    <div className="truncate text-[14px] font-medium text-[var(--tg-text)]">{group.name}</div>
+                    <div className="truncate text-[14px] font-medium text-[var(--text)]">{group.name}</div>
                     {group.description && (
-                      <div className="truncate text-[12px] text-[var(--tg-text-muted)]">{group.description}</div>
+                      <div className="truncate text-[12px] text-[var(--text-muted)]">{group.description}</div>
                     )}
                   </div>
                   <button
@@ -290,7 +297,7 @@ export default function AdminPage() {
                     onClick={() => void handleDeleteGroup(group.id)}
                     disabled={deletingGroupId === group.id}
                     aria-label={`Delete ${group.name}`}
-                    className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--tg-text-muted)] transition hover:bg-[var(--tg-danger)]/10 hover:text-[var(--tg-danger)] disabled:opacity-40"
+                    className="grid size-9 shrink-0 place-items-center rounded-full text-[var(--text-muted)] transition hover:bg-[var(--danger)]/10 hover:text-[var(--danger)] disabled:opacity-40"
                   >
                     {deletingGroupId === group.id ? (
                       <LoaderCircle aria-hidden="true" className="size-4 animate-spin" strokeWidth={1.8} />
@@ -304,63 +311,63 @@ export default function AdminPage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-[var(--tg-border)] bg-[var(--tg-panel)] p-5">
-          <h2 className="text-[15px] font-semibold text-[var(--tg-text)]">Users &amp; group access</h2>
-          <p className="mt-0.5 text-[13px] text-[var(--tg-text-muted)]">
+        <section className="card p-5 animate-fade-up" style={{ animationDelay: "120ms" }}>
+          <h2 className="text-[15px] font-semibold text-[var(--text)]">Users &amp; group access</h2>
+          <p className="mt-0.5 text-[13px] text-[var(--text-muted)]">
             Pick which groups each person can see and chat in. Unchecking a group removes their access to it immediately.
           </p>
 
           {isLoadingData ? (
             <div className="mt-4 grid place-items-center py-6">
-              <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-[var(--tg-text-muted)]" strokeWidth={1.8} />
+              <LoaderCircle aria-hidden="true" className="size-4 animate-spin text-[var(--text-muted)]" strokeWidth={1.8} />
             </div>
           ) : users.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[var(--tg-text-muted)]">No users yet.</p>
+            <p className="mt-3 text-[13px] text-[var(--text-muted)]">No users yet.</p>
           ) : (
-            <ul className="mt-3 divide-y divide-[var(--tg-border)]">
+            <ul className="mt-3 divide-y divide-[var(--border)]">
               {users.map((user) => (
                 <li key={user.id} className="py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="truncate text-[14px] font-medium text-[var(--tg-text)]">
+                        <span className="truncate text-[14px] font-medium text-[var(--text)]">
                           {user.username}
                         </span>
                         {user.role === "admin" && (
-                          <span className="shrink-0 rounded-full bg-[var(--tg-accent)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
+                          <span className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white" style={{ background: "var(--grad-accent)" }}>
                             Admin
                           </span>
                         )}
                       </div>
-                      <div className="truncate text-[12px] text-[var(--tg-text-muted)]">
+                      <div className="truncate text-[12px] text-[var(--text-muted)]">
                         {user.groupIds.length} group{user.groupIds.length === 1 ? "" : "s"}
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={() => openAccessMenu(user)}
-                      className="shrink-0 rounded-full border border-[var(--tg-border)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--tg-text)] transition hover:bg-[var(--tg-bg)]"
+                      className="shrink-0 rounded-full border border-[var(--border)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] transition hover:bg-[var(--bg)]"
                     >
                       Manage groups
                     </button>
                   </div>
 
                   {openUserId === user.id && (
-                    <div className="mt-3 rounded-xl border border-[var(--tg-border)] bg-[var(--tg-bg)] p-3">
+                    <div className="mt-3 rounded-2xl border border-[var(--border)] bg-[var(--bg)] p-3">
                       {groups.length === 0 ? (
-                        <p className="text-[13px] text-[var(--tg-text-muted)]">Create a group first.</p>
+                        <p className="text-[13px] text-[var(--text-muted)]">Create a group first.</p>
                       ) : (
                         <div className="space-y-2">
                           {groups.map((group) => (
                             <label
                               key={group.id}
-                              className="flex cursor-pointer items-center gap-2.5 text-[14px] text-[var(--tg-text)]"
+                              className="flex cursor-pointer items-center gap-2.5 text-[14px] text-[var(--text)]"
                             >
                               <input
                                 type="checkbox"
                                 checked={pendingGroupIds.includes(group.id)}
                                 onChange={() => toggleGroupForPendingUser(group.id)}
-                                className="size-4 rounded border-[var(--tg-border)] accent-[var(--tg-accent)]"
+                                className="size-4 rounded border-[var(--border)] accent-[var(--accent-start)]"
                               />
                               {group.name}
                             </label>
@@ -373,7 +380,7 @@ export default function AdminPage() {
                           type="button"
                           onClick={() => void handleSaveAccess(user.id)}
                           disabled={isSavingAccess}
-                          className="flex items-center gap-1.5 rounded-lg bg-[var(--tg-accent)] px-3.5 py-1.5 text-[13px] font-medium text-white transition hover:bg-[var(--tg-accent-strong)] disabled:opacity-40"
+                          className="btn-accent flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-[13px] font-semibold"
                         >
                           {isSavingAccess && (
                             <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" strokeWidth={2} />
@@ -383,7 +390,7 @@ export default function AdminPage() {
                         <button
                           type="button"
                           onClick={() => setOpenUserId(null)}
-                          className="rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-[var(--tg-text-muted)] transition hover:bg-[var(--tg-hover)]"
+                          className="rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-[var(--text-muted)] transition hover:bg-[var(--hover)]"
                         >
                           Cancel
                         </button>

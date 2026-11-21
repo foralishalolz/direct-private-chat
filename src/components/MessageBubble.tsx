@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, LoaderCircle, Pencil, Trash2 } from "lucide-react";
+import { Check, CheckCheck, Clock, LoaderCircle, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import {
   FormEvent,
   PointerEvent as ReactPointerEvent,
@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import { supabase } from "@/lib/supabase";
+import { isProbablyImage } from "@/lib/media";
+import { timeLabel } from "@/lib/format";
 import type { ChatMessage } from "@/types/chat";
 
 interface MessageBubbleProps {
@@ -18,8 +20,10 @@ interface MessageBubbleProps {
   canManage: boolean;
   showUsername: boolean;
   showAvatar: boolean;
+  flash?: boolean;
   onUpdate: (id: string, content: string) => void;
   onDelete: (id: string) => void;
+  onRetry?: (id: string) => void;
 }
 
 interface PointerOrigin {
@@ -34,8 +38,10 @@ export function MessageBubble({
   canManage,
   showUsername,
   showAvatar,
+  flash,
   onUpdate,
   onDelete,
+  onRetry,
 }: MessageBubbleProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
@@ -46,6 +52,12 @@ export function MessageBubble({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(message.content);
   const [isMutating, setIsMutating] = useState(false);
+
+  const hasMedia = Boolean(message.media_url);
+  const isImage = isProbablyImage(message.media_url, message.media_type);
+  const hasCaption = Boolean(message.content && message.content.trim());
+  const isLoading = Boolean(message.client_pending);
+  const isFailed = Boolean(message.client_failed);
 
   useEffect(() => {
     if (!showActions && !isEditing) return;
@@ -77,7 +89,7 @@ export function MessageBubble({
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!canManage || isEditing) return;
+    if (!canManage || isEditing || isLoading || isFailed) return;
 
     longPressTriggered.current = false;
     pointerOrigin.current = { x: event.clientX, y: event.clientY };
@@ -176,56 +188,58 @@ export function MessageBubble({
     onDelete(message.id);
   }
 
-  if (!message.content) return null;
+  if (!hasMedia && !hasCaption && !message.content) return null;
 
   const bubbleBackground = isOwn
-    ? "bg-[var(--tg-bubble-out)] text-white"
-    : "bg-[var(--tg-bubble-in)] text-[var(--tg-text)]";
+    ? "text-white"
+    : "bg-[var(--panel)] text-[var(--text)] border border-[var(--border)]";
 
   return (
     <div
       ref={rootRef}
+      data-message-id={message.id}
       className={`relative flex w-full items-end gap-2 ${isOwn ? "justify-end" : "justify-start"}`}
     >
       {!isOwn && (
         <span
           aria-hidden="true"
-          className={`grid size-7 shrink-0 place-items-center rounded-full bg-[var(--tg-accent)] text-[11px] font-semibold text-white ${
-            showAvatar ? "opacity-100" : "opacity-0"
-          }`}
+          className={`grid size-7 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-white ${showAvatar ? "opacity-100" : "opacity-0"}`}
+          style={{ background: "var(--grad-accent)" }}
         >
           {(username || "?").charAt(0).toUpperCase()}
         </span>
       )}
 
-      <div className="relative max-w-[78%] sm:max-w-[68%]">
+      <div className="relative max-w-[82%] sm:max-w-[68%]">
         {!isOwn && showUsername && username && (
-          <div className="mb-1 ml-3 text-[11px] font-medium tracking-tight text-[var(--tg-text-muted)]">
+          <div className="mb-1 ml-3 text-[11px] font-semibold tracking-tight text-[var(--text-muted)]">
             {username}
           </div>
         )}
 
         {showActions && canManage && (
           <div
-            className={`absolute -top-12 z-20 flex items-center gap-1 rounded-full border border-[var(--tg-border)] bg-[var(--tg-panel-2)]/95 p-1 shadow-[0_10px_32px_rgba(0,0,0,0.35)] backdrop-blur ${
+            className={`absolute -top-12 z-20 flex items-center gap-1 rounded-full border border-[var(--border-strong)] bg-[var(--panel-2)]/95 p-1 shadow-[0_10px_32px_rgba(0,0,0,0.4)] backdrop-blur ${
               isOwn ? "right-0" : "left-0"
             }`}
           >
-            <button
-              type="button"
-              onClick={beginEditing}
-              aria-label="Edit"
-              disabled={isMutating}
-              className="grid size-9 place-items-center rounded-full text-[var(--tg-text)] transition hover:bg-[var(--tg-hover)] active:scale-95 disabled:opacity-40"
-            >
-              <Pencil aria-hidden="true" className="size-4" strokeWidth={1.8} />
-            </button>
+            {!hasMedia && (
+              <button
+                type="button"
+                onClick={beginEditing}
+                aria-label="Edit"
+                disabled={isMutating}
+                className="grid size-9 place-items-center rounded-full text-[var(--text)] transition hover:bg-[var(--hover)] active:scale-95 disabled:opacity-40"
+              >
+                <Pencil aria-hidden="true" className="size-4" strokeWidth={1.8} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void deleteMessage()}
               aria-label="Delete"
               disabled={isMutating}
-              className="grid size-9 place-items-center rounded-full text-[var(--tg-danger)] transition hover:bg-[var(--tg-danger)]/10 active:scale-95 disabled:opacity-40"
+              className="grid size-9 place-items-center rounded-full text-[var(--danger)] transition hover:bg-[var(--danger)]/10 active:scale-95 disabled:opacity-40"
             >
               {isMutating ? (
                 <LoaderCircle aria-hidden="true" className="size-4 animate-spin" strokeWidth={1.8} />
@@ -249,7 +263,10 @@ export function MessageBubble({
           }}
           className={`animate-chat-pop overflow-hidden rounded-[22px] ${
             isOwn ? "rounded-br-[6px]" : "rounded-bl-[6px]"
-          } ${bubbleBackground} ${canManage ? "cursor-pointer" : ""}`}
+          } ${bubbleBackground} ${canManage ? "cursor-pointer" : ""} ${
+            flash ? "ring-2 ring-[var(--accent-text)]" : ""
+          } ${isFailed ? "ring-1 ring-[var(--danger)]" : ""}`}
+          style={isOwn ? { background: "var(--grad-accent)", boxShadow: "0 8px 24px rgba(193, 53, 132, 0.28)" } : undefined}
         >
           {isEditing ? (
             <form onSubmit={submitEdit} className="flex min-w-[210px] items-end gap-2 p-2 pl-3">
@@ -262,7 +279,6 @@ export function MessageBubble({
                     setIsEditing(false);
                     setEditValue(message.content);
                   }
-
                   if (
                     event.key === "Enter" &&
                     !event.shiftKey &&
@@ -281,7 +297,7 @@ export function MessageBubble({
                 type="submit"
                 aria-label="Save"
                 disabled={isMutating || !editValue.trim()}
-                className="grid size-8 shrink-0 place-items-center rounded-full bg-white/15 text-current transition active:scale-95 disabled:opacity-40"
+                className="grid size-8 shrink-0 place-items-center rounded-full bg-white/20 text-current transition active:scale-95 disabled:opacity-40"
               >
                 {isMutating ? (
                   <LoaderCircle aria-hidden="true" className="size-4 animate-spin" strokeWidth={1.9} />
@@ -291,8 +307,47 @@ export function MessageBubble({
               </button>
             </form>
           ) : (
-            <div className="whitespace-pre-wrap break-words px-4 py-2.5 text-[15px] leading-[20px]">
-              {message.content}
+            <div className="relative">
+              {hasMedia && isImage && (
+                <img
+                  src={message.media_url!}
+                  alt={message.media_name ?? "Shared image"}
+                  loading="lazy"
+                  className="block w-full max-h-96 rounded-[18px] object-cover"
+                />
+              )}
+              {hasMedia && !isImage && (
+                <video
+                  src={message.media_url!}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="block w-full max-h-96 rounded-[18px] object-cover"
+                />
+              )}
+              <div className={hasMedia ? "mx-auto max-w-[420px] px-2.5 pb-2 -mt-1" : "px-4 py-2.5"}>
+                {hasCaption && (
+                  <p className="whitespace-pre-wrap break-words text-[15px] leading-[20px]">{message.content}</p>
+                )}
+                <div className="-mb-0.5 mt-1 flex items-center justify-end gap-1.5">
+                  <span className="text-[10px] font-medium leading-none opacity-70">{timeLabel(message.created_at)}</span>
+                  {isLoading ? (
+                    <Clock aria-hidden="true" className="size-3 animate-pulse opacity-70" strokeWidth={2} />
+                  ) : isFailed ? (
+                    <button
+                      type="button"
+                      onClick={() => onRetry?.(message.id)}
+                      aria-label="Retry message"
+                      className="inline-flex items-center gap-1 rounded-full bg-[var(--danger)]/20 px-1.5 py-0.5 text-[10px] font-semibold text-[var(--danger)]"
+                    >
+                      <RefreshCw aria-hidden="true" className="size-3" strokeWidth={2.2} />
+                      Retry
+                    </button>
+                  ) : isOwn ? (
+                    <CheckCheck aria-hidden="true" className="size-3.5 opacity-80" strokeWidth={2} />
+                  ) : null}
+                </div>
+              </div>
             </div>
           )}
         </div>

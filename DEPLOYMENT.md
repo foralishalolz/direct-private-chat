@@ -2,6 +2,8 @@
 
 This walks through taking the app from your laptop to a live URL your friends can use, plus how to scale it later if the group grows.
 
+> **v2 note:** the UI is now native-like with PWA install, media messages, couples, games, search and web-push. Older databases should run `supabase/migrations/20261121000001_media_couples_games.sql` (or just re-run `supabase/setup.sql`, which is idempotent) after deploy. Without the migration, leagues and games won't render and the media button will fail with an error message — everything else works.
+
 ---
 
 ## 1. Supabase setup (do this once)
@@ -22,6 +24,12 @@ NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 SIGNUP_INVITE_CODE=pick-a-code-only-your-friends-know
+
+# Optional, for web-push notifications — run: npx web-push generate-vapid-keys
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=your-vapid-public-key
+VAPID_PUBLIC_KEY=your-vapid-public-key
+VAPID_PRIVATE_KEY=your-vapid-private-key
+VAPID_SUBJECT=mailto:you@example.com
 ```
 
 ## 3. Become the admin
