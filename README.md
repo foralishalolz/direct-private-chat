@@ -1,4 +1,4 @@
-# BitchAt 2.9
+# BitchAt 2.10
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -71,6 +71,10 @@ Kiss/hug requests include a reply action that preserves the text draft. Muahh, I
 Slow sends remain visible immediately in the existing bounded IndexedDB outbox. New drafts drain immediately after an in-flight send finishes, with stable UUID retries and account-level ordering. Inbox previews update locally instead of waiting for a full HTTP snapshot; delayed responses retain newer previews, read markers, and archive choices. Realtime HTTP reconciliation and local cache writes are coalesced. Older iOS browsers without AbortSignal.any keep request cancellation and deadlines. Rapid sticker saves use a transaction-scoped monotonic timestamp so FIFO eviction remains deterministic even within one millisecond.
 
 The inbox bell opens notification settings directly. Permission is requested only by tapping Message alerts; the existing Supabase Web Push queue and service worker handle background delivery. The browser checks cover opt-in, failure rollback, slow sends, modal gestures, reduced motion, data saver, couple matching, and permission boundaries. Physical-device notification delivery still requires supported OS/browser settings; mobile browser simulation does not verify the phone's notification center.
+
+## Version 2.10
+
+The app is rebuilt to feel like a native app: a deeper midnight-aurora shell with richer glass panels, a gradient-tinted chat header and composer, a glowing send button, refined bubbles, and a smoother conversation list with an accent edge on the selected chat. The inbox header gradient wordmark, recent avatars, and empty state now use the same aurora accents, including the notification and unread badge. The PWA identity follows the new theme color and the installed-app launch background.
 
 ## Version 2.9
 
