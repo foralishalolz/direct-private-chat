@@ -74,7 +74,7 @@ The inbox bell opens notification settings directly. Permission is requested onl
 
 ## Version 2.10
 
-The app is rebuilt to feel like a native app: a deeper midnight-aurora shell with richer glass panels, a gradient-tinted chat header and composer, a glowing send button, refined bubbles, and a smoother conversation list with an accent edge on the selected chat. The inbox header gradient wordmark, recent avatars, and empty state now use the same aurora accents, including the notification and unread badge. The PWA identity follows the new theme color and the installed-app launch background.
+The app was audited end to end and polished for a native feel without touching the button-critical design: aurora depth on the shell, inbox, auth card, thread header, composer surface, bubbles, modals and the empty state, a subtler selected-chat accent edge, and a rounded unread pill. Everything that drives buttons — the search bar, rail, composer (send/voice), filters, dropdowns, empty CTA — is unchanged from the verified 2.9 design. The PWA launch identity follows the new theme color. An end-to-end bug audit of auth, messages, inbox, realtime, outbox and offline storage confirmed the interactive paths; no logic was changed. No push/realtime behavior is altered.
 
 ## Version 2.9
 
