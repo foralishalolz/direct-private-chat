@@ -1,16 +1,17 @@
 "use client";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Mic, Music2, Phone, Plus, Smile, Sticker, X } from "lucide-react";
+import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Mic, Music2, Phone, Plus, Smile, Sticker, Video, X } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
 import { AFFECTIONS, QUICK_AFFECTIONS, type AffectionId } from "@/lib/affection";
 import { errorText, type Message } from "@/lib/types";
 import { ErrorNote, IconButton, Spinner } from "./UI";
 
-export type ComposerTool = "media" | "audio" | "camera" | "sticker" | "capsules" | "polls" | "games" | "call";
+export type ComposerTool = "media" | "video" | "audio" | "camera" | "sticker" | "capsules" | "polls" | "games" | "call";
 
 const RECENT_KEY = "bitchat-emoji-recent";
 const TOOLS = [
   { id: "media", label: "Photo", Icon: ImagePlus },
+  { id: "video", label: "Video", Icon: Video },
   { id: "camera", label: "Instant", Icon: Camera },
   { id: "audio", label: "Audio", Icon: Music2 },
   { id: "sticker", label: "Sticker", Icon: Sticker },
