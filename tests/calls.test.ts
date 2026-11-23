@@ -99,3 +99,12 @@ test("call signaling sends SDP answers and retries the ready handshake", () => {
   assert.match(hook,/signal\(\{ type: "answer", sdp: response\.sdp \}\)/);
   assert.match(hook,/setInterval\(\(\) => \{ if \(phaseRef\.current === "connecting"\) void signal\(\{ type: "ready" \}\); \}, 3000\)/);
 });
+
+test("calls replay early candidates and bound failed connections", () => {
+  const hook=readFileSync("hooks/useCall.ts","utf8");
+  assert.match(hook,/sentCandidates\.current\.push\(frame\)/);
+  assert.match(hook,/for \(const candidate of sentCandidates\.current\)/);
+  assert.match(hook,/Couldn’t connect\. Check your network or call relay/);
+  const thread=readFileSync("components/ChatThread.tsx","utf8");
+  assert.match(thread,/call\.call\?\.id!==callIntent\.callId/);
+});

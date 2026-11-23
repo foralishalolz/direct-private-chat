@@ -2,13 +2,14 @@
 "use client";
 import {useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from "react";
 import dynamic from "next/dynamic";
-import {ArrowDown,ArrowLeft,ArrowUp,BarChart3,Camera,ChevronUp,Clock3,Download,Gamepad2,Heart,ImagePlus,LockKeyhole,LogOut,Mic,MoreHorizontal,Phone,Plus,Search,Smile,Sparkles,Sticker,Trash2,Users,WifiOff,X} from "lucide-react";
+import {ArrowDown,ArrowLeft,ArrowUp,BarChart3,BookHeart,Camera,ChevronUp,Clock3,Download,Gamepad2,Heart,ImagePlus,LockKeyhole,LogOut,Mic,MoreHorizontal,Phone,Plus,Search,Smile,Sparkles,Sticker,Trash2,Users,WifiOff,X} from "lucide-react";
 import { AFFECTIONS, type AffectionId } from "@/lib/affection";
 import {rpc} from "@/lib/supabase";
 import {announceRead} from "@/lib/inbox";
 import {useMessages} from "@/hooks/useMessages";
 import {usePresence,activeLabel} from "@/hooks/usePresence";
 import {useCall} from "@/hooks/useCall";
+import type {IncomingIntent} from "@/hooks/useIncomingCall";
 import {usePins} from "@/hooks/usePins";
 import PinTray from "./PinTray";
 import {openSharedActivity} from "@/hooks/useActivityPing";
@@ -28,8 +29,9 @@ const VoiceRecorder=dynamic(()=>import("./MediaTools").then(m=>m.VoiceRecorder))
 const CameraCapture=dynamic(()=>import("./MediaTools").then(m=>m.CameraCapture));
 const StickerCollection=dynamic(()=>import("./StickerCollection"));
 const ChatActionModal=dynamic(()=>import("./ChatActionModal"));
+const Journal=dynamic(()=>import("./JournalModal"));
 const CallSheet=dynamic(()=>import("./CallSheet"),{ssr:false});
-export default function ChatThread({conversation:c,profile:p,onBack,onRefresh,activityIntent}:{conversation:Conversation;profile:Profile;onBack:()=>void;onRefresh:()=>Promise<void>;activityIntent?:{tab:ActivityTab;sequence:number}|null}){
+export default function ChatThread({conversation:c,profile:p,onBack,onRefresh,activityIntent,callIntent,onCallIntentHandled}:{conversation:Conversation;profile:Profile;onBack:()=>void;onRefresh:()=>Promise<void>;activityIntent?:{tab:ActivityTab;sequence:number}|null;callIntent?:IncomingIntent|null;onCallIntentHandled:()=>void}){
  const [chatAction,setChatAction]=useState<"clear"|"leave"|null>(null);
  const state=useMessages(c.id,p.id),presence=usePresence(c.id,p.id);
  const call=useCall(c.kind==="direct"?c.id:null,p.id);
@@ -52,6 +54,7 @@ export default function ChatThread({conversation:c,profile:p,onBack,onRefresh,ac
  const pinnedIds=useMemo(()=>new Set(pinState.pins.map(pin=>pin.message_id)),[pinState.pins]);
  const jumpTo=useCallback((id:string)=>{const node=document.getElementById("m-"+id);node?.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"center"});node?.classList.add("pin-flash");setTimeout(()=>node?.classList.remove("pin-flash"),1600);},[]);
  const [callOpen,setCallOpen]=useState(false);
+ const [journalOpen,setJournalOpen]=useState(false);
  // A home-screen shortcut or a notification may ask for a specific panel.
  useEffect(()=>{
   const wanted=new URLSearchParams(window.location.search).get("open");
@@ -66,18 +69,15 @@ export default function ChatThread({conversation:c,profile:p,onBack,onRefresh,ac
  const ids=useMemo(()=>state.messages.filter(m=>!m.status).map(m=>m.id),[state.messages]);
  const reactions=useReactions(c.id,p.id,ids);
  useEffect(()=>{if(call.phase!=="idle")setCallOpen(true);},[call.phase]);
- // A notification answer carries the intent into the thread that owns the call.
+ // Preserve notification actions until this thread has loaded its matching ring.
  useEffect(()=>{
-  const handler=(event:Event)=>{
-   const detail=(event as CustomEvent<{callId:string;action:string}>).detail;
-   if(!detail?.callId)return;
-   setCallOpen(true);
-   if(detail.action==="decline"){if(call.phase==="ringing")void call.decline();}
-   else if(detail.action==="accept"){if(call.phase==="ringing")void call.accept();}
-  };
-  window.addEventListener("bitchat-call-intent",handler);
-  return ()=>window.removeEventListener("bitchat-call-intent",handler);
- },[call]);
+  if(!callIntent)return;
+  if(call.phase!=="ringing"||call.call?.id!==callIntent.callId)return;
+  setCallOpen(true);
+  if(callIntent.action==="open"){onCallIntentHandled();return;}
+  if(callIntent.action==="decline")void call.decline();else void call.accept();
+  onCallIntentHandled();
+ },[callIntent,call.phase,call.call?.id]); // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>{alive.current=true;const timer=setInterval(()=>{if(document.visibilityState==="visible")setNow(Date.now());},30000);return()=>{alive.current=false;clearInterval(timer);exportAbort.current?.abort();};},[]);
  const bottom=useCallback((smooth=false)=>{const el=scroll.current;if(el){el.scrollTo({top:el.scrollHeight,behavior:smooth&&!window.matchMedia("(prefers-reduced-motion: reduce)").matches?"smooth":"instant"});near.current=true;setJump(false);}},[]);
  useLayoutEffect(()=>{const el=scroll.current;if(!el)return;
@@ -99,7 +99,7 @@ export default function ChatThread({conversation:c,profile:p,onBack,onRefresh,ac
  async function media(blob:Blob,kind:Message["media_kind"],messageKind:Message["kind"]="message"){const path=await upload(p.id,c.id,blob);if(!alive.current)return;await state.send("",path,kind,messageKind,reply?.id??null);setReply(null);}
  async function attachment(x:File){if(busy)return;setBusy(true);setError("");try{const kind=x.type.startsWith("image/")?"image":x.type.startsWith("video/")?"video":x.type.startsWith("audio/")?"audio":null;if(!kind)throw new Error("Choose a photo, video or audio file.");await media(kind==="image"&&x.type!=="image/gif"?await imageFile(x):x,kind);}catch(e){setError(errorText(e));}finally{setBusy(false);}}
  async function exportAll(){if(exporting)return;setExporting(true);setMenu(false);exportAbort.current=new AbortController();try{await exportChat(c,exportAbort.current.signal);}catch(e){if(alive.current)setError(errorText(e));}finally{if(alive.current)setExporting(false);}}
- return <section className={"chat-thread"+(c.kind==="direct"&&c.couple_a&&c.couple_b?" romantic-chat":"")}><header className="thread-header"><IconButton label="Back to messages" className="mobile-back" onClick={onBack}><ArrowLeft size={22}/></IconButton><button className="thread-person" onClick={()=>setPanel("chat")}><span className="avatar-wrap"><Avatar profile={c.partner} group={c.kind==="group"} size={42}/>{presence.online.length>0&&<i className="online-dot"/>}</span><span><strong>{title(c)}</strong><small>{presence.typing.length?"typing…":presence.online.length?(c.kind==="group"?presence.online.length+" online":"Active now"):(c.kind==="direct"&&presence.lastActive?activeLabel(presence.lastActive):subtitle(c))}</small></span></button><div className="thread-actions">{c.kind==="direct"&&<><IconButton label="Call" className="call-button" onClick={()=>{setCallOpen(true);void call.start("audio");}}><Phone size={21}/></IconButton></>}<IconButton label="Search messages" onClick={()=>setPanel("search")}><Search size={21}/></IconButton><IconButton label="Chat menu" aria-expanded={menu} onClick={()=>setMenu(!menu)}><MoreHorizontal size={23}/></IconButton></div>{menu&&<><button className="menu-dismiss" aria-label="Close menu" onClick={()=>setMenu(false)}/><div className="dropdown">{[["capsules","Capsules",<LockKeyhole key="c" size={18}/>],["games","Play",<Gamepad2 key="g" size={18}/>],...(c.kind==="direct"&&c.couple_a&&c.couple_b?[["stats","Together",<Heart key="h" size={18}/>],["memories","Memories",<Sparkles key="m" size={18}/>]]:[]),["polls","Polls",<BarChart3 key="p" size={18}/>],...(p.is_pro?[["archive","Message history",<Trash2 key="a" size={18}/>]]:[]),["chat","Chat details",<Users key="u" size={18}/>]].map(([id,name,icon])=><button key={String(id)} className="menu-item" onClick={()=>{openPanel(id as ActivityTab);setMenu(false);}}>{icon}{name}</button>)}<button className="menu-item" disabled={exporting} onClick={()=>void exportAll()}><Download size={18}/>Export chat</button><button className="menu-item danger" onClick={()=>{setMenu(false);setChatAction("clear");}}><Trash2 size={18}/>Delete chat</button>{c.kind==="group"&&<button className="menu-item danger" onClick={()=>{setMenu(false);setChatAction("leave");}}><LogOut size={18}/>Leave group</button>}</div></>}</header>
+ return <section className={"chat-thread"+(c.kind==="direct"&&c.couple_a&&c.couple_b?" romantic-chat":"")}><header className="thread-header"><IconButton label="Back to messages" className="mobile-back" onClick={onBack}><ArrowLeft size={22}/></IconButton><button className="thread-person" onClick={()=>setPanel("chat")}><span className="avatar-wrap"><Avatar profile={c.partner} group={c.kind==="group"} size={42}/>{presence.online.length>0&&<i className="online-dot"/>}</span><span><strong>{title(c)}</strong><small>{presence.typing.length?"typing…":presence.online.length?(c.kind==="group"?presence.online.length+" online":"Active now"):(c.kind==="direct"&&presence.lastActive?activeLabel(presence.lastActive):subtitle(c))}</small></span></button><div className="thread-actions">{c.kind==="direct"&&<><IconButton label="Call" className="call-button" onClick={()=>{setCallOpen(true);void call.start("audio");}}><Phone size={21}/></IconButton></>}<IconButton label="Search messages" onClick={()=>setPanel("search")}><Search size={21}/></IconButton><IconButton label="Chat menu" aria-expanded={menu} onClick={()=>setMenu(!menu)}><MoreHorizontal size={23}/></IconButton></div>{menu&&<><button className="menu-dismiss" aria-label="Close menu" onClick={()=>setMenu(false)}/><div className="dropdown">{[["capsules","Capsules",<LockKeyhole key="c" size={18}/>],["games","Play",<Gamepad2 key="g" size={18}/>],...(c.kind==="direct"&&c.couple_a&&c.couple_b?[["stats","Together",<Heart key="h" size={18}/>],["memories","Memories",<Sparkles key="m" size={18}/>]]:[]),["polls","Polls",<BarChart3 key="p" size={18}/>],...(p.is_pro?[["archive","Message history",<Trash2 key="a" size={18}/>]]:[]),["chat","Chat details",<Users key="u" size={18}/>]].map(([id,name,icon])=><button key={String(id)} className="menu-item" onClick={()=>{openPanel(id as ActivityTab);setMenu(false);}}>{icon}{name}</button>)}<button className="menu-item" onClick={()=>{setMenu(false);setJournalOpen(true);}}><BookHeart size={18}/>Journal</button><button className="menu-item" disabled={exporting} onClick={()=>void exportAll()}><Download size={18}/>Export chat</button><button className="menu-item danger" onClick={()=>{setMenu(false);setChatAction("clear");}}><Trash2 size={18}/>Delete chat</button>{c.kind==="group"&&<button className="menu-item danger" onClick={()=>{setMenu(false);setChatAction("leave");}}><LogOut size={18}/>Leave group</button>}</div></>}</header>{journalOpen&&<Journal userId={p.id} onClose={()=>setJournalOpen(false)}/>}
  <div className="chat-shortcuts">{c.kind==="direct"&&c.couple_a&&c.couple_b&&<button className="makeout-shortcut" aria-label="Makeout" onClick={()=>openPanel("makeout")}><span aria-hidden="true" className="shortcut-glyph">💋</span>Makeout</button>}{c.kind==="direct"&&<button className="draw-shortcut" aria-label="Draw together" onClick={()=>openPanel("draw")}><span aria-hidden="true" className="shortcut-glyph">🎨</span>Draw</button>}{c.kind==="direct"&&c.couple_a&&c.couple_b&&<button className="us-shortcut" aria-label="Us" onClick={()=>setPanel("moment")}><Heart size={15}/>Us</button>}<button onClick={()=>openPanel("games")}><Gamepad2 size={15}/>Play</button><button onClick={()=>setPanel("capsules")}><LockKeyhole size={14}/>Capsule</button><button onClick={()=>setPanel("polls")}><BarChart3 size={15}/>Poll</button></div>
  <PinTray pins={pinState.pins} onJump={jumpTo} onUnpin={id=>pinState.set(id,false)}/>
  <div className="thread-scroll" ref={scroll} onScroll={()=>{const el=scroll.current;if(!el)return;near.current=el.scrollHeight-el.scrollTop-el.clientHeight<110;if(near.current){setJump(false);markRead();}if(el.scrollTop<60&&state.more&&!state.loading&&!state.older)void older();}}><div className="message-list">{state.more&&state.messages.length>0&&<button className="older-button" disabled={state.older} aria-label="Load older messages" onClick={()=>void older()}>{state.older?<Spinner/>:<ChevronUp size={17}/>}</button>}{state.loading&&<div className="center pad"><Spinner/></div>}{c.couple_a&&c.couple_b&&c.kind==="direct"&&<GoalCard c={c} p={p}/>}<div className="conversation-start"><Avatar profile={c.partner} group={c.kind==="group"} size={65}/><strong>{title(c)}</strong><small>{subtitle(c)}</small></div><MessageList messages={state.messages} conversation={c} profile={p} reactions={reactions.grouped} now={now} onAffection={sendAffection} onReply={requestReply} onReact={reactions.toggle} onEdit={state.edit} onDelete={state.remove} onRetry={state.retry} pinnedIds={pinnedIds} onPin={(id,pinned)=>pinState.set(id,pinned)} savedIds={savedIds} onSave={keep}/>{presence.typing.length>0&&<span className="typing-dots" aria-label="Typing"><i/><i/><i/></span>}</div></div>

@@ -5,16 +5,17 @@ import {db} from "./supabase";
 const links=new Map<string,{url:string;until:number}>();
 const inflight=new Map<string,Promise<string>>();
 export function clearMedia(){links.clear();inflight.clear();}
-export async function signed(bucket:string,path:string){
+export async function signed(bucket:string,path:string,seconds=60){
   if(!path||path.startsWith("http")||path.includes(".."))throw new Error("Media unavailable.");
   const user=(await db().auth.getSession()).data.session?.user.id;
   if(!user)throw new Error("Sign in again.");
-  const key=user+":"+bucket+":"+path,hit=links.get(key);
+  const lifetime=Math.max(1,Math.min(300,Math.floor(seconds)));
+  const key=user+":"+bucket+":"+path+":"+lifetime,hit=links.get(key);
   if(hit&&hit.until>Date.now())return hit.url;
   const existing=inflight.get(key);if(existing)return existing;
-  const promise=(async()=>{const r=await db().storage.from(bucket).createSignedUrl(path,60);if(r.error)throw r.error;
+  const promise=(async()=>{const r=await db().storage.from(bucket).createSignedUrl(path,lifetime);if(r.error)throw r.error;
     if(links.size>180)links.delete(links.keys().next().value!);
-    links.set(key,{url:r.data.signedUrl,until:Date.now()+45000});return r.data.signedUrl;
+    links.set(key,{url:r.data.signedUrl,until:Date.now()+Math.max(0,lifetime-15)*1000});return r.data.signedUrl;
   })().finally(()=>inflight.delete(key));inflight.set(key,promise);return promise;
 }
 export async function imageFile(file:Blob,max=1600):Promise<Blob>{

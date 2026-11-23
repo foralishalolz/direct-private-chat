@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { Archive, ArrowLeft, Bell, BookHeart, Bookmark, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
+import { Archive, ArrowLeft, Bell, Bookmark, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
 import { watchDeviceMode, watchViewport } from "@/lib/device";
 import { useEdgeSwipe } from "@/hooks/useEdgeSwipe";
 import { usePullRefresh } from "@/hooks/usePullRefresh";
@@ -24,6 +24,7 @@ import SwipeChat from "./SwipeChat";
 const ChatThread = dynamic(() => import("./ChatThread"), {
   loading: () => <section className="chat-thread thread-loading"><Spinner /></section>,
 });
+const Stories = dynamic(() => import("./Stories"));
 const Discover = dynamic(() => import("./DiscoverModal"));
 const ProfileEditor = dynamic(() => import("./ProfileModal"));
 const ChatActionModal = dynamic(() => import("./ChatActionModal"));
@@ -80,8 +81,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   useEffect(() => {
     if (!incoming.intent) return;
     setSelected(incoming.intent.conversationId);
-    window.dispatchEvent(new CustomEvent("bitchat-call-intent", { detail: incoming.intent }));
-    incoming.clear();
+
   }, [incoming.intent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -155,7 +155,6 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         <a href="/" aria-label="BitchAt" className="rail-brand"><Brand small /></a>
         <IconButton label="Messages" className="active" onClick={() => open(null)}><MessageCircle size={24} /><span className="rail-label">Messages</span></IconButton>
         <IconButton label="New message" onClick={() => openDiscover()}><Users size={24} /><span className="rail-label">People</span></IconButton>
-        <IconButton label="Journal" onClick={() => setModal("journal")}><BookHeart size={24} /><span className="rail-label">Journal</span></IconButton>
         <button className="rail-profile" aria-label="Profile" onClick={() => setModal("profile")}><Avatar profile={profile} size={36} /><span className="rail-label">Profile</span></button>
       </nav>
 
@@ -167,6 +166,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         </header>
         <div className="inbox-search"><label className="input-icon"><Search size={18} aria-hidden="true" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
 
+        {!needle && filter === "all" && <Stories profile={profile}/>}
         {!needle && filter === "all" && recent.length > 0 && <div className="recent-people" aria-label="Recent chats">
           {recent.map(conversation => <button key={conversation.id} aria-label={"Open chat with " + label(conversation.partner)} onClick={() => open(conversation.id)}>
             <span className="recent-ring"><Avatar profile={conversation.partner} size={51} />{conversation.partner?.mood && <span className="recent-mood">{conversation.partner.mood}</span>}</span>
@@ -190,12 +190,11 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         </div>
         <footer className="inbox-footer">
           <button aria-label="Profile" onClick={() => setModal("profile")}><Avatar profile={profile} size={36} /><span><strong>{label(profile)}</strong><small>@{profile.username}</small></span></button>
-          <IconButton label="Journal" onClick={() => setModal("journal")}><BookHeart size={23} /></IconButton>
           {!online && <WifiOff size={17} aria-label="Offline" />}
         </footer>
       </aside>
 
-      {active ? <ChatThread key={active.id} conversation={active} profile={profile} activityIntent={activityIntent?.conversationId === active.id ? activityIntent : null} onBack={() => { setActivityIntent(null); setSelected(null); }} onRefresh={refresh} /> : selected ? (
+      {active ? <ChatThread key={active.id} conversation={active} profile={profile} activityIntent={activityIntent?.conversationId === active.id ? activityIntent : null} callIntent={incoming.intent?.conversationId === active.id ? incoming.intent : null} onCallIntentHandled={incoming.clear} onBack={() => { setActivityIntent(null); setSelected(null); }} onRefresh={refresh} /> : selected ? (
         <section className="chat-thread thread-loading" aria-label="Opening conversation">
           <IconButton label="Back to messages" className="opening-back" onClick={() => setSelected(null)}><ArrowLeft size={23} /></IconButton>
           {openError ? <div className="opening-error"><ErrorNote text={openError} /><button className="primary" onClick={() => setRetry(value => value + 1)}>Retry</button></div> : <Spinner />}
@@ -211,7 +210,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
       {notifications.toast && <div className="message-toast" role="status"><button onClick={() => { setSelected(notifications.toast); notifications.dismiss(); }}><MessageCircle size={20}/><span>New message</span></button><IconButton label="Dismiss notification" onClick={notifications.dismiss}><X size={17}/></IconButton></div>}
       {chatAction && <ChatActionModal conversationId={chatAction.id} userId={profile.id} action={chatAction.action} onClose={() => setChatAction(null)} onDone={async () => { if (selected === chatAction.id) { setSelected(null); setOpened(null); } await refresh(); }}/>}
       {modal === "new" && <Discover initialMode={discoverMode} userId={profile.id} onClose={() => setModal(null)} onOpen={id => { setSelected(id); void refresh(); }} />}
-      {modal === "profile" && <ProfileEditor profile={profile} onChange={onProfile} onClose={() => setModal(null)} onLogout={onLogout} />}
+      {modal === "profile" && <ProfileEditor profile={profile} onChange={onProfile} onClose={() => setModal(null)} onLogout={onLogout} onJournal={() => setModal("journal")} />}
       {modal === "journal" && <Journal userId={profile.id} onClose={() => setModal(null)} />}
       {modal === "notifications" && <NotificationSettings userId={profile.id} onClose={() => setModal(null)} />}
       {modal === "saved" && <SavedModal userId={profile.id} onClose={() => setModal(null)} onOpenChat={id => open(id)} />}

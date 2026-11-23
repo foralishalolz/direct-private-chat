@@ -60,6 +60,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   // CallLink exists. Dropping them makes the caller unreachable on strict
   // networks, so they wait here and are replayed once the link is built.
   const early = useRef<RTCIceCandidateInit[]>([]);
+  const sentCandidates = useRef<Signal[]>([]);
   /** True from the moment we answer a call until its link exists. */
   const answering = useRef(false);
   const callRef = useRef<CallRow | null>(null);
@@ -90,6 +91,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     link.current?.close();
     link.current = null;
     early.current.length = 0;
+    sentCandidates.current.length = 0;
     answering.current = false;
     localRef.current?.getTracks().forEach(track => { try { track.stop(); } catch {} });
     localRef.current = null;
@@ -114,7 +116,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   const ensureLink = useCallback(() => {
     if (link.current) return link.current;
     link.current = new CallLink({
-      onSignal: frame => { void signal(frame); },
+      onSignal: frame => { if (frame.type === "candidate" && sentCandidates.current.length < 200) sentCandidates.current.push(frame); void signal(frame); },
       onState: state => {
         if (state === "connected") {
           if (!startedAt.current) {
@@ -162,7 +164,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
       if (frame.type === "answer") {
         if (!link.current) return;
         await link.current.accept({ type: "answer", sdp: frame.sdp }).catch(() => {});
-        if (phaseRef.current !== "active") sync("connecting");
+        if (callRef.current?.id === current.id && phaseRef.current !== "active") sync("connecting");
         return;
       }
       if (frame.type === "candidate") {
@@ -178,8 +180,11 @@ export function useCall(conversationId: string | null, userId: string): CallSess
         // Offers sent while the callee was joining can be missed. Re-send the
         // same offer on ready; CallLink coalesces concurrent offer creation.
         const description = await link.current.offer().catch(() => null);
-        if (description?.sdp && callRef.current?.id === current.id) await signal({ type: "offer", sdp: description.sdp, kind: current.kind });
-        if (phaseRef.current === "calling") sync("connecting");
+        if (description?.sdp && callRef.current?.id === current.id) {
+          await signal({ type: "offer", sdp: description.sdp, kind: current.kind });
+          for (const candidate of sentCandidates.current) { if (callRef.current?.id !== current.id) break; void signal(candidate); }
+        }
+        if (callRef.current?.id === current.id && phaseRef.current === "calling") sync("connecting");
         return;
       }
       if (frame.type === "bye") {
@@ -232,6 +237,20 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     const retry = setInterval(() => { if (phaseRef.current === "connecting") void signal({ type: "ready" }); }, 3000);
     return () => clearInterval(retry);
   }, [phase, outgoing, signal]);
+
+  // Avoid leaving both people indefinitely on a connecting screen.
+  useEffect(() => {
+    if (phase !== "connecting") return;
+    const timer = setTimeout(() => {
+      if (phaseRef.current !== "connecting") return;
+      const current = callRef.current;
+      void signal({ type: "bye", reason: "failed" });
+      if (current) void rpc("end_call", { p_call: current.id }).catch(() => {});
+      setError("Couldn’t connect. Check your network or call relay.");
+      finish("failed");
+    }, 60000);
+    return () => clearTimeout(timer);
+  }, [phase, finish, signal]);
 
   // --- Call actions ---------------------------------------------------------
   async function start(nextKind: CallKind = "audio") {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Maximize2, Mic, MicOff, Minimize2, Phone, PhoneOff, Signal, Volume2, VolumeX, WifiOff } from "lucide-react";
+import { Maximize2, Mic, MicOff, Minimize2, Phone, PhoneOff, Signal, WifiOff } from "lucide-react";
 import { buzz, formatDuration, keepAwake } from "@/lib/rtc";
 import type { CallSession } from "@/hooks/useCall";
 import { title, type Conversation } from "@/lib/types";
@@ -17,7 +17,7 @@ export default function CallSheet({ c, session, onClose }: {
   session: CallSession;
   onClose: () => void;
 }) {
-  const { phase, kind, remote, stats, error, ended, elapsed, muted, speaker } = session;
+  const { phase, kind, remote, stats, error, ended, elapsed, muted } = session;
   const remoteAudio = useRef<HTMLAudioElement>(null);
   const [expanded, setExpanded] = useState(true);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -63,7 +63,7 @@ export default function CallSheet({ c, session, onClose }: {
 
   useEffect(() => {
     if (!ended && phase !== "idle") return;
-    const timer = setTimeout(onClose, ended ? 1600 : 0);
+    const timer = setTimeout(onClose, ended ? (ended.status === "failed" ? 5000 : 1600) : 0);
     return () => clearTimeout(timer);
   }, [ended, phase, onClose]);
 
@@ -105,7 +105,6 @@ export default function CallSheet({ c, session, onClose }: {
       </div>
       <h1 className="call-name">{partnerName}</h1>
       <p className={"call-state " + (connected ? "live" : "")}>{label}</p>
-      {connected && stats && <p className="call-detail">{stats.bitrate ? Math.round(stats.bitrate / 1000) + " kbps" : "wideband audio"} · {stats.loss ? stats.loss + "% packet loss" : "Voice connected"}</p>}
       {audioBlocked && <button className="call-audio-retry" onClick={() => void remoteAudio.current?.play().then(() => setAudioBlocked(false)).catch(() => setAudioBlocked(true))}>Tap to hear audio</button>}
       {error && <p className="call-error" role="alert">{error}</p>}
     </div>
@@ -115,10 +114,9 @@ export default function CallSheet({ c, session, onClose }: {
       <button className="call-action accept" aria-label="Accept call" onClick={() => void session.accept()}><Phone size={26}/><small>Accept</small></button>
     </div> : <div className="call-actions">
       <button className={"call-action " + (muted ? "on" : "")} aria-pressed={muted} aria-label={muted ? "Unmute" : "Mute"} onClick={session.toggleMute}>{muted ? <MicOff size={24}/> : <Mic size={24}/>}<small>{muted ? "Unmute" : "Mute"}</small></button>
-      {typeof HTMLMediaElement !== "undefined" && "setSinkId" in HTMLMediaElement.prototype && <button className={"call-action " + (speaker ? "on" : "")} aria-pressed={speaker} aria-label={speaker ? "Speaker off" : "Speaker on"} onClick={() => session.setSpeaker(!speaker)}>{speaker ? <Volume2 size={24}/> : <VolumeX size={24}/>}<small>Speaker</small></button>}
       <button className="call-action end" aria-label="End call" onClick={() => void session.hangup()}><PhoneOff size={26}/><small>End</small></button>
     </div>}
 
-    <p className="call-privacy">Voice call · audio only</p>
+    <div className="call-home-indicator" aria-hidden="true"/>
   </div></>;
 }
