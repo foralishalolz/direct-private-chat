@@ -1,0 +1,1 @@
+begin; create index if not exists capsules_user on public.capsules(user_id); create index if not exists channel_members_user on public.channel_members(user_id); create index if not exists channels_creator on public.channels(created_by); create index if not exists groups_creator on public.groups(created_by); drop index if exists public.messages_owner; commit;

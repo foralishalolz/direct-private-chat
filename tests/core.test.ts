@@ -1,0 +1,53 @@
+
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import "fake-indexeddb/auto";
+import {activate,acknowledge,cache,cached,cacheable,clearUser,clearConversation,visibleRows,enqueue,pending,updatePending} from "../lib/offline";
+import {historyIds,merge,usernameEmail,type Message} from "../lib/types";
+const message=(user="a",id=crypto.randomUUID()):Message=>({id,user_id:user,conversation_id:"room",content:"hello",media_url:null,media_kind:null,kind:"message",created_at:"2026-09-14T10:00:00Z",instant_viewed:false});
+test("usernames normalize consistently and reject invalid email tricks",()=>{assert.equal(usernameEmail(" @Hello_12 "),"hello_12@chat.local");for(const input of ["a","someone@example.com","a+b","space here","a".repeat(25)])assert.throws(()=>usernameEmail(input));});
+test("merging a realtime acknowledgement never duplicates an optimistic message",()=>{const m=message();const rows=merge([{...m,status:"queued"}],[{...m,created_at:"2026-09-14T10:00:01Z"}]);assert.equal(rows.length,1);assert.equal(rows[0].status,undefined);});
+test("same timestamp is sorted by UUID for stable pagination",()=>{const rows=merge([message("u","b"),message("u","a")],[message("u","c")]);assert.deepEqual(rows.map(x=>x.id),["a","b","c"]);});
+test("cache strips ephemeral media and unviewed instant state",()=>{const m=message();const rows=cacheable([{...m,media_url:"private/photo.webp",media_kind:"image"},{...message(),kind:"instant"},{...message(),status:"queued"}]);assert.equal(rows.length,2);assert.equal(rows[0].media_url,null);assert.equal(rows[1].instant_viewed,true);});
+test("cache retains at most 240 confirmed messages",()=>{const rows=Array.from({length:400},()=>message());assert.equal(cacheable(rows).length,240);});
+test("outbox UUID is idempotent and accounts are isolated",async()=>{const a=message("alice"),b=message("bob");activate("alice");activate("bob");await enqueue(a);await enqueue(a);await enqueue(b);assert.equal((await pending("alice")).length,1);await acknowledge("bob",a.id);assert.equal((await pending("alice")).length,1);await clearUser("alice");assert.equal((await pending("alice")).length,0);assert.equal((await pending("bob")).length,1);await clearUser("bob");});
+test("acknowledgement wins a delayed retry update",async()=>{const m=message("race");activate("race");await enqueue(m);const row=(await pending("race"))[0];await acknowledge("race",m.id);await updatePending({...row,attempts:3});assert.equal((await pending("race")).length,0);});
+test("logout stops subsequent cache and queue writes",async()=>{activate("logout");await cache("logout","profile",{name:"private"});await clearUser("logout");assert.equal(await cached("logout","profile"),null);assert.equal(await cache("logout","late",{name:"private"}),false);await assert.rejects(enqueue(message("logout")));});
+test("queue has a hard 100-message bound but allows retry of existing IDs",async()=>{activate("limit");const rows=Array.from({length:100},()=>message("limit"));await Promise.all(rows.map(enqueue));assert.equal((await pending("limit")).length,100);await assert.rejects(enqueue(message("limit")));await enqueue(rows[0]);assert.equal((await pending("limit")).length,100);await clearUser("limit");});
+test("instants never enter the offline queue",async()=>{await assert.rejects(enqueue({...message("instant"),kind:"instant"}));});
+test("device snapshots are isolated and bounded",async()=>{activate("cache-a");activate("cache-b");await cache("cache-a","private",{body:"my journal"});assert.equal(await cached("cache-b","private"),null);for(let i=0;i<45;i++)await cache("cache-a","thread-"+i,{i});let retained=0;for(let i=0;i<45;i++)if(await cached("cache-a","thread-"+i))retained++;assert.ok(retained<=40);assert.equal(await cache("cache-a","huge","x".repeat(2*1024*1024)),false);await clearUser("cache-a");});
+
+test("reconnect resets a discontinuous cached window so older pagination cannot skip a gap",()=>{
+ const current=[{...message("u","old"),created_at:"2026-09-14T09:00:00Z"}];
+ const latest=Array.from({length:30},(_,i)=>({...message("u",String(99-i)),created_at:"2026-09-14T12:00:00Z"}));
+ assert.deepEqual(historyIds(current,latest),[]);
+});
+test("reconnect preserves contiguous loaded history",()=>{
+ const a=message("u","a"),b=message("u","b");
+ assert.deepEqual(historyIds([a,b],[b]),["a"]);
+});
+
+test("clearing one conversation removes its queue and prevents stale snapshot restoration",async()=>{
+ const user="clear-room";activate(user);const old=message(user),other={...message(user),conversation_id:"other"};
+ await enqueue(old);await enqueue(other);await cache(user,"messages:room",[old]);
+ await clearConversation(user,"room","2026-09-14T10:00:01Z");
+ assert.deepEqual((await pending(user)).map(row=>row.message.id),[other.id]);
+ await cache(user,"messages:room",[old]);assert.deepEqual(await cached(user,"messages:room"),[]);
+ const next={...message(user),created_at:"2026-09-14T10:00:02Z"};assert.deepEqual(visibleRows(user,"room",[old,next]),[next]);
+ await enqueue(next);await assert.rejects(enqueue(old));await clearUser(user);
+});
+
+import {DEFAULT_PRIVACY,reconcilePrivacy} from "../lib/privacy";
+test("delayed privacy events cannot turn hidden activity back on",()=>{
+ const first=reconcilePrivacy(null,{...DEFAULT_PRIVACY,revision:0})!;
+ const hidden=reconcilePrivacy(first,{...DEFAULT_PRIVACY,revision:4,share_online:false,share_last_active:false,share_typing:false,share_receipts:false})!;
+ const stale=reconcilePrivacy(hidden,{...DEFAULT_PRIVACY,revision:2,share_online:false});
+ assert.equal(stale,hidden);assert.equal(stale?.share_last_active,false);
+ assert.equal(reconcilePrivacy(hidden,{...DEFAULT_PRIVACY,revision:4}),hidden);
+ const newer=reconcilePrivacy(hidden,{...hidden,revision:5,share_typing:true});assert.equal(newer?.share_typing,true);assert.equal(newer?.share_last_active,false);
+});
+test("incomplete privacy responses cannot replace a valid preference snapshot",()=>{
+ const current={...DEFAULT_PRIVACY,revision:2,share_online:false};
+ for(const invalid of [null,[],{revision:3},{...DEFAULT_PRIVACY,revision:-1},{...DEFAULT_PRIVACY,revision:3,share_online:"true"}])assert.equal(reconcilePrivacy(current,invalid),current);
+ assert.equal(reconcilePrivacy(null,[]),null);
+});
