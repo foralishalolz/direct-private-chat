@@ -59,6 +59,7 @@ export default function AuthScreen({ initialError = "" }: { initialError?: strin
       <div className="auth-glow" aria-hidden="true" /><div className="auth-glass-orb" aria-hidden="true" />
       <section className="auth-card" aria-label="BitchAt account">
         <Brand />
+        <p className="auth-intro">Your people, all in one place.</p>
         <form onSubmit={submit} className="auth-form" aria-busy={busy}>
           <div className="auth-tabs" role="tablist" aria-label="Account">
             <button ref={loginTab} id="login-tab" type="button" role="tab" aria-selected={mode === "login"} aria-controls="auth-fields" tabIndex={mode === "login" ? 0 : -1} disabled={busy} onKeyDown={tabKey} onClick={() => choose("login")}>Log in</button>

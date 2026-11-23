@@ -205,3 +205,7 @@ People discovery no longer suggests profiles; search requires at least three cha
 ## 2.21 notes
 
 The inbox has a more restrained iOS-inspired layout, and installation guidance opens only when requested in Profile. The attachment menu has a Link action that inserts a validated HTTPS link into the draft before sending. Draw together uses a full-screen shared canvas; completed and in-progress strokes are periodically saved, and either member can erase or undo. An offline or interrupted save may need retrying. In a direct chat, Music can upload audio, start a shared session, and let each person join; play/pause state is shared with periodic resynchronization. Browser autoplay, network conditions and device clock differences can affect playback, and audio stops locally when the panel closes. Chat audio is limited to 25 MB and 24 hours. Spotify and YouTube links can be shared, but their playback is not synchronized; provider embeds may restrict playback or display ads.
+
+## 2.22 notes
+
+The mobile login and messages home have been refreshed with a cleaner social-app layout, consistent touch targets and aligned controls. Existing account and inbox behavior is unchanged.
