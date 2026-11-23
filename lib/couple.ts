@@ -11,48 +11,48 @@ export type Mood = { id: string; glyph: string; label: string; line: string };
 
 /** Quick "how I feel right now" notes that land as a message. */
 export const FEELINGS: Mood[] = [
-  { id: "missing", glyph: "🥺", label: "Missing you", line: "🥺 Missing you so much it is silly" },
-  { id: "sad", glyph: "😢", label: "Sad", line: "😢 A bit sad today. Can I have a hug?" },
-  { id: "crying", glyph: "😭", label: "Crying", line: "😭 I need you. Call me when you can?" },
-  { id: "lonely", glyph: "🌧️", label: "Lonely", line: "🌧️ Feeling lonely. Say something sweet?" },
-  { id: "anxious", glyph: "🫨", label: "Anxious", line: "🫨 My head is loud today. Stay with me a minute?" },
-  { id: "tired", glyph: "😴", label: "Exhausted", line: "😴 Wiped out. Tell me it will be okay?" },
-  { id: "happy", glyph: "😊", label: "Happy", line: "😊 Just happy you exist" },
-  { id: "giggly", glyph: "🤭", label: "Giggly", line: "🤭 Thinking about you and grinning at my phone" },
-  { id: "proud", glyph: "🫶", label: "Proud of you", line: "🫶 So proud of you, always" },
-  { id: "angry", glyph: "😤", label: "Annoyed", line: "😤 Annoyed at everything except you" },
-  { id: "sleepy", glyph: "🌙", label: "Sleepy", line: "🌙 Sleepy. Wish you were the pillow" },
-  { id: "sick", glyph: "🤒", label: "Unwell", line: "🤒 Not feeling great. Baby me a little?" },
+  { id: "missing", glyph: "🥺", label: "Missing you", line: "🥺 I miss you" },
+  { id: "sad", glyph: "😢", label: "Sad", line: "😢 Feeling sad. Can I have a hug?" },
+  { id: "crying", glyph: "😭", label: "Crying", line: "😭 I’m crying. Can you call me?" },
+  { id: "lonely", glyph: "🌧️", label: "Lonely", line: "🌧️ Feeling lonely. Are you around?" },
+  { id: "anxious", glyph: "🫨", label: "Anxious", line: "🫨 Feeling anxious. Can you stay with me?" },
+  { id: "tired", glyph: "😴", label: "Exhausted", line: "😴 I’m exhausted today" },
+  { id: "happy", glyph: "😊", label: "Happy", line: "😊 You make me happy" },
+  { id: "giggly", glyph: "🤭", label: "Giggly", line: "🤭 You’re making me smile" },
+  { id: "proud", glyph: "🫶", label: "Proud of you", line: "🫶 I’m proud of you" },
+  { id: "angry", glyph: "😤", label: "Annoyed", line: "😤 Having a rough day" },
+  { id: "sleepy", glyph: "🌙", label: "Sleepy", line: "🌙 Wish you were here with me" },
+  { id: "sick", glyph: "🤒", label: "Unwell", line: "🤒 I’m not feeling well" },
 ];
 
 /** Comfort replies that answer a sad message. */
 export const COMFORTS: { id: string; glyph: string; label: string; line: string }[] = [
-  { id: "here", glyph: "🫂", label: "I'm here", line: "🫂 I am right here. Breathe with me." },
-  { id: "hug", glyph: "🧸", label: "Hug", line: "🧸 Sending the biggest, warmest hug" },
-  { id: "stay", glyph: "🤍", label: "Not leaving", line: "🤍 Not going anywhere. Take your time." },
-  { id: "talk", glyph: "☎️", label: "Let's talk", line: "☎️ Want to talk? I will listen, no advice unless you ask." },
-  { id: "cry", glyph: "😢", label: "Cry it out", line: "😢 It is okay to cry. I have got you." },
-  { id: "proud", glyph: "🌷", label: "You're doing ok", line: "🌷 You are doing better than you think." },
-  { id: "water", glyph: "💧", label: "Drink water", line: "💧 Water, then rest. Orders from me." },
-  { id: "sleep", glyph: "🌙", label: "Rest", line: "🌙 Sleep. I will be here in the morning." },
-  { id: "kissforehead", glyph: "😚", label: "Forehead kiss", line: "😚 A kiss on your forehead" },
-  { id: "hold", glyph: "🫱", label: "Hold my hand", line: "🫱 Holding your hand, not letting go" },
+  { id: "here", glyph: "🫂", label: "I'm here", line: "🫂 I’m here for you" },
+  { id: "hug", glyph: "🧸", label: "Hug", line: "🧸 Sending you a big hug" },
+  { id: "stay", glyph: "🤍", label: "Not leaving", line: "🤍 Take your time, I’m here" },
+  { id: "talk", glyph: "☎️", label: "Let's talk", line: "☎️ Want to talk? I’m listening" },
+  { id: "cry", glyph: "😢", label: "Cry it out", line: "😢 It’s okay to cry. I’ve got you" },
+  { id: "proud", glyph: "🌷", label: "You're doing ok", line: "🌷 I’m proud of you" },
+  { id: "water", glyph: "💧", label: "Drink water", line: "💧 Please get some water and rest" },
+  { id: "sleep", glyph: "🌙", label: "Rest", line: "🌙 Get some rest. I’m here" },
+  { id: "kissforehead", glyph: "😚", label: "Forehead kiss", line: "😚 Forehead kiss for you" },
+  { id: "hold", glyph: "🫱", label: "Hold my hand", line: "🫱 Holding your hand" },
 ];
 
 /** Digital kisses with a little personality. */
 export const KISSES: { id: string; glyph: string; label: string; line: string }[] = [
-  { id: "quick", glyph: "😘", label: "Quick kiss", line: "😘 A quick kiss on the way past" },
-  { id: "forehead", glyph: "😚", label: "Forehead", line: "😚 A soft kiss on your forehead" },
-  { id: "neck", glyph: "🫦", label: "Neck", line: "🫦 A slow kiss on your neck" },
-  { id: "hand", glyph: "🤍", label: "Hand", line: "🤍 A kiss on your knuckles" },
-  { id: "deep", glyph: "💋", label: "Deep", line: "💋 A kiss that lasts a little too long" },
-  { id: "goodmorning", glyph: "☀️", label: "Good morning", line: "☀️ Good morning kiss, still sleep warm" },
-  { id: "goodnight", glyph: "🌙", label: "Goodnight", line: "🌙 Goodnight kiss, lights off" },
-  { id: "surprise", glyph: "💞", label: "Surprise", line: "💞 Out of nowhere, because I wanted to" },
-  { id: "rain", glyph: "🌧️", label: "Rain kiss", line: "🌧️ Kissing you in the rain, hair ruined" },
-  { id: "door", glyph: "🚪", label: "At the door", line: "🚪 The kiss at the door before I go" },
-  { id: "makeup", glyph: "🌷", label: "Make-up", line: "🌷 The after-argument kiss. I am sorry." },
-  { id: "laugh", glyph: "🤭", label: "Mid-laugh", line: "🤭 A kiss in the middle of laughing" },
+  { id: "quick", glyph: "😘", label: "Quick kiss", line: "😘 A kiss for you" },
+  { id: "forehead", glyph: "😚", label: "Forehead", line: "😚 Kiss on your forehead" },
+  { id: "neck", glyph: "🫦", label: "Neck", line: "🫦 A kiss on your neck" },
+  { id: "hand", glyph: "🤍", label: "Hand", line: "🤍 A kiss on your hand" },
+  { id: "deep", glyph: "💋", label: "Deep", line: "💋 I want to kiss you" },
+  { id: "goodmorning", glyph: "☀️", label: "Good morning", line: "☀️ Good morning kiss" },
+  { id: "goodnight", glyph: "🌙", label: "Goodnight", line: "🌙 Goodnight kiss" },
+  { id: "surprise", glyph: "💞", label: "Surprise", line: "💞 Surprise kiss" },
+  { id: "rain", glyph: "🌧️", label: "Rain kiss", line: "🌧️ Let’s kiss in the rain" },
+  { id: "door", glyph: "🚪", label: "At the door", line: "🚪 One more kiss before you go" },
+  { id: "makeup", glyph: "🌷", label: "Make-up", line: "🌷 I’m sorry. Can I kiss you?" },
+  { id: "laugh", glyph: "🤭", label: "Mid-laugh", line: "🤭 Kissing you mid-laugh" },
 ];
 
 /** Too much love, too little time: romantic dares, all soft, all declinable. */
@@ -130,6 +130,23 @@ export const RATHERS: [string, string][] = [
   ["A photo of us", "A minute of us in a voice note"],
   ["Little texts all day", "One long call at night"],
   ["Be big spoon", "Be little spoon"],
+];
+
+
+/** Flirty prompts for consenting adults. Skip anything that isn't your thing. */
+export const SPICY_QUESTIONS: string[] = [
+  "What kind of kiss do you want from me tonight?",
+  "Where would you like me to kiss you?",
+  "What do I do that gives you butterflies?",
+  "What would you whisper to me right now?",
+  "What should our next night together look like?",
+  "What do you like hearing from me when we flirt?",
+  "What outfit would you like to see me in?",
+  "What makes you feel most wanted?",
+  "What should we try on our next date, if we're both in the mood?",
+  "What is your favourite way for me to tease you?",
+  "What would you like me to do when we're alone?",
+  "What kind of touch do you like most?",
 ];
 
 /** Prompts for the sad days. Never a fix, just company. */

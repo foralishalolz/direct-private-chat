@@ -27,3 +27,22 @@ test("pending board edits merge with unrelated server strokes", async () => {
   assert.deepEqual(merged.find(s => s.id === "a")?.points, [[0.5, 0.5]]);
   assert.deepEqual(mergeBoard([a, b], new Map([["a", { stroke: null, version: 2 }]])).map(s => s.id), ["b"]);
 });
+
+
+test("kiss bursts are split into batches without dropping taps", async () => {
+  const { kissBatch } = await import("../lib/kiss");
+  let remaining = 37, sent = 0;
+  while (remaining) { const batch = kissBatch(remaining); assert.ok(batch > 0 && batch <= 12); remaining -= batch; sent += batch; }
+  assert.equal(sent, 37);
+  assert.equal(kissBatch(NaN), 0);
+});
+
+test("feels and spicy decks contain editable, distinct prompts", async () => {
+  const { FEELINGS, COMFORTS, KISSES, SPICY_QUESTIONS } = await import("../lib/couple");
+  for (const deck of [FEELINGS, COMFORTS, KISSES]) {
+    assert.equal(new Set(deck.map(item => item.id)).size, deck.length);
+    assert.ok(deck.every(item => item.line.length > 0));
+  }
+  assert.ok(SPICY_QUESTIONS.length >= 10);
+  assert.equal(new Set(SPICY_QUESTIONS).size, SPICY_QUESTIONS.length);
+});

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ArrowUpRight, Shuffle } from "lucide-react";
-import { DARES, QUESTIONS, RATHERS, SOFT_QUESTIONS } from "@/lib/couple";
+import { DARES, QUESTIONS, RATHERS, SOFT_QUESTIONS, SPICY_QUESTIONS } from "@/lib/couple";
 import { haptic } from "@/lib/haptics";
 import { errorText } from "@/lib/types";
 import { ErrorNote } from "./UI";
@@ -12,6 +12,7 @@ const decks = {
   gentle: { name: "Gentle", icon: "🫂", cards: SOFT_QUESTIONS },
   rather: { name: "Rather", icon: "✨", cards: RATHERS.map(([a, b]) => `Would you rather ${a.toLowerCase()} or ${b.toLowerCase()}?`) },
   dare: { name: "Dares", icon: "💋", cards: DARES.map(item => item.text) },
+  spicy: { name: "After dark · 18+", icon: "🌶️", cards: SPICY_QUESTIONS },
 } as const;
 type Deck = keyof typeof decks;
 
@@ -44,7 +45,7 @@ export default function QuestionDeck({ onSend }: { onSend: (line: string) => Pro
     <div className="deck-card" key={deck + index}>
       <span className="deck-card-label">{decks[deck].icon} {decks[deck].name} · {index + 1}/{cards.length}</span>
       <p>{cards[index]}</p>
-      <small>{deck === "dare" ? "Only if you both want to. Skip any time." : "A tiny conversation, just for you two."}</small>
+      <small>{deck === "dare" || deck === "spicy" ? "For consenting adults. Skip anything you like." : "Pick one to send."}</small>
     </div>
     <div className="deck-actions"><button onClick={() => shuffle()}><Shuffle size={16}/> Shuffle</button><button className="deck-send" disabled={busy} onClick={() => void share()}>Send to chat <ArrowUpRight size={16}/></button></div>
     <small role="status" className="deck-status">{status}</small><ErrorNote text={error}/>

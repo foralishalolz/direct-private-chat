@@ -35,3 +35,8 @@ export function heartBurst(index: number) {
     delay: (index % 5) * 40,
   };
 }
+
+/** Each kiss RPC accepts a small burst; callers send the rest in later batches. */
+export function kissBatch(queued: number): number {
+  return Number.isFinite(queued) ? Math.max(0, Math.min(12, Math.floor(queued))) : 0;
+}
