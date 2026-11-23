@@ -145,7 +145,6 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
     (title(conversation) + " " + conversation.members?.map(member => member.username).join(" ")).toLowerCase().includes(needle)
     && (filter === "archived" ? conversation.archived : !conversation.archived && (filter === "all" || filter === "unread" && conversation.unread || filter === "groups" && conversation.kind === "group"))
   );
-  const recent = items.filter(conversation => !conversation.archived && conversation.kind === "direct" && conversation.partner).slice(0, 8);
   const unread = items.filter(conversation => !conversation.archived && conversation.unread).length;
   useAppBadge(unread);
 
@@ -161,25 +160,18 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
       <aside className="inbox">
         <header className="inbox-header">
           <div className="mobile-brand"><Brand small /></div>
-          <div className="home-title"><span>YOUR SPACE</span><h1>Messages{unread > 0 && <span className="inbox-count">{unread}</span>}</h1></div>
+          <div className="home-title"><h1>Messages{unread > 0 && <span className="inbox-count">{unread}</span>}</h1></div>
           <div className="inbox-header-actions"><IconButton label="Notifications" onClick={() => setModal("notifications")}><Bell size={21}/></IconButton><IconButton label="New message" className="new-chat-button" onClick={() => openDiscover()}><SquarePen size={22} /></IconButton></div>
         </header>
         <div className="inbox-search"><label className="input-icon"><Search size={18} aria-hidden="true" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
 
         {!needle && filter === "all" && <Stories profile={profile}/>}
-        {!needle && filter === "all" && recent.length > 0 && <div className="recent-people" aria-label="Recent chats">
-          {recent.map(conversation => <button key={conversation.id} aria-label={"Open chat with " + label(conversation.partner)} onClick={() => open(conversation.id)}>
-            <span className="recent-ring"><Avatar profile={conversation.partner} size={51} />{conversation.partner?.mood && <span className="recent-mood">{conversation.partner.mood}</span>}</span>
-            <span className="recent-name">{label(conversation.partner)}</span>
-          </button>)}
-        </div>}
-
         <div className="inbox-filters" aria-label="Filter chats">{[["all", "All"], ["unread", "Unread"], ["groups", "Groups"], ["archived", "Archived"]].map(([id, text]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => { setFilter(id); setRevealed(null); }}>{text}</button>)}</div>
         <div className="inbox-group-actions"><button onClick={() => openDiscover("group")}><Users size={16}/>New group</button><button onClick={() => openDiscover("join")}><Link2 size={16}/>Join group</button><button className="saved-shortcut" onClick={() => setModal("saved")}><Bookmark size={16}/>Saved</button></div>
         <div className="pull-refresh" style={{ height: pull.pull }} aria-hidden={pull.pull === 0} role="status">
           {pull.busy ? <Spinner/> : pull.pull > 0 ? <span>{pull.pull >= 56 ? "Release to refresh" : "Pull to refresh"}</span> : null}
         </div>
-        <div className="inbox-list-label"><span>Chats</span><small>{unread ? unread + " unread" : "Your conversations"}</small></div>
+        <div className="inbox-list-label"><span>Messages</span><small>{unread ? unread + " unread" : ""}</small></div>
         <div className="conversation-list" onScroll={tabs.onScroll}>
           {loading && <div className="inbox-skeleton" aria-label="Loading chats" role="status">{[0, 1, 2, 3].map(index => <div key={index}><span /><i /></div>)}</div>}
           {visible.map(conversation => <SwipeChat key={conversation.id} conversation={conversation} selected={conversation.id === selected} open={revealed === conversation.id} busy={archiving !== null} onReveal={setRevealed} onOpen={open} onArchive={(id, archived) => void archive(id, archived)} onDelete={id => setChatAction({ id, action: "clear" })} />)}

@@ -193,3 +193,7 @@ Listen together works with audio files or voice notes already sent in the direct
 - The couple-only pet has shared, non-decaying level progress and a sparkle-catching mini-game. The pet artwork uses a layered, animated 3D-style scene, not a real 3D model. Starlines is a new two-person, turn-based game.
 - Listening uses audio uploaded in the chat, not Spotify or YouTube. Both people must join and playback can drift with latency or device clock skew. Catalog integrations and native streaming synchronization are not implemented.
 - Audio-call notification actions wait for the matching ring, candidates are replayed on retry, and stalled connections time out. Web audio routing is browser/OS controlled. TURN remains optional and must be configured separately. Real two-device tests are still needed.
+
+## 2.19 notes
+
+The messages-first home has a single story strip and a cleaner glass layout. In a mutually enabled couple chat, Reels opens a shared link collection. Either Pro member can add HTTPS links, and both members can browse or remove them. Each viewer controls their own playback; viewing is not synchronized. Open an embed intentionally, scroll the site where supported, and use the side arrows or swipe the side controls to change links. Sites may refuse embedding, sign-in or playback; use the external-link button when that happens. Third-party websites can see your IP when you load them. Only open links you trust, and don't paste private tokens or credentials. Embedded pages are sandboxed; no proxy bypasses the site's restrictions.

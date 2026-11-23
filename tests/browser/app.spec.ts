@@ -37,7 +37,7 @@ test("shared pet and future names work within the phone viewport",async({page})=
 });
 test("friend chats keep games but hide couple-only features",async({page})=>{
  await signedIn(page);await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();
- await expect(page.getByRole('button',{name:'Makeout',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Makeout',exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'Reels',exact:true})).toHaveCount(0);
  await page.locator('.chat-shortcuts').getByRole('button',{name:'Play',exact:true}).click();
  await expect(page.getByRole('button',{name:/Live games/})).toBeVisible();
  await expect(page.getByRole('button',{name:/Our pet/})).toHaveCount(0);
@@ -62,3 +62,8 @@ test("stories disclose their audience and post text",async({page})=>{
  page.on('dialog',dialog=>dialog.accept());await page.goto('/');await page.getByRole('button',{name:'Your story'}).click();await expect(page.getByText('Visible to all signed-in users for 24 hours.')).toBeVisible();await page.getByRole('textbox',{name:'Story text'}).fill('A moment');await page.getByRole('button',{name:'Post story'}).click();await page.getByRole('button',{name:'You',exact:true}).click();await expect(page.locator('.story-canvas')).toContainText('A moment');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 test("journal is available from the chat menu",async({page})=>{await signedIn(page);await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.getByRole('button',{name:'Chat menu'}).click();await page.getByRole('button',{name:'Journal',exact:true}).click();await expect(page.getByRole('dialog',{name:'Journal'})).toBeVisible();});
+test("couple reels share a link and load only after a tap",async({page})=>{
+ await signedIn(page,true);let reels:{id:string;url:string;added_by:string;created_at:string}[]=[];
+ await page.route('**/rest/v1/**',async route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/couple_reels'))return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(reels)});if(path.endsWith('/rpc/add_couple_reel')){const args=route.request().postDataJSON();const row={id:'reel-1',url:args.p_url,added_by:uid,created_at:new Date().toISOString()};reels=[row,...reels];return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(row)});}return route.fallback();});
+ await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.getByRole('button',{name:'Reels',exact:true}).click();await page.getByRole('button',{name:'Add link'}).click();await page.getByLabel('Website or reel link').fill('https://example.com/');await page.getByRole('button',{name:'Add',exact:true}).click();await expect(page.getByRole('button',{name:'Load embedded site'})).toBeVisible();await expect(page.locator('iframe.reel-frame')).toHaveCount(0);await page.getByRole('button',{name:'Load embedded site'}).click();await expect(page.locator('iframe.reel-frame')).toHaveAttribute('sandbox','allow-scripts allow-forms allow-presentation');await expect(page.locator('iframe.reel-frame')).toHaveAttribute('src','https://example.com/');
+});
