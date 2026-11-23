@@ -43,10 +43,15 @@ export async function squareSticker(file:Blob):Promise<Blob>{
     return await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Sticker unavailable.")),"image/webp",.88));
   }finally{bitmap.close();}
 }
+/** Normalize common browser aliases to the MIME types accepted by storage. */
+export function canonicalMediaType(type:string) {
+  const value=type.split(";")[0].toLowerCase();
+  return ({"audio/x-m4a":"audio/mp4","audio/x-wav":"audio/wav","audio/wave":"audio/wav","audio/mp3":"audio/mpeg"} as Record<string,string>)[value]??value;
+}
 export async function upload(user:string,conversation:string|null,blob:Blob,bucket="chat-media"){
   const limit=bucket==="avatars"?5:bucket==="chat-media"?25:10;
   if(blob.size>limit*1024*1024)throw new Error("File must be under "+limit+" MB.");
-  const mime=blob.type.split(";")[0],extensions:Record<string,string>={"image/webp":"webp","image/jpeg":"jpg","image/png":"png","image/gif":"gif","video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","audio/webm":"webm","audio/mp4":"m4a","audio/ogg":"ogg","audio/mpeg":"mp3","audio/wav":"wav"};
+  const mime=canonicalMediaType(blob.type),extensions:Record<string,string>={"image/webp":"webp","image/jpeg":"jpg","image/png":"png","image/gif":"gif","video/mp4":"mp4","video/webm":"webm","video/quicktime":"mov","audio/webm":"webm","audio/mp4":"m4a","audio/ogg":"ogg","audio/mpeg":"mp3","audio/wav":"wav"};
   const ext=extensions[mime];if(!ext)throw new Error("This file type is unavailable.");
   const path=user+"/"+(conversation?conversation+"/":"")+crypto.randomUUID()+"."+ext;
   const r=await db().storage.from(bucket).upload(path,blob,{contentType:mime,cacheControl:"0",upsert:false});if(r.error)throw r.error;return path;

@@ -9,6 +9,7 @@
  */
 
 import { BASE_ICE, relay } from "./turn";
+import { endpoint } from "./supabase";
 
 /** Calls are audio-only in 2.13: the video path was removed on purpose. */
 export type CallKind = "audio";
@@ -33,23 +34,19 @@ export type Signal =
   | { type: "answer"; sdp: string; from: string }
   | { type: "candidate"; candidate: RTCIceCandidateInit; from: string }
   | { type: "ready"; from: string }
+  | { type: "restart"; from: string }
   | { type: "bye"; from: string; reason?: string };
 
-/** Free STUN keeps most home networks connected; a TURN server can be added by
- *  setting NEXT_PUBLIC_TURN_URL / NEXT_PUBLIC_TURN_USER / NEXT_PUBLIC_TURN_PASS. */
-export function iceServers(): RTCIceServer[] {
-  // Device-local relay first (it is the only path that survives carrier NAT),
-  // then an optional build-time relay, then the public STUN pool.
-  const servers: RTCIceServer[] = [...relay(), ...BASE_ICE];
-  const url = process.env.NEXT_PUBLIC_TURN_URL;
-  if (url) {
-    servers.push({
-      urls: url.split(",").map(value => value.trim()).filter(Boolean),
-      username: process.env.NEXT_PUBLIC_TURN_USER || undefined,
-      credential: process.env.NEXT_PUBLIC_TURN_PASS || undefined,
-    });
-  }
-  return servers;
+/** Manual per-device relay is an override; Cloudflare credentials are issued per call. */
+export function iceServers(): RTCIceServer[] { return [...relay(), ...BASE_ICE]; }
+
+export async function callIceServers(callId: string): Promise<RTCIceServer[]> {
+  const manual = relay();
+  if (manual.length) return [...manual, ...BASE_ICE];
+  const response = await endpoint("turn-credentials", { callId });
+  const data = await response.json() as { iceServers?: RTCIceServer[] };
+  if (!Array.isArray(data.iceServers) || !data.iceServers.some(server => (Array.isArray(server.urls) ? server.urls : [server.urls]).some(url => typeof url === "string" && /^turns?:/i.test(url)) && typeof server.username === "string" && typeof server.credential === "string")) throw new Error("Call relay unavailable. Please try again.");
+  return [...data.iceServers, ...BASE_ICE];
 }
 
 export function mediaSupported() {
@@ -91,6 +88,27 @@ export function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach(track => { try { track.stop(); } catch {} });
 }
 
+/** Prefer Opus and update its format parameters without changing other codecs. */
+export function preferOpus(sdp: string): string {
+  const eol = sdp.includes("\r\n") ? "\r\n" : "\n";
+  const lines = sdp.split(eol);
+  const start = lines.findIndex(line => line.startsWith("m=audio "));
+  if (start < 0) return sdp;
+  let end = lines.findIndex((line, index) => index > start && line.startsWith("m="));
+  if (end < 0) end = lines.length;
+  const match = lines.slice(start, end).map(line => /^a=rtpmap:(\d+) opus\/48000(?:\/\d+)?$/i.exec(line)).find(Boolean);
+  if (!match) return sdp;
+  const payload = match[1], media = lines[start].split(" ");
+  if (media.slice(3).includes(payload)) lines[start] = [...media.slice(0, 3), payload, ...media.slice(3).filter(value => value !== payload)].join(" ");
+  const fmtpIndex = lines.findIndex((line, index) => index > start && index < end && line.startsWith("a=fmtp:" + payload + " "));
+  const params = fmtpIndex < 0 ? [] : lines[fmtpIndex].slice(("a=fmtp:" + payload + " ").length).split(";").map(value => value.trim()).filter(Boolean);
+  const replacements: Record<string,string> = { maxaveragebitrate: "64000", stereo: "1", "sprop-stereo": "1", usedtx: "0" };
+  const filtered = params.filter(param => !(param.split("=")[0].toLowerCase() in replacements));
+  const line = "a=fmtp:" + payload + " " + [...filtered, ...Object.entries(replacements).map(([key,value]) => key + "=" + value)].join(";");
+  if (fmtpIndex >= 0) lines[fmtpIndex] = line; else lines.splice(start + 1, 0, line);
+  return lines.join(eol);
+}
+
 /** Human text for a call that never connected. */
 export function callLabel(row: Pick<CallRow, "status" | "answered_at" | "ended_at" | "started_at">) {
   if (row.status === "missed") return "Missed";
@@ -116,7 +134,7 @@ type Handlers = {
   onStats?: (stats: CallStats) => void;
 };
 
-export type CallStats = { bitrate: number; rtt: number; loss: number; width: number; height: number; codec: string };
+export type CallStats = { bitrate: number; rtt: number; loss: number; width: number; height: number; codec: string; path?: "relay" | "direct" | "unknown" };
 
 /**
  * One call leg. Owns the RTCPeerConnection, buffers candidates until the
@@ -134,8 +152,8 @@ export class CallLink {
   private answerFlight: Promise<RTCSessionDescription> | null = null;
   remoteOpenedTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private handlers: Handlers, private selfId: string) {
-    this.pc = new RTCPeerConnection({ iceServers: iceServers(), iceCandidatePoolSize: 2, bundlePolicy: "max-bundle" });
+  constructor(private handlers: Handlers, private selfId: string, servers: RTCIceServer[] = iceServers()) {
+    this.pc = new RTCPeerConnection({ iceServers: servers, iceCandidatePoolSize: 2, bundlePolicy: "max-bundle" });
     this.pc.onicecandidate = event => {
       if (event.candidate) handlers.onSignal({ type: "candidate", candidate: event.candidate.toJSON(), from: selfId });
     };
@@ -149,9 +167,7 @@ export class CallLink {
       handlers.onRemote(this.remote);
     };
     this.pc.onconnectionstatechange = () => handlers.onState(this.pc.connectionState);
-    this.pc.oniceconnectionstatechange = () => {
-      if (this.pc.iceConnectionState === "failed") { try { this.pc.restartIce(); } catch {} }
-    };
+
   }
 
   addLocal(stream: MediaStream) {
@@ -173,7 +189,21 @@ export class CallLink {
     if (this.offerFlight) return this.offerFlight;
     this.offerFlight = (async () => {
       const description = await this.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
-      await this.pc.setLocalDescription(description);
+      await this.pc.setLocalDescription({ type: description.type, sdp: description.sdp ? preferOpus(description.sdp) : description.sdp });
+      return this.pc.localDescription!;
+    })();
+    try { return await this.offerFlight; } finally { this.offerFlight = null; }
+  }
+
+  signalingStable() { return this.pc.signalingState === "stable"; }
+
+  /** The caller alone creates restart offers, avoiding simultaneous-offer glare. */
+  async restartOffer() {
+    if (this.offerFlight) return this.offerFlight;
+    if (this.pc.signalingState !== "stable") return this.pc.localDescription?.type === "offer" ? this.pc.localDescription : null;
+    this.offerFlight = (async () => {
+      const description = await this.pc.createOffer({ iceRestart: true, offerToReceiveAudio: true, offerToReceiveVideo: false });
+      await this.pc.setLocalDescription({ type: description.type, sdp: description.sdp ? preferOpus(description.sdp) : description.sdp });
       return this.pc.localDescription!;
     })();
     try { return await this.offerFlight; } finally { this.offerFlight = null; }
@@ -186,7 +216,7 @@ export class CallLink {
       await this.pc.setRemoteDescription(offer);
       await this.flush();
       const description = await this.pc.createAnswer();
-      await this.pc.setLocalDescription(description);
+      await this.pc.setLocalDescription({ type: description.type, sdp: description.sdp ? preferOpus(description.sdp) : description.sdp });
       return this.pc.localDescription!;
     })();
     try { return await this.answerFlight; } finally { this.answerFlight = null; }
@@ -225,6 +255,8 @@ export class CallLink {
         const bitrate = this.lastAt ? Math.max(0, Math.round(((bytes - this.lastBytes) * 8) / elapsed)) : 0;
         this.lastBytes = bytes; this.lastAt = now;
         const total = (inbound?.packetsReceived ?? 0) + (inbound?.packetsLost ?? 0);
+        const localType = pair ? report.get(pair.localCandidateId)?.candidateType : null;
+        const remoteType = pair ? report.get(pair.remoteCandidateId)?.candidateType : null;
         this.handlers.onStats?.({
           bitrate,
           rtt: pair?.currentRoundTripTime ? Math.round(pair.currentRoundTripTime * 1000) : 0,
@@ -232,24 +264,10 @@ export class CallLink {
           width: inbound?.frameWidth ?? 0,
           height: inbound?.frameHeight ?? 0,
           codec: inbound?.codecId ?? "",
+          path: localType === "relay" || remoteType === "relay" ? "relay" : localType && remoteType ? "direct" : "unknown",
         });
       } catch { /* stats are cosmetic */ }
     }, 2000);
-  }
-
-  /** Swap the camera for a front/back facing one without renegotiating the call. */
-  async flipCamera(stream: MediaStream) {
-    if (!navigator.mediaDevices?.getUserMedia) return stream;
-    const current = stream.getVideoTracks()[0];
-    const facing = current?.getSettings().facingMode === "environment" ? "user" : "environment";
-    const next = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } } });
-    const track = next.getVideoTracks()[0];
-    const sender = this.pc.getSenders().find(item => item.track?.kind === "video");
-    if (sender && track) await sender.replaceTrack(track);
-    current?.stop();
-    stream.removeTrack(current);
-    if (track) stream.addTrack(track);
-    return stream;
   }
 
   close() {

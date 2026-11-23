@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { db, rpc } from "@/lib/supabase";
-import { CallLink, openMedia, type CallKind, type CallRow, type CallStats, type Signal } from "@/lib/rtc";
+import { CallLink, callIceServers, iceServers, openMedia, type CallKind, type CallRow, type CallStats, type Signal } from "@/lib/rtc";
 
 type Phase = "idle" | "calling" | "ringing" | "connecting" | "active";
 type EndedStatus = "declined" | "missed" | "ended" | "failed";
@@ -17,17 +17,12 @@ export type CallSession = {
   error: string;
   ended: { status: EndedStatus; mine: boolean } | null;
   muted: boolean;
-  cameraOff: boolean;
-  speaker: boolean;
   elapsed: number;
   start: (kind: CallKind) => Promise<void>;
   accept: () => Promise<void>;
   decline: () => Promise<void>;
   hangup: () => Promise<void>;
   toggleMute: () => void;
-  toggleCamera: () => void;
-  flip: () => Promise<void>;
-  setSpeaker: (on: boolean) => void;
   reset: () => void;
 };
 
@@ -51,11 +46,10 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   const [error, setError] = useState("");
   const [ended, setEnded] = useState<{ status: EndedStatus; mine: boolean } | null>(null);
   const [muted, setMuted] = useState(false);
-  const [cameraOff, setCameraOff] = useState(false);
-  const [speaker, setSpeaker] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
   const link = useRef<CallLink | null>(null);
+  const servers = useRef<RTCIceServer[] | null>(null);
   // Candidates can arrive before the callee has answered, i.e. before a
   // CallLink exists. Dropping them makes the caller unreachable on strict
   // networks, so they wait here and are replayed once the link is built.
@@ -71,6 +65,9 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   const alive = useRef(true);
   const attempt = useRef(0);
   const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restartTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRestart = useRef(0);
+  const restartRef = useRef<() => void>(() => {});
 
   const sync = useCallback((next: Phase) => {
     phaseRef.current = next;
@@ -88,8 +85,11 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   const teardown = useCallback(() => {
     if (ringTimer.current) clearTimeout(ringTimer.current);
     ringTimer.current = null;
+    if (restartTimer.current) clearTimeout(restartTimer.current);
+    restartTimer.current = null; lastRestart.current = 0;
     link.current?.close();
     link.current = null;
+    servers.current = null;
     early.current.length = 0;
     sentCandidates.current.length = 0;
     answering.current = false;
@@ -98,7 +98,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     pendingOffer.current = null;
     if (alive.current) {
       setLocal(null); setRemote(null); setStats(null);
-      setMuted(false); setCameraOff(false); setSpeaker(false); setElapsed(0);
+      setMuted(false); setElapsed(0);
     }
   }, []);
 
@@ -115,31 +115,52 @@ export function useCall(conversationId: string | null, userId: string): CallSess
 
   const ensureLink = useCallback(() => {
     if (link.current) return link.current;
+    if (!servers.current) throw new Error("Call relay is not ready.");
     link.current = new CallLink({
       onSignal: frame => { if (frame.type === "candidate" && sentCandidates.current.length < 200) sentCandidates.current.push(frame); void signal(frame); },
       onState: state => {
         if (state === "connected") {
+          if (restartTimer.current) clearTimeout(restartTimer.current);
+          restartTimer.current = null;
           if (!startedAt.current) {
             startedAt.current = Date.now();
             link.current?.startStats();
           }
           sync("active");
         }
-        if (state === "disconnected" && phaseRef.current === "active") sync("connecting");
-        if (state === "failed") {
-          const current = callRef.current;
-          void signal({ type: "bye", reason: "failed" });
-          if (current) void rpc("end_call", { p_call: current.id }).catch(() => {});
-          finish("failed");
+        if (state === "disconnected" || state === "failed") {
+          if (phaseRef.current === "active") sync("connecting");
+          if (!restartTimer.current) restartTimer.current = setTimeout(() => { restartTimer.current = null; restartRef.current(); }, state === "failed" ? 0 : 3000);
         }
       },
       onRemote: stream => { if (alive.current) setRemote(new MediaStream(stream.getTracks())); },
       onStats: snapshot => { if (alive.current) setStats(snapshot); },
-    }, userId);
+    }, userId, servers.current);
     const queued = early.current.splice(0);
     for (const candidate of queued) void link.current.candidate(candidate).catch(() => {});
     return link.current;
   }, [finish, signal, sync, userId]);
+
+  restartRef.current = () => {
+    const current = callRef.current, peer = link.current;
+    if (!current || !peer || !["active", "connecting"].includes(phaseRef.current) || Date.now() - lastRestart.current < 5000) return;
+    lastRestart.current = Date.now();
+    if (current.caller !== userId) { void signal({ type: "restart" }); return; }
+    if (peer.signalingStable()) sentCandidates.current.length = 0;
+    void peer.restartOffer().then(async description => {
+      if (description?.sdp && callRef.current?.id === current.id) {
+        await signal({ type: "offer", sdp: description.sdp, kind: "audio" });
+        for (const candidate of sentCandidates.current) { if (callRef.current?.id !== current.id) break; void signal(candidate); }
+      }
+    }).catch(() => {});
+  };
+
+  useEffect(() => {
+    const changed = () => { if (phaseRef.current === "active" || phaseRef.current === "connecting") restartRef.current(); };
+    const connection = (navigator as Navigator & { connection?: EventTarget }).connection;
+    window.addEventListener("online", changed); connection?.addEventListener("change", changed);
+    return () => { window.removeEventListener("online", changed); connection?.removeEventListener("change", changed); };
+  }, []);
 
   // --- Signaling channel -----------------------------------------------------
   useEffect(() => {
@@ -185,6 +206,10 @@ export function useCall(conversationId: string | null, userId: string): CallSess
           for (const candidate of sentCandidates.current) { if (callRef.current?.id !== current.id) break; void signal(candidate); }
         }
         if (callRef.current?.id === current.id && phaseRef.current === "calling") sync("connecting");
+        return;
+      }
+      if (frame.type === "restart") {
+        if (current.caller === userId) restartRef.current();
         return;
       }
       if (frame.type === "bye") {
@@ -233,10 +258,18 @@ export function useCall(conversationId: string | null, userId: string): CallSess
 
   // Until connected the callee can safely request the same offer again.
   useEffect(() => {
-    if (phase !== "connecting" || outgoing) return;
+    if (phase !== "connecting" || outgoing || startedAt.current) return;
     const retry = setInterval(() => { if (phaseRef.current === "connecting") void signal({ type: "ready" }); }, 3000);
     return () => clearInterval(retry);
   }, [phase, outgoing, signal]);
+
+  // Lost restart signals are retried while reconnecting, but never generate
+  // simultaneous offers: the caller is the only offerer.
+  useEffect(() => {
+    if (phase !== "connecting" || !startedAt.current) return;
+    const timer = setInterval(() => restartRef.current(), 8000);
+    return () => clearInterval(timer);
+  }, [phase]);
 
   // Avoid leaving both people indefinitely on a connecting screen.
   useEffect(() => {
@@ -264,6 +297,9 @@ export function useCall(conversationId: string | null, userId: string): CallSess
       const row = await rpc<CallRow>("start_call", { p_conversation: conversationId, p_kind: "audio" });
       if (!alive.current || attempt.current !== version || (phaseRef.current as Phase) !== "calling") { stream.getTracks().forEach(track => track.stop()); void rpc("end_call", { p_call: row.id }).catch(() => {}); return; }
       callRef.current = row; setCall(row);
+      const ice = await callIceServers(row.id).catch(() => { if (alive.current && attempt.current === version) setError("Call relay unavailable. Trying a direct connection; some networks may block it."); return iceServers(); });
+      if (!alive.current || attempt.current !== version || callRef.current?.id !== row.id) return;
+      servers.current = ice;
       const peer = ensureLink();
       peer.addLocal(stream);
       const description = await peer.offer();
@@ -290,6 +326,9 @@ export function useCall(conversationId: string | null, userId: string): CallSess
       localRef.current = stream; setLocal(stream);
       await rpc("answer_call", { p_call: current.id, p_accept: true });
       if (!alive.current || attempt.current !== version || (phaseRef.current as Phase) !== "connecting") { stream.getTracks().forEach(track => track.stop()); void rpc("end_call", { p_call: current.id }).catch(() => {}); return; }
+      const ice = await callIceServers(current.id).catch(() => { if (alive.current && attempt.current === version) setError("Call relay unavailable. Trying a direct connection; some networks may block it."); return iceServers(); });
+      if (!alive.current || attempt.current !== version || callRef.current?.id !== current.id) return;
+      servers.current = ice;
       const peer = ensureLink();
       peer.addLocal(stream);
       answering.current = false;
@@ -335,40 +374,9 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     setMuted(!track.enabled);
   }
 
-  function toggleCamera() {
-    const track = localRef.current?.getVideoTracks()[0];
-    if (!track) return;
-    track.enabled = !track.enabled;
-    setCameraOff(!track.enabled);
-  }
-
-  async function flip() {
-    const stream = localRef.current;
-    if (!stream || !link.current) return;
-    try {
-      await link.current.flipCamera(stream);
-      if (alive.current) setLocal(new MediaStream(stream.getTracks()));
-    } catch { /* a device with a single camera keeps what it has */ }
-  }
-
   function reset() {
     setEnded(null); setError(""); setElapsed(0); setStats(null);
   }
-
-  /**
-   * Phones route call audio to the earpiece by default. WebKit exposes
-   * `setSinkId` on <audio>; where it is missing the toggle simply hides.
-   */
-  const applySpeaker = useCallback(async (on: boolean) => {
-    try {
-      const devices = await navigator.mediaDevices?.enumerateDevices?.();
-      const speaker = devices?.find(device => device.kind === "audiooutput" && /speaker|default/i.test(device.label));
-      const target = document.querySelector<HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }>(".call-screen audio");
-      if (!target?.setSinkId) return;
-      await target.setSinkId(on && speaker?.deviceId ? speaker.deviceId : "");
-    } catch { /* unsupported sink selection keeps the OS default */ }
-  }, []);
-  useEffect(() => { void applySpeaker(speaker).catch(() => {}); }, [speaker, applySpeaker, remote]);
 
   // --- Incoming rings -------------------------------------------------------
   useEffect(() => {
@@ -432,8 +440,8 @@ export function useCall(conversationId: string | null, userId: string): CallSess
 
   return {
     phase, call, outgoing, kind, local, remote, stats, error, ended,
-    muted, cameraOff, speaker, elapsed: startedAt.current ? elapsed : 0,
-    start, accept, decline, hangup, toggleMute, toggleCamera, flip, setSpeaker, reset,
+    muted, elapsed: startedAt.current ? elapsed : 0,
+    start, accept, decline, hangup, toggleMute, reset,
   };
 }
 

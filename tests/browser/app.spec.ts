@@ -124,3 +124,33 @@ test("mobile inbox controls align and remain actionable at narrow widths",async(
   await page.getByRole('button',{name:'New group',exact:true}).click();await expect(page.getByRole('dialog')).toBeVisible();await page.getByRole('button',{name:'Close',exact:true}).click();await expect(page.getByRole('button',{name:/Alex.*Hello/})).toBeVisible();
  }
 });
+
+test("call uses issued ICE credentials and stays open when navigating away",async({page},testInfo)=>{
+ await signedIn(page); let issued=0, ended=0, relayDown=false;
+ await page.addInitScript(()=>{
+  const context=new AudioContext();const destination=context.createMediaStreamDestination();
+  Object.defineProperty(navigator.mediaDevices,'getUserMedia',{configurable:true,value:async()=>destination.stream});
+  class FakePeer {
+   connectionState='new';iceConnectionState='new';signalingState='stable';localDescription:any=null;remoteDescription:any=null;currentLocalDescription:any=null;
+   onconnectionstatechange:(()=>void)|null=null;onicecandidate:any=null;ontrack:any=null;
+   constructor(public configuration:RTCConfiguration){(window as any).__callIce=configuration.iceServers;}
+   getSenders(){return [];} addTrack(){} async createOffer(){return {type:'offer',sdp:'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=rtpmap:111 opus/48000/2\r\n'};}
+   async setLocalDescription(value:any){this.localDescription=value;this.currentLocalDescription=value;setTimeout(()=>{this.connectionState='connected';this.onconnectionstatechange?.();},40);}
+   async getStats(){return new Map();} close(){this.connectionState='closed';} async addIceCandidate(){}
+  }
+  (window as any).RTCPeerConnection=FakePeer;
+ });
+ await page.route('**/functions/v1/turn-credentials',async route=>{issued++;await route.fulfill({status:relayDown?503:200,contentType:'application/json',body:JSON.stringify(relayDown?{error:'Relay unavailable'}:{iceServers:[{urls:['turn:relay.example:3478'],username:'temporary',credential:'temporary'}]})});});
+ await page.route('**/rest/v1/**',async route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/rpc/start_call'))return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({id:'99999999-9999-4999-8999-999999999999',conversation_id:cid,caller:uid,callee:other,kind:'audio',status:'ringing',started_at:new Date().toISOString()})});if(path.endsWith('/rpc/end_call')){ended++;return route.fulfill({status:200,contentType:'application/json',body:'{}'});}if(path.endsWith('/rpc/call_signal'))return route.fulfill({status:200,contentType:'application/json',body:'true'});return route.fallback();});
+ await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.getByRole('button',{name:'Call',exact:true}).click();await expect(page.getByRole('dialog',{name:'Call with Alex'})).toBeVisible();await expect(page.getByRole('button',{name:'Share music'})).toBeEnabled();expect(issued).toBe(1);await page.screenshot({path:testInfo.outputPath('call.png')});expect(await page.evaluate(()=>((window as any).__callIce as RTCIceServer[]).some(x=>String(x.urls).includes('turn:relay.example')))).toBe(true);
+ await page.getByRole('button',{name:'Share music'}).click();await expect(page.getByLabel('Voice volume')).toBeVisible();await page.getByRole('button',{name:'Close music'}).click();await page.getByRole('button',{name:'Minimise call'}).click();await expect(page.getByRole('button',{name:'Return to call'})).toBeVisible();
+ const back=page.getByRole('button',{name:'Back to messages'});if(await back.isVisible())await back.click();else await page.locator('.rail').getByRole('button',{name:'Messages'}).click();await expect(page.getByRole('button',{name:'Return to call'})).toBeVisible();expect(ended).toBe(0);await page.getByRole('button',{name:'Return to call'}).click();await page.getByRole('button',{name:'End call'}).click();await expect.poll(()=>ended).toBe(1);await expect(page.getByRole('dialog',{name:'Call with Alex'})).toHaveCount(0);
+ relayDown=true;await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.getByRole('button',{name:'Call',exact:true}).click();await expect(page.getByText(/Call relay unavailable. Trying a direct connection/)).toBeVisible();expect(await page.evaluate(()=>((window as any).__callIce as RTCIceServer[]).every(x=>!String(x.urls).includes('turn:relay.example')))).toBe(true);await page.getByRole('button',{name:'End call'}).click();await expect.poll(()=>ended).toBe(2);
+});
+
+test("incoming calls ring from the inbox without opening the chat first",async({page})=>{
+ await signedIn(page);let ringing=true,declined=0;
+ const row={id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',conversation_id:cid,caller:other,callee:uid,kind:'audio',status:'ringing',started_at:new Date().toISOString()};
+ await page.route('**/rest/v1/**',async route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/calls'))return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(ringing?[row]:[])});if(path.endsWith('/rpc/answer_call')){ringing=false;declined++;return route.fulfill({status:200,contentType:'application/json',body:'{}'});}return route.fallback();});
+ await page.goto('/');await expect(page.getByRole('dialog',{name:'Call with Alex'})).toBeVisible({timeout:12000});await page.getByRole('button',{name:'Decline call'}).click();await expect.poll(()=>declined).toBe(1);
+});

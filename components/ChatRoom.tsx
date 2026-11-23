@@ -12,9 +12,12 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useAppBadge } from "@/hooks/useAppBadge";
 import { useInbox } from "@/hooks/useInbox";
 import { loadConversation } from "@/lib/conversation";
-import { rpc } from "@/lib/supabase";
+import { db, rpc } from "@/lib/supabase";
 import { useDeepLink } from "@/lib/deeplink";
 import { useIncomingCall } from "@/hooks/useIncomingCall";
+import { useCall } from "@/hooks/useCall";
+import { upload } from "@/lib/media";
+import { enqueue, announce } from "@/lib/offline";
 import { useActivityPing, type ActivityKind } from "@/hooks/useActivityPing";
 import type { ActivityTab } from "./Activities";
 import { errorText, label, title, type Conversation, type Profile } from "@/lib/types";
@@ -31,6 +34,7 @@ const ChatActionModal = dynamic(() => import("./ChatActionModal"));
 const Journal = dynamic(() => import("./JournalModal"));
 const NotificationSettings = dynamic(() => import("./NotificationsModal"));
 const SavedModal = dynamic(() => import("./SavedModal"));
+const CallSheet = dynamic(() => import("./CallSheet"), { ssr: false });
 
 export default function ChatRoom({ profile, onProfile, onLogout }: {
   profile: Profile;
@@ -56,7 +60,6 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const [linkName, setLinkName] = useState("");
   useDeepLink(username => setLinkName(username), true);
   const [activityIntent, setActivityIntent] = useState<{ conversationId: string; tab: ActivityTab; sequence: number } | null>(null);
-  const incoming = useIncomingCall(profile.id);
   const activity = useActivityPing(profile, items, (conversationId, kind: ActivityKind) => {
     setSelected(conversationId);
     const tab = kind === "listen" ? "listen" : kind === "arcade" ? "arcade" : kind === "pet" ? "pet" : kind === "makeout" ? "makeout" : kind === "draw" ? "draw" : kind === "game" || kind === "wyr" ? "games" : kind === "kiss" ? "kiss" : "feels";
@@ -77,12 +80,6 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
     if (wanted === "us") setSelected(current => current ?? items.find(row => row.kind === "direct" && row.couple_a && row.couple_b)?.id ?? null);
   }, [items]);
   const open = (id: string | null) => { haptic("light"); setSelected(id); };
-  // Answer / decline from a notification or a `?call=` launch.
-  useEffect(() => {
-    if (!incoming.intent) return;
-    setSelected(incoming.intent.conversationId);
-
-  }, [incoming.intent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!linkName) return;
@@ -140,6 +137,35 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   }, [selected, inInbox, profile.id, retry]);
 
   const active = inInbox ?? (opened?.id === selected ? opened : null);
+  // Keep the call outside the selected thread so minimizing survives navigation.
+  const [callConversation, setCallConversation] = useState<Conversation | null>(null);
+  const [callOpen, setCallOpen] = useState(false);
+  const call = useCall(callConversation?.id ?? (active?.kind === "direct" ? active.id : null), profile.id);
+  const incoming = useIncomingCall(profile.id, call.phase === "idle");
+  useEffect(() => { if (incoming.intent && call.phase === "idle") setSelected(incoming.intent.conversationId); }, [incoming.intent, call.phase]);
+  useEffect(() => {
+    if (call.phase !== "idle") {
+      if (active && (!call.call || active.id === call.call.conversation_id)) setCallConversation(current => current ?? active);
+      setCallOpen(true);
+    }
+  }, [call.phase, call.call?.conversation_id, active]);
+  function startCall() {
+    if (call.phase !== "idle") { setCallOpen(true); return; }
+    if (!active || active.kind !== "direct") return;
+    setCallConversation(active); setCallOpen(true); void call.start("audio");
+  }
+  async function uploadCallAudio(file: File) {
+    if (!callConversation || !file.type.startsWith("audio/")) throw new Error("Choose an audio file.");
+    const path = await upload(profile.id, callConversation.id, file);
+    const message = { id: crypto.randomUUID(), conversation_id: callConversation.id, user_id: profile.id, content: file.name.slice(0,120), media_url: path, media_kind: "audio" as const, kind: "message" as const, reply_to: null, instant_viewed: false, created_at: new Date().toISOString() };
+    try { await enqueue(message); }
+    catch (cause) {
+      if (!navigator.onLine) throw cause;
+      const result = await db().from("messages").insert({ id: message.id, conversation_id: message.conversation_id, user_id: message.user_id, content: message.content, media_url: path, media_kind: message.media_kind, kind: message.kind, reply_to: null }).select("*").single();
+      if (result.error) throw result.error;
+      announce(profile.id, result.data);
+    }
+  }
   const needle = search.trim().toLowerCase().replace(/^@/, "");
   const visible = items.filter(conversation =>
     (title(conversation) + " " + conversation.members?.map(member => member.username).join(" ")).toLowerCase().includes(needle)
@@ -186,7 +212,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         </footer>
       </aside>
 
-      {active ? <ChatThread key={active.id} conversation={active} profile={profile} activityIntent={activityIntent?.conversationId === active.id ? activityIntent : null} callIntent={incoming.intent?.conversationId === active.id ? incoming.intent : null} onCallIntentHandled={incoming.clear} onBack={() => { setActivityIntent(null); setSelected(null); }} onRefresh={refresh} /> : selected ? (
+      {active ? <ChatThread key={active.id} conversation={active} profile={profile} activityIntent={activityIntent?.conversationId === active.id ? activityIntent : null} callIntent={incoming.intent?.conversationId === active.id ? incoming.intent : null} onCallIntentHandled={incoming.clear} call={call} onStartCall={startCall} onShowCall={()=>setCallOpen(true)} onBack={() => { setActivityIntent(null); setSelected(null); }} onRefresh={refresh} /> : selected ? (
         <section className="chat-thread thread-loading" aria-label="Opening conversation">
           <IconButton label="Back to messages" className="opening-back" onClick={() => setSelected(null)}><ArrowLeft size={23} /></IconButton>
           {openError ? <div className="opening-error"><ErrorNote text={openError} /><button className="primary" onClick={() => setRetry(value => value + 1)}>Retry</button></div> : <Spinner />}
@@ -198,6 +224,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
           <button className="primary" onClick={() => openDiscover()}><SquarePen size={18} />New message</button>
         </section>
       )}
+      {callOpen && callConversation && (call.phase !== "idle" || call.ended || call.error) && <CallSheet c={callConversation} session={call} onUploadAudio={uploadCallAudio} onClose={() => { setCallOpen(false); call.reset(); setCallConversation(null); }} />}
       {linkError && <div className="message-toast link-toast" role="status"><span>{linkError}</span><IconButton label="Dismiss" onClick={() => setLinkError("")}><X size={17}/></IconButton></div>}
       {notifications.toast && <div className="message-toast" role="status"><button onClick={() => { setSelected(notifications.toast); notifications.dismiss(); }}><MessageCircle size={20}/><span>New message</span></button><IconButton label="Dismiss notification" onClick={notifications.dismiss}><X size={17}/></IconButton></div>}
       {chatAction && <ChatActionModal conversationId={chatAction.id} userId={profile.id} action={chatAction.action} onClose={() => setChatAction(null)} onDone={async () => { if (selected === chatAction.id) { setSelected(null); setOpened(null); } await refresh(); }}/>}

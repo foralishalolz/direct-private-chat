@@ -12,3 +12,6 @@ verify_jwt = false
 
 [functions.push-notifications]
 verify_jwt = false
+
+[functions.turn-credentials]
+verify_jwt = false

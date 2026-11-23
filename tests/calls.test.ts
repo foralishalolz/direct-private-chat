@@ -108,3 +108,20 @@ test("calls replay early candidates and bound failed connections", () => {
   const thread=readFileSync("components/ChatThread.tsx","utf8");
   assert.match(thread,/call\.call\?\.id!==callIntent\.callId/);
 });
+
+test("Opus is preferred and updated without duplicating parameters", async () => {
+  const { preferOpus } = await import("../lib/rtc");
+  const sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 0 111 8\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;usedtx=1;stereo=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n";
+  const result = preferOpus(sdp);
+  assert.match(result, /m=audio 9 UDP\/TLS\/RTP\/SAVPF 111 0 8/);
+  assert.match(result, /minptime=10;maxaveragebitrate=64000;stereo=1;sprop-stereo=1;usedtx=0/);
+  assert.equal(preferOpus(result), result);
+  assert.equal(preferOpus("v=0\r\nm=audio 9 RTP/AVP 0\r\n"), "v=0\r\nm=audio 9 RTP/AVP 0\r\n");
+});
+
+test("common phone audio MIME aliases match supported storage formats", async () => {
+ const { canonicalMediaType } = await import("../lib/media");
+ assert.equal(canonicalMediaType("audio/x-m4a"), "audio/mp4");
+ assert.equal(canonicalMediaType("audio/x-wav"), "audio/wav");
+ assert.equal(canonicalMediaType("audio/mpeg; codecs=mp3"), "audio/mpeg");
+});

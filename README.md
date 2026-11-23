@@ -76,11 +76,11 @@ The inbox bell opens notification settings directly. Permission is requested onl
 
 Calling, pinned messages, saved messages and a faster native shell.
 
-**Calls.** One-to-one audio and video calls over WebRTC. The media path is peer to peer (DTLS-SRTP) and nothing is recorded or stored. Signaling never goes client to client: `call_signal()` relays each offer/answer/ICE frame into the private `call:<conversation>` broadcast topic, and only a member of that conversation can read it. Call state itself lives in `public.calls` (ringing → active → ended/declined/missed/failed) with `start_call`, `answer_call`, `end_call` and `call_history`. A ringing call moves 90 seconds of silence to *missed*; a second call in the same chat is refused while one is ringing or active. Candidates that arrive before the callee answers are buffered and replayed, and a duplicate `ready` cannot produce a second offer.
+**Calls.** One-to-one audio calls over WebRTC. The media path is peer to peer (DTLS-SRTP) and nothing is recorded or stored. Signaling never goes client to client: `call_signal()` relays each offer/answer/ICE frame into the private `call:<conversation>` broadcast topic, and only a member of that conversation can read it. Call state itself lives in `public.calls` (ringing → active → ended/declined/missed/failed) with `start_call`, `answer_call`, `end_call` and `call_history`. A ringing call moves 90 seconds of silence to *missed*; a second call in the same chat is refused while one is ringing or active. Candidates that arrive before the callee answers are buffered and replayed, and a duplicate `ready` cannot produce a second offer.
 
 **Reaching a locked phone.** Ringing calls reuse the existing push queue with a `kind` column, separate call subscriptions per endpoint, a high-urgency 45-second payload and `Answer`/`Decline` actions. The service worker posts `bitchat-open-call`; a cold launch opens `/?call=…&chat=…&account=…&accept=1|decline=1`. The call payload carries ids only — no names, text or media.
 
-**Relay.** Public STUN is always included. Two phones on mobile data often need a TURN relay, so Profile → *Call relay* stores a per-device relay (address, username, password) in localStorage, tests it with a real allocation, and refuses to save an address or credential the relay rejects. It is never bundled and never sent to the server. `NEXT_PUBLIC_TURN_URL`/`_USER`/`_PASS` remain available for a build-wide relay, and the CSP now allows `stun:`/`turn:`/`turns:` in `connect-src`.
+**Relay.** The `turn-credentials` Supabase Edge Function authenticates a current call participant, applies a per-user issuance limit, and requests short-lived credentials from Cloudflare using server-only `CLOUDFLARE_TURN_TOKEN_ID` and `CLOUDFLARE_TURN_API_TOKEN` secrets. Public STUN is also included. If issuance fails, the call visibly warns and attempts a direct connection. Profile → *Call relay* is an optional per-device override; its credentials stay on that device. Never place long-lived relay tokens in `NEXT_PUBLIC_*` variables.
 
 **Pins and saved messages.** Any message can be pinned (25 per conversation) with a pinned bar, paging and jump-to-message. *Save* keeps a message in `Saved` on this device only (IndexedDB, 300 newest, searchable, removable) — no new table, no upload.
 
@@ -166,7 +166,7 @@ The connected project's leaked-password protection setting is currently disabled
 
 The emoji drawer includes skin-tone variants and flags. A partner opening the games, makeout or drawing panel signals the other online session, which opens the matching panel. Delivery uses Supabase Realtime with an eight-second polling fallback; it requires both users to be signed in, and is not a background push notification. The drawing board allows either participant to draw, erase, undo and clear. Stroke-level server patches preserve concurrent edits to different strokes; conflicting edits to the same stroke are last-write-wins. Older clients still use whole-board saves, so both participants should refresh after an update.
 
-Calls use browser WebRTC with audio only. A TURN relay remains optional but is strongly recommended for restrictive networks; configure one in Profile → Call relay or via the existing `NEXT_PUBLIC_TURN_*` settings. Connection speed, audio quality and the ability to select a speaker depend on the network, browser, hardware and relay. No two-device call or drawing session is covered by the automated tests; verify on your own phones before relying on them.
+Calls use browser WebRTC with audio only. A TURN relay remains optional but is strongly recommended for restrictive networks; the built-in Cloudflare relay is used automatically unless Profile → Call relay has an override. Connection speed, audio quality and the ability to select a speaker depend on the network, browser, hardware and relay. No two-device call or drawing session is covered by the automated tests; verify on your own phones before relying on them.
 
 ### 2.15: Feels and more shared games
 
@@ -176,7 +176,7 @@ Feels messages can be edited before sending. The play screen includes memory, fu
 
 The Play sheet includes a shared pet for direct chats: either member can adopt, feed, play with, cuddle, or rename it. Opening the pet also opens it for the other person when they are online; the pet and counters are stored per conversation. The shared names list can hold baby-name ideas, pet names, or other future ideas; either member may add or remove names. Both features use member-only database policies and fall back to periodic refresh if realtime updates are missed. They do not represent actual pregnancies or medical advice.
 
-The mobile shell now uses the visible viewport without desktop padding, with a simpler inbox and a more compact audio-only call screen. Calls still require a configured TURN service for the best chance of connecting on restrictive networks; no relay is bundled.
+The mobile shell now uses the visible viewport without desktop padding, with a simpler inbox and a more compact audio-only call screen. Calls still require a configured TURN service for the best chance of connecting on restrictive networks; the current release uses a server-issued Cloudflare relay.
 
 ### 2.17: Live play and listening
 
@@ -209,3 +209,7 @@ The inbox has a more restrained iOS-inspired layout, and installation guidance o
 ## 2.22 notes
 
 The mobile login and messages home have been refreshed with a cleaner social-app layout, consistent touch targets and aligned controls. Existing account and inbox behavior is unchanged.
+
+## 2.23 notes
+
+Audio calls obtain short-lived Cloudflare TURN credentials through the authenticated, rate-limited `turn-credentials` Edge Function; a custom relay remains an optional device override. Signaling attempts an ICE restart after network changes, and the call can be minimized while navigating. The in-call listening drawer uses the existing shared uploaded-audio timeline (including play, pause and seek) and local voice/music volume controls. Synchronization is approximate, not beat-exact; direct stream URLs and transmission of mixed music over WebRTC are not implemented. Browser/OS audio routing and volume control support vary. The Cloudflare service and real two-phone calls still require live verification; local WebRTC tests do not establish mobile-carrier TURN reliability.

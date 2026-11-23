@@ -3,8 +3,8 @@
  *
  * Calls connect peer to peer first. When both partners are on mobile data a
  * direct path often does not exist, and only a TURN relay can carry the media.
- * Credentials are per device and stay in localStorage — never in the bundle,
- * never on the server — so each partner can bring their own relay.
+ * The automatic relay uses short-lived server-issued credentials. An optional
+ * custom override stays on this device in localStorage.
  */
 export type TurnConfig = { url: string; username: string; credential: string };
 
@@ -78,7 +78,7 @@ export async function testRelay(config: TurnConfig, timeout = 8000): Promise<{ o
       pc.onicecandidate = event => {
         if (!event.candidate) return;
         const text = event.candidate.candidate;
-        if (/ typ relay /.test(text)) { clearTimeout(timer); finish({ ok: true, detail: "Relay is reachable. Calls will connect on mobile data." }); }
+        if (/ typ relay /.test(text)) { clearTimeout(timer); finish({ ok: true, detail: "Relay is reachable from this device." }); }
       };
       pc.onicecandidateerror = event => {
         // 401 means the relay answered but rejected the credentials — worth
@@ -96,5 +96,5 @@ export async function testRelay(config: TurnConfig, timeout = 8000): Promise<{ o
 export function describeRelay(): string {
   const config = readTurn();
   if (config) return config.username ? "Relay configured for " + config.username : "Relay configured";
-  return "Direct only — add a relay if calls fail on mobile data";
+  return "Automatic Cloudflare relay (optional custom relay below)";
 }
