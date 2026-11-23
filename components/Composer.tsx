@@ -1,30 +1,104 @@
 "use client";
-import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Mic, Plus, Smile, Sticker, X } from "lucide-react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Mic, Phone, Plus, Smile, Sticker, X } from "lucide-react";
 import { AFFECTIONS, QUICK_AFFECTIONS, type AffectionId } from "@/lib/affection";
 import { errorText, type Message } from "@/lib/types";
 import { ErrorNote, IconButton, Spinner } from "./UI";
 
-export type ComposerTool = "media" | "camera" | "sticker" | "capsules" | "polls" | "games";
-const EMOJI = [
-  "❤️","🥰","😘","😂","🫶","🥹","🔥","🤍","😈","💋","✨","👀","💕","🥺","😴","🙈","💀","🤗","💯","🦋","🌙","☀️","🍒","🧸",
-  "😻","😽","🫦","💞","💘","💓","💗","💌","🌹","🌸","🍓","🍪","🎀","🫂","😚","🥴","😳","🫠","🙇","🧚","🎁","🍫","☕","🌊",
+export type ComposerTool = "media" | "camera" | "sticker" | "capsules" | "polls" | "games" | "call";
+
+/** One flat list keeps search, recents and categories in a single sheet. */
+const EMOJI_GROUPS: { name: string; glyphs: string[] }[] = [
+  { name: "Love", glyphs: ["❤️","🥰","😘","💋","💕","💞","💘","💓","💗","💌","🫶","🤍","😻","😽","🫦","😍","🥹","🫂","🌹","💐"] },
+  { name: "Face", glyphs: ["😊","😂","🥺","😳","🫠","😴","🙈","🙇","🤗","😚","🥴","😮","😢","😡","😈","💀","😅","🤭","😶‍🌫️","🤔"] },
+  { name: "Sweet", glyphs: ["🍓","🍒","🍪","🍫","🎀","🧸","☕","🍰","🍭","🌙","✨","🌸","🦋","🌊","🎁","🕯️","🎶","📷","🧁","🍓"] },
+  { name: "Hype", glyphs: ["🔥","💯","🎉","👀","✨","👍","👎","🙌","🫰","👑","⚡","🎮","🏆","💫","🫧","🎯","🚀","🌈","☀️","⭐"] },
 ];
-const TOOLS = [{ id: "media", label: "Media", Icon: ImagePlus }, { id: "camera", label: "Instant", Icon: Camera }, { id: "sticker", label: "Sticker", Icon: Sticker }, { id: "capsules", label: "Capsule", Icon: LockKeyhole }, { id: "polls", label: "Poll", Icon: BarChart3 }, { id: "games", label: "Play", Icon: Gamepad2 }] as const;
-type Props = { busy: boolean; reply: Message | null; replyName: string; onCancelReply: () => void; onSent: () => void; onSend: (text: string, replyId: string | null) => Promise<void>; onTyping: () => void; onTool: (tool: ComposerTool) => void; onVoice: () => void; onAffection: (id: AffectionId) => Promise<void> };
+const EMOJI = [...new Set(EMOJI_GROUPS.flatMap(group => group.glyphs))];
+const RECENT_KEY = "bitchat-emoji-recent";
+const TOOLS = [
+  { id: "media", label: "Photo", Icon: ImagePlus },
+  { id: "camera", label: "Instant", Icon: Camera },
+  { id: "sticker", label: "Sticker", Icon: Sticker },
+  { id: "call", label: "Call", Icon: Phone },
+  { id: "capsules", label: "Capsule", Icon: LockKeyhole },
+  { id: "polls", label: "Poll", Icon: BarChart3 },
+  { id: "games", label: "Play", Icon: Gamepad2 },
+] as const;
 
-export default memo(function Composer({ busy, reply, replyName, onCancelReply, onSent, onSend, onTyping, onTool, onVoice, onAffection }: Props) {
-  const [text, setText] = useState(""), [tools, setTools] = useState(false), [emoji, setEmoji] = useState(false), [error, setError] = useState(""), [affection, setAffection] = useState(false), [sendingAffection, setSendingAffection] = useState(false);
-  const input = useRef<HTMLTextAreaElement>(null), lock = useRef(false), alive = useRef(true), revision = useRef(0), affectionLock = useRef(false);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
-  useLayoutEffect(() => { const frame = requestAnimationFrame(() => { const node = input.current; if (node) { node.style.height = "auto"; node.style.height = Math.min(node.scrollHeight, 120) + "px"; } }); return () => cancelAnimationFrame(frame); }, [text]);
+function readRecent(): string[] {
+  try { const raw = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); return Array.isArray(raw) ? raw.filter(x => typeof x === "string").slice(0, 16) : []; } catch { return []; }
+}
 
+type Props = {
+  busy: boolean;
+  reply: Message | null;
+  replyName: string;
+  showCall?: boolean;
+  onCancelReply: () => void;
+  onSent: () => void;
+  onSend: (text: string, replyId: string | null) => Promise<void>;
+  onTyping: () => void;
+  onTool: (tool: ComposerTool) => void;
+  onVoice: () => void;
+  onAffection: (id: AffectionId) => Promise<void>;
+};
+
+export default memo(function Composer({ busy, reply, replyName, showCall = false, onCancelReply, onSent, onSend, onTyping, onTool, onVoice, onAffection }: Props) {
+  const [text, setText] = useState("");
+  const [sheet, setSheet] = useState<"tools" | "emoji" | "affection" | null>(null);
+  const [query, setQuery] = useState("");
+  const [recent, setRecent] = useState<string[]>([]);
+  const [error, setError] = useState("");
+  const [sendingAffection, setSendingAffection] = useState(false);
+  const input = useRef<HTMLTextAreaElement>(null), root = useRef<HTMLDivElement>(null), picker = useRef<HTMLDivElement>(null);
+  const lock = useRef(false), alive = useRef(true), revision = useRef(0), affectionLock = useRef(false);
+
+  useEffect(() => { alive.current = true; setRecent(readRecent()); return () => { alive.current = false; }; }, []);
+
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => { const node = input.current; if (node) { node.style.height = "auto"; node.style.height = Math.min(node.scrollHeight, 120) + "px"; } });
+    return () => cancelAnimationFrame(frame);
+  }, [text]);
   useLayoutEffect(() => { if (reply) input.current?.focus({ preventScroll: true }); }, [reply?.id]);
+
+  /**
+   * Bug fix: the emoji and attachment sheets used to stay open until their own
+   * toggle was pressed again — a tap elsewhere, Escape, sending a message or
+   * picking a tool all left them floating. Every dismissal path now funnels
+   * through here.
+   */
+  const close = useCallback(() => { setSheet(null); setQuery(""); }, []);
+
+  useEffect(() => {
+    if (!sheet) return;
+    const node = picker.current;
+    const pointer = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (node?.contains(target)) return;
+      // Tapping the toggle itself is handled by the button, so ignore it here.
+      if ((target as HTMLElement).closest?.("[data-sheet-toggle]")) return;
+      close();
+    };
+    const key = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); close(); input.current?.focus({ preventScroll: true }); } };
+    document.addEventListener("pointerdown", pointer, true);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("pointerdown", pointer, true); document.removeEventListener("keydown", key); };
+  }, [sheet, close]);
+
+  // A reply, an incoming call sheet or a tool opening should not leave a stray sheet open.
+  useEffect(() => { if (reply) close(); }, [reply?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toggleSheet(next: "tools" | "emoji" | "affection") {
+    setSheet(current => current === next ? null : next);
+    setQuery("");
+  }
 
   async function sendAffection(id: AffectionId) {
     if (affectionLock.current) return;
     affectionLock.current = true; setSendingAffection(true); setError("");
-    try { await onAffection(id); if (alive.current) setAffection(false); }
+    try { await onAffection(id); if (alive.current) close(); }
     catch (cause) { if (alive.current) setError(errorText(cause)); }
     finally { affectionLock.current = false; if (alive.current) setSendingAffection(false); }
   }
@@ -33,33 +107,63 @@ export default memo(function Composer({ busy, reply, replyName, onCancelReply, o
     if (lock.current || !text.trim()) return;
     lock.current = true;
     const draft = text, replyId = reply?.id ?? null, current = ++revision.current;
-    setText(""); setError(""); setEmoji(false); input.current?.focus();
+    setText(""); setError(""); close(); input.current?.focus();
     try { await onSend(draft, replyId); if (alive.current) onSent(); }
     catch (cause) { if (alive.current) { if (revision.current === current) setText(draft); setError(errorText(cause)); } }
     finally { lock.current = false; }
   }
+
   function insertEmoji(value: string) {
     const node = input.current, start = node?.selectionStart ?? text.length, end = node?.selectionEnd ?? text.length;
     const next = text.slice(0, start) + value + text.slice(end);
     if (next.length > 4000) return;
     const current = ++revision.current;
-    setText(next); onTyping(); node?.focus();
+    setText(next); onTyping(); node?.focus({ preventScroll: true });
+    const list = [value, ...recent.filter(item => item !== value)].slice(0, 16);
+    setRecent(list);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch {}
     requestAnimationFrame(() => { if (alive.current && revision.current === current) node?.setSelectionRange(start + value.length, start + value.length); });
   }
+
   function keys(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229 && window.matchMedia("(pointer:fine)").matches) { event.preventDefault(); void send(); }
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229 && window.matchMedia("(pointer:fine)").matches) {
+      event.preventDefault(); void send();
+    }
   }
-  return <>
+
+  const needle = query.trim().toLowerCase();
+  const shown = needle
+    ? EMOJI_GROUPS.flatMap(group => group.glyphs)
+    : recent.length ? recent : EMOJI_GROUPS[0].glyphs;
+
+  return <div className="composer-shell" ref={root}>
     <ErrorNote text={error}/>
     {reply && <div className="composer-reply"><span><small>Replying to {replyName}</small><p>{reply.content || "Photo"}</p></span><IconButton label="Cancel reply" onClick={onCancelReply}><X size={17}/></IconButton></div>}
-    {tools && <div className="attachment-tray"><button aria-label="Affection" onClick={() => { setTools(false); setAffection(true); }}><Heart/><small>Affection</small></button>{TOOLS.map(({ id, label, Icon }) => <button key={id} disabled={busy} onClick={() => { setTools(false); onTool(id); }}><Icon/><small>{label}</small></button>)}</div>}
-    {affection && <div className="affection-tray" aria-label="Send affection">{AFFECTIONS.filter(item => QUICK_AFFECTIONS.includes(item.id)).map(item => <button key={item.id} disabled={sendingAffection} aria-label={"Send " + item.label.toLowerCase()} onClick={() => void sendAffection(item.id)}><span aria-hidden="true">{item.glyph}</span><small>{item.label}</small></button>)}</div>}
-    {emoji && <div className="emoji-picker">{EMOJI.map(value => <button key={value} aria-label={value} onClick={() => insertEmoji(value)}>{value}</button>)}</div>}
+
+    {sheet && <div className={"composer-sheet " + sheet} ref={picker} role="group" aria-label={sheet === "emoji" ? "Emoji" : sheet === "tools" ? "Attachments" : "Affection"}>
+      <div className="composer-sheet-grip" aria-hidden="true"/>
+      {sheet === "tools" && <div className="attachment-tray">
+        <button className="affection-tool" aria-label="Affection" onClick={() => { setSheet("affection"); setQuery(""); }}><Heart/><small>Affection</small></button>
+        {TOOLS.filter(tool => tool.id !== "call" || showCall).map(({ id, label, Icon }) => <button key={id} disabled={busy} onClick={() => { close(); onTool(id); }}><Icon/><small>{label}</small></button>)}
+      </div>}
+
+      {sheet === "affection" && <div className="affection-tray" aria-label="Send affection">{AFFECTIONS.filter(item => QUICK_AFFECTIONS.includes(item.id)).map(item => <button key={item.id} disabled={sendingAffection} aria-label={"Send " + item.label.toLowerCase()} onClick={() => void sendAffection(item.id)}><span aria-hidden="true">{item.glyph}</span><small>{item.label}</small></button>)}</div>}
+
+      {sheet === "emoji" && <>
+        <label className="emoji-search"><Smile size={15} aria-hidden="true"/><input aria-label="Search emoji" placeholder="Search or just type" value={query} maxLength={24} onChange={event => setQuery(event.target.value)}/></label>
+        {!needle && recent.length > 0 && <small className="emoji-caption">Recent</small>}
+        <div className="emoji-picker">{shown.map((value, index) => <button key={value + index} aria-label={value} onClick={() => insertEmoji(value)}>{value}</button>)}</div>
+        {!needle && recent.length > 0 && <div className="emoji-love"><small className="emoji-caption">Love</small><div className="emoji-picker">{EMOJI_GROUPS[0].glyphs.slice(0, 10).map(value => <button key={value} aria-label={value} onClick={() => insertEmoji(value)}>{value}</button>)}</div></div>}
+      </>}
+    </div>}
+
     <form className="composer" onSubmit={event => { event.preventDefault(); void send(); }}>
-      <IconButton label="Attachments" aria-expanded={tools} className={tools ? "selected" : ""} onClick={() => { setTools(!tools); setEmoji(false); setAffection(false); }}>{busy ? <Spinner/> : <Plus size={23}/>}</IconButton>
-      <textarea ref={input} rows={1} aria-label="Message" placeholder="Message…" value={text} maxLength={4000} autoComplete="on" autoCorrect="on" autoCapitalize="sentences" spellCheck onChange={event => { revision.current++; setText(event.target.value); onTyping(); }} onKeyDown={keys}/>
-      <IconButton label="Emoji" aria-expanded={emoji} className="emoji-toggle" onClick={() => { setEmoji(!emoji); setTools(false); setAffection(false); }}><Smile size={20}/></IconButton>
-      {text.trim() ? <button type="submit" className="send-button" aria-label="Send message" onPointerDown={event => { if (document.activeElement === input.current) event.preventDefault(); }}><ArrowUp size={22}/></button> : <IconButton label="Record voice note" className="voice-note-button" onClick={onVoice}><Mic size={18}/></IconButton>}
+      <IconButton label="Attachments" data-sheet-toggle aria-expanded={sheet === "tools"} className={sheet === "tools" ? "selected" : ""} onClick={() => toggleSheet("tools")}>{busy ? <Spinner/> : <Plus size={23}/>}</IconButton>
+      <textarea ref={input} rows={1} aria-label="Message" placeholder="Message…" value={text} maxLength={4000} autoComplete="on" autoCorrect="on" autoCapitalize="sentences" spellCheck onChange={event => { revision.current++; setText(event.target.value); onTyping(); }} onKeyDown={keys} onFocus={() => { if (sheet === "emoji") close(); }}/>
+      <IconButton label="Emoji" data-sheet-toggle aria-expanded={sheet === "emoji"} className={"emoji-toggle " + (sheet === "emoji" ? "selected" : "")} onClick={() => toggleSheet("emoji")}><Smile size={20}/></IconButton>
+      {text.trim()
+        ? <button type="submit" className="send-button" aria-label="Send message" onPointerDown={event => { if (document.activeElement === input.current) event.preventDefault(); }}><ArrowUp size={22}/></button>
+        : <IconButton label="Record voice note" className="voice-note-button" onClick={onVoice}><Mic size={18}/></IconButton>}
     </form>
-  </>;
+  </div>;
 });

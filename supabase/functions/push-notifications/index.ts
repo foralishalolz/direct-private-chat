@@ -3,7 +3,7 @@ import webpush from "npm:web-push@3.6.7";
 import { adminClient } from "../_shared/client.ts";
 
 type Config = { publicKey: string; privateKey: string; subject: string };
-import { endpointAllowed, pushPayload, type PushJob } from "../_shared/push.ts";
+import { callPushPayload, endpointAllowed, isCallJob, pushPayload, type CallPushJob } from "../_shared/push.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return new Response(null, { status: 405 });
@@ -25,7 +25,7 @@ Deno.serve(async (req: Request) => {
     for (let round = 0; round < 3 && Date.now() - started < 45000; round++) {
       const { data, error } = await admin.rpc("claim_push_jobs", { p_secret: secret });
       if (error) throw error;
-      const jobs: PushJob[] = data ?? [];
+      const jobs: CallPushJob[] = data ?? [];
       if (!jobs.length) break;
       // Six simultaneous requests keep delivery quick without exhausting Edge resources.
       let index = 0;
@@ -36,10 +36,19 @@ Deno.serve(async (req: Request) => {
           let status = 400;
           if (endpointAllowed(job.endpoint)) {
             try {
+              const call = isCallJob(job);
               const request = webpush.generateRequestDetails(
                 { endpoint: job.endpoint, keys: { p256dh: job.p256dh, auth: job.auth_secret } },
-                pushPayload(job),
-                { vapidDetails: config, TTL: 3600, contentEncoding: "aes128gcm", urgency: "normal", topic: job.conversation_id.replaceAll("-", "") },
+                // A call keeps its own tag so a ringing phone is never shadowed
+                // by a chat notification for the same chat.
+                call && job.call_id ? callPushPayload({ ...job, call_id: job.call_id }) : pushPayload(job),
+                {
+                  vapidDetails: config,
+                  TTL: call ? 45 : 3600,
+                  contentEncoding: "aes128gcm",
+                  urgency: call ? "high" : "normal",
+                  topic: call ? "call-" + job.conversation_id.replaceAll("-", "") : job.conversation_id.replaceAll("-", ""),
+                },
               );
               const response = await fetch(request.endpoint, { method: "POST", headers: request.headers, body: request.body, redirect: "error", signal: AbortSignal.timeout(8000) });
               status = response.status;

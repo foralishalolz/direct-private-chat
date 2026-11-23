@@ -67,7 +67,10 @@ export async function enableNotifications(userId: string): Promise<void> {
       await current(userId, operation);
       const json = subscription.toJSON();
       if (!json.keys?.p256dh || !json.keys?.auth) throw new Error("Notification subscription unavailable.");
-      await rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys.p256dh, p_auth: json.keys.auth });
+      await rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys.p256dh, p_auth: json.keys.auth, p_kind: "message" });
+      // A second row on the same endpoint lets an incoming call ring even when
+      // chat notifications were turned off; calls are separate by design.
+      await rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys.p256dh, p_auth: json.keys.auth, p_kind: "call" }).catch(() => {});
       await current(userId, operation);
       await writePushState({ userId, enabled: true });
       await current(userId, operation);
@@ -126,7 +129,8 @@ export async function restoreNotifications(userId: string): Promise<void> {
     }
     const json = subscription.toJSON();
     await current(userId, operation);
-    const { error } = await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth }).abortSignal(AbortSignal.timeout(5000));
+    const { error } = await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth, p_kind: "message" }).abortSignal(AbortSignal.timeout(5000));
+    await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth, p_kind: "call" }).abortSignal(AbortSignal.timeout(5000)).then(result => result, () => undefined);
     if (error) throw error;
   });
 }

@@ -2,14 +2,19 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
-import { Archive, ArrowLeft, Bell, BookHeart, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
+import { Archive, ArrowLeft, Bell, BookHeart, Bookmark, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
 import { watchDeviceMode, watchViewport } from "@/lib/device";
+import { useEdgeSwipe } from "@/hooks/useEdgeSwipe";
+import { usePullRefresh } from "@/hooks/usePullRefresh";
+import { usePressFeedback, useTabBar } from "@/hooks/useTabBar";
+import { haptic } from "@/lib/haptics";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useAppBadge } from "@/hooks/useAppBadge";
 import { useInbox } from "@/hooks/useInbox";
 import { loadConversation } from "@/lib/conversation";
 import { rpc } from "@/lib/supabase";
 import { useDeepLink } from "@/lib/deeplink";
+import { useIncomingCall } from "@/hooks/useIncomingCall";
 import { errorText, label, title, type Conversation, type Profile } from "@/lib/types";
 import { Avatar, Brand, ErrorNote, IconButton, Spinner } from "./UI";
 import SwipeChat from "./SwipeChat";
@@ -22,6 +27,7 @@ const ProfileEditor = dynamic(() => import("./ProfileModal"));
 const ChatActionModal = dynamic(() => import("./ChatActionModal"));
 const Journal = dynamic(() => import("./JournalModal"));
 const NotificationSettings = dynamic(() => import("./NotificationsModal"));
+const SavedModal = dynamic(() => import("./SavedModal"));
 
 export default function ChatRoom({ profile, onProfile, onLogout }: {
   profile: Profile;
@@ -41,11 +47,31 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const [retry, setRetry] = useState(0);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
-  const [modal, setModal] = useState<"new" | "profile" | "journal" | "notifications" | null>(null);
+  const [modal, setModal] = useState<"new" | "profile" | "journal" | "notifications" | "saved" | null>(null);
   const [online, setOnline] = useState(true);
   const [linkError, setLinkError] = useState("");
   const [linkName, setLinkName] = useState("");
   useDeepLink(username => setLinkName(username), true);
+  const incoming = useIncomingCall(profile.id);
+  usePressFeedback();
+  const tabs = useTabBar();
+  const pull = usePullRefresh(() => refresh());
+  useEdgeSwipe(() => setSelected(null), !!selected);
+  // Home-screen shortcuts (?open=journal|us) land on the right sheet.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get("open");
+    if (wanted === "journal") setModal("journal");
+    if (wanted === "profile") setModal("profile");
+    if (wanted === "new") openDiscover();
+  }, []);
+  const open = (id: string | null) => { haptic("light"); setSelected(id); };
+  // Answer / decline from a notification or a `?call=` launch.
+  useEffect(() => {
+    if (!incoming.intent) return;
+    setSelected(incoming.intent.conversationId);
+    window.dispatchEvent(new CustomEvent("bitchat-call-intent", { detail: incoming.intent }));
+    incoming.clear();
+  }, [incoming.intent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!linkName) return;
@@ -113,10 +139,10 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   useAppBadge(unread);
 
   return (
-    <main className={"app-shell " + (selected ? "has-thread" : "")}>
+    <main className={"app-shell " + (selected ? "has-thread " : "") + (tabs.hidden ? "tabs-hidden" : "")}>
       <nav className="rail" aria-label="Main navigation">
         <a href="/" aria-label="BitchAt" className="rail-brand"><Brand small /></a>
-        <IconButton label="Messages" className="active" onClick={() => setSelected(null)}><MessageCircle size={24} /><span className="rail-label">Messages</span></IconButton>
+        <IconButton label="Messages" className="active" onClick={() => open(null)}><MessageCircle size={24} /><span className="rail-label">Messages</span></IconButton>
         <IconButton label="New message" onClick={() => openDiscover()}><Users size={24} /><span className="rail-label">People</span></IconButton>
         <IconButton label="Journal" onClick={() => setModal("journal")}><BookHeart size={24} /><span className="rail-label">Journal</span></IconButton>
         <button className="rail-profile" aria-label="Profile" onClick={() => setModal("profile")}><Avatar profile={profile} size={36} /><span className="rail-label">Profile</span></button>
@@ -131,17 +157,20 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         <div className="inbox-search"><label className="input-icon"><Search size={18} aria-hidden="true" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
 
         {!needle && filter === "all" && recent.length > 0 && <div className="recent-people" aria-label="Recent chats">
-          {recent.map(conversation => <button key={conversation.id} aria-label={"Open chat with " + label(conversation.partner)} onClick={() => setSelected(conversation.id)}>
+          {recent.map(conversation => <button key={conversation.id} aria-label={"Open chat with " + label(conversation.partner)} onClick={() => open(conversation.id)}>
             <span className="recent-ring"><Avatar profile={conversation.partner} size={51} />{conversation.partner?.mood && <span className="recent-mood">{conversation.partner.mood}</span>}</span>
             <span className="recent-name">{label(conversation.partner)}</span>
           </button>)}
         </div>}
 
         <div className="inbox-filters" aria-label="Filter chats">{[["all", "All"], ["unread", "Unread"], ["groups", "Groups"], ["archived", "Archived"]].map(([id, text]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => { setFilter(id); setRevealed(null); }}>{text}</button>)}</div>
-        <div className="inbox-group-actions"><button onClick={() => openDiscover("group")}><Users size={16}/>New group</button><button onClick={() => openDiscover("join")}><Link2 size={16}/>Join group</button></div>
-        <div className="conversation-list">
+        <div className="inbox-group-actions"><button onClick={() => openDiscover("group")}><Users size={16}/>New group</button><button onClick={() => openDiscover("join")}><Link2 size={16}/>Join group</button><button className="saved-shortcut" onClick={() => setModal("saved")}><Bookmark size={16}/>Saved</button></div>
+        <div className="pull-refresh" style={{ height: pull.pull }} aria-hidden={pull.pull === 0} role="status">
+          {pull.busy ? <Spinner/> : pull.pull > 0 ? <span>{pull.pull >= 56 ? "Release to refresh" : "Pull to refresh"}</span> : null}
+        </div>
+        <div className="conversation-list" onScroll={tabs.onScroll}>
           {loading && <div className="inbox-skeleton" aria-label="Loading chats" role="status">{[0, 1, 2, 3].map(index => <div key={index}><span /><i /></div>)}</div>}
-          {visible.map(conversation => <SwipeChat key={conversation.id} conversation={conversation} selected={conversation.id === selected} open={revealed === conversation.id} busy={archiving !== null} onReveal={setRevealed} onOpen={setSelected} onArchive={(id, archived) => void archive(id, archived)} onDelete={id => setChatAction({ id, action: "clear" })} />)}
+          {visible.map(conversation => <SwipeChat key={conversation.id} conversation={conversation} selected={conversation.id === selected} open={revealed === conversation.id} busy={archiving !== null} onReveal={setRevealed} onOpen={open} onArchive={(id, archived) => void archive(id, archived)} onDelete={id => setChatAction({ id, action: "clear" })} />)}
           {!loading && !visible.length && (filter === "archived" ? <div className="empty-inbox"><span className="empty-inbox-icon"><Archive size={29} /></span><span>No archived chats</span></div> : <button className="empty-inbox" aria-label="Start a conversation" onClick={() => openDiscover()}><span className="empty-inbox-icon"><SquarePen size={29} /></span><span>{needle || filter !== "all" ? "No chats found" : "New message"}</span></button>)}
           {more && <IconButton label="More chats" onClick={() => void loadMore()}><ChevronDown size={20} /></IconButton>}
           <ErrorNote text={error} />
@@ -173,6 +202,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
       {modal === "profile" && <ProfileEditor profile={profile} onChange={onProfile} onClose={() => setModal(null)} onLogout={onLogout} />}
       {modal === "journal" && <Journal userId={profile.id} onClose={() => setModal(null)} />}
       {modal === "notifications" && <NotificationSettings userId={profile.id} onClose={() => setModal(null)} />}
+      {modal === "saved" && <SavedModal userId={profile.id} onClose={() => setModal(null)} onOpenChat={id => open(id)} />}
     </main>
   );
 }

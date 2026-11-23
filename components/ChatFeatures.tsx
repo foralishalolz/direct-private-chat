@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, Phone, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { db, rpc } from "@/lib/supabase";
 import { useLive } from "@/hooks/useLive";
 import ChatActionModal from "./ChatActionModal";
+import CallHistory from "./CallHistory";
 import { downloadMedia } from "@/lib/export";
 import { day, errorText, label, theirPet, time, type Conversation, type Message, type Profile } from "@/lib/types";
 import { Avatar, ErrorNote, IconButton, Modal, Spinner } from "./UI";
@@ -14,7 +15,7 @@ const DATE_IDEAS = ["Coffee and a long walk", "Cook something new together", "Ma
 
 type ChatProps = { c: Conversation; p: Profile };
 
-export function ChatDetails({ c, p, onRefresh, onExit }: ChatProps & { onRefresh: () => Promise<void>; onExit: () => void }) {
+export function ChatDetails({ c, p, onRefresh, onExit, onCall }: ChatProps & { onRefresh: () => Promise<void>; onExit: () => void; onCall?: (kind: "audio" | "video") => void }) {
   const [name, setName] = useState(c.title);
   const [code, setCode] = useState("");
   const [copied, setCopied] = useState(false);
@@ -64,6 +65,7 @@ export function ChatDetails({ c, p, onRefresh, onExit }: ChatProps & { onRefresh
       <PetNameEditor c={c} onSaved={onRefresh}/>
       <button className="menu-item" disabled={busy} onClick={() => void act(async () => { await rpc("set_block", { p_other: c.partner?.id, p_blocked: !blocked }); setBlocked(!blocked); })}><ShieldCheck size={20}/>{blocked ? "Unblock" : "Block"}</button>
     </div>}
+    {c.kind === "direct" && onCall && <div className="settings-section call-details-section"><h4 className="details-heading"><Phone size={15}/>Calls</h4><CallHistory c={c} onCall={onCall}/></div>}
     <div className="settings-section"><button className="menu-item danger" disabled={busy} onClick={() => setConfirm("clear")}><Trash2 size={20}/>Delete chat</button>
       {c.kind === "group" && <button className="menu-item danger" disabled={busy} onClick={() => setConfirm("leave")}><LogOut size={20}/>Leave group</button>}
     </div><ErrorNote text={error}/>
