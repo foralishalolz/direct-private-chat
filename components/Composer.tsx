@@ -1,20 +1,13 @@
 "use client";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Mic, Phone, Plus, Smile, Sticker, X } from "lucide-react";
+import EmojiPicker from "./EmojiPicker";
 import { AFFECTIONS, QUICK_AFFECTIONS, type AffectionId } from "@/lib/affection";
 import { errorText, type Message } from "@/lib/types";
 import { ErrorNote, IconButton, Spinner } from "./UI";
 
 export type ComposerTool = "media" | "camera" | "sticker" | "capsules" | "polls" | "games" | "call";
 
-/** One flat list keeps search, recents and categories in a single sheet. */
-const EMOJI_GROUPS: { name: string; glyphs: string[] }[] = [
-  { name: "Love", glyphs: ["❤️","🥰","😘","💋","💕","💞","💘","💓","💗","💌","🫶","🤍","😻","😽","🫦","😍","🥹","🫂","🌹","💐"] },
-  { name: "Face", glyphs: ["😊","😂","🥺","😳","🫠","😴","🙈","🙇","🤗","😚","🥴","😮","😢","😡","😈","💀","😅","🤭","😶‍🌫️","🤔"] },
-  { name: "Sweet", glyphs: ["🍓","🍒","🍪","🍫","🎀","🧸","☕","🍰","🍭","🌙","✨","🌸","🦋","🌊","🎁","🕯️","🎶","📷","🧁","🍓"] },
-  { name: "Hype", glyphs: ["🔥","💯","🎉","👀","✨","👍","👎","🙌","🫰","👑","⚡","🎮","🏆","💫","🫧","🎯","🚀","🌈","☀️","⭐"] },
-];
-const EMOJI = [...new Set(EMOJI_GROUPS.flatMap(group => group.glyphs))];
 const RECENT_KEY = "bitchat-emoji-recent";
 const TOOLS = [
   { id: "media", label: "Photo", Icon: ImagePlus },
@@ -47,7 +40,6 @@ type Props = {
 export default memo(function Composer({ busy, reply, replyName, showCall = false, onCancelReply, onSent, onSend, onTyping, onTool, onVoice, onAffection }: Props) {
   const [text, setText] = useState("");
   const [sheet, setSheet] = useState<"tools" | "emoji" | "affection" | null>(null);
-  const [query, setQuery] = useState("");
   const [recent, setRecent] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [sendingAffection, setSendingAffection] = useState(false);
@@ -68,7 +60,7 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
    * picking a tool all left them floating. Every dismissal path now funnels
    * through here.
    */
-  const close = useCallback(() => { setSheet(null); setQuery(""); }, []);
+  const close = useCallback(() => setSheet(null), []);
 
   useEffect(() => {
     if (!sheet) return;
@@ -92,7 +84,6 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
 
   function toggleSheet(next: "tools" | "emoji" | "affection") {
     setSheet(current => current === next ? null : next);
-    setQuery("");
   }
 
   async function sendAffection(id: AffectionId) {
@@ -131,11 +122,6 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
     }
   }
 
-  const needle = query.trim().toLowerCase();
-  const shown = needle
-    ? EMOJI_GROUPS.flatMap(group => group.glyphs)
-    : recent.length ? recent : EMOJI_GROUPS[0].glyphs;
-
   return <div className="composer-shell" ref={root}>
     <ErrorNote text={error}/>
     {reply && <div className="composer-reply"><span><small>Replying to {replyName}</small><p>{reply.content || "Photo"}</p></span><IconButton label="Cancel reply" onClick={onCancelReply}><X size={17}/></IconButton></div>}
@@ -143,18 +129,13 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
     {sheet && <div className={"composer-sheet " + sheet} ref={picker} role="group" aria-label={sheet === "emoji" ? "Emoji" : sheet === "tools" ? "Attachments" : "Affection"}>
       <div className="composer-sheet-grip" aria-hidden="true"/>
       {sheet === "tools" && <div className="attachment-tray">
-        <button className="affection-tool" aria-label="Affection" onClick={() => { setSheet("affection"); setQuery(""); }}><Heart/><small>Affection</small></button>
+        <button className="affection-tool" aria-label="Affection" onClick={() => setSheet("affection")}><Heart/><small>Affection</small></button>
         {TOOLS.filter(tool => tool.id !== "call" || showCall).map(({ id, label, Icon }) => <button key={id} disabled={busy} onClick={() => { close(); onTool(id); }}><Icon/><small>{label}</small></button>)}
       </div>}
 
       {sheet === "affection" && <div className="affection-tray" aria-label="Send affection">{AFFECTIONS.filter(item => QUICK_AFFECTIONS.includes(item.id)).map(item => <button key={item.id} disabled={sendingAffection} aria-label={"Send " + item.label.toLowerCase()} onClick={() => void sendAffection(item.id)}><span aria-hidden="true">{item.glyph}</span><small>{item.label}</small></button>)}</div>}
 
-      {sheet === "emoji" && <>
-        <label className="emoji-search"><Smile size={15} aria-hidden="true"/><input aria-label="Search emoji" placeholder="Search or just type" value={query} maxLength={24} onChange={event => setQuery(event.target.value)}/></label>
-        {!needle && recent.length > 0 && <small className="emoji-caption">Recent</small>}
-        <div className="emoji-picker">{shown.map((value, index) => <button key={value + index} aria-label={value} onClick={() => insertEmoji(value)}>{value}</button>)}</div>
-        {!needle && recent.length > 0 && <div className="emoji-love"><small className="emoji-caption">Love</small><div className="emoji-picker">{EMOJI_GROUPS[0].glyphs.slice(0, 10).map(value => <button key={value} aria-label={value} onClick={() => insertEmoji(value)}>{value}</button>)}</div></div>}
-      </>}
+      {sheet === "emoji" && <EmojiPicker recent={recent} onPick={insertEmoji}/>}
     </div>}
 
     <form className="composer" onSubmit={event => { event.preventDefault(); void send(); }}>

@@ -89,6 +89,7 @@ export default function MakeoutSheet({ c, p, onClose }: { c: Conversation; p: Pr
   const mine = (isA ? meter?.taps_a : meter?.taps_b) ?? 0;
   const theirs = (isA ? meter?.taps_b : meter?.taps_a) ?? 0;
   const total = mine + theirs + pending;
+  const partnerTotal = theirs;
   const level = kissLevel(total);
   const streakText = streak > 2 ? streakWord(streak) : "";
 
@@ -113,7 +114,10 @@ export default function MakeoutSheet({ c, p, onClose }: { c: Conversation; p: Pr
         <button type="button" className="makeout-stage" aria-label="Kiss" onClick={tap}>
           <span className="makeout-lips" aria-hidden="true">💋</span>
           <span className="makeout-taps">
-            <b>{mine.toLocaleString()}</b> you · <b>{theirs.toLocaleString()}</b> {label(partner)}
+            <b>{mine.toLocaleString()}</b> you · <b>{partnerTotal.toLocaleString()}</b> {label(partner)}
+          </span>
+          <span className="makeout-live" role="status">
+            {theirs > mine ? label(partner) + " is winning" : mine > theirs ? "You are winning" : "Neck and neck"}
           </span>
           {streakText && <span className="makeout-streak" role="status" key={streak}>{streakText}</span>}
           <span className="makeout-pops" aria-hidden="true">

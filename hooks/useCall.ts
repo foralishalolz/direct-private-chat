@@ -221,19 +221,19 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   }, [phase]);
 
   // --- Call actions ---------------------------------------------------------
-  async function start(nextKind: CallKind) {
+  async function start(nextKind: CallKind = "audio") {
     if (!conversationId || phaseRef.current !== "idle") return;
     setError(""); setEnded(null); setCall(null); setKind(nextKind); setOutgoing(true); sync("calling");
     try {
-      const stream = await openMedia(nextKind);
+      const stream = await openMedia();
       if (!alive.current) { stream.getTracks().forEach(track => track.stop()); return; }
       localRef.current = stream; setLocal(stream);
-      const row = await rpc<CallRow>("start_call", { p_conversation: conversationId, p_kind: nextKind });
+      const row = await rpc<CallRow>("start_call", { p_conversation: conversationId, p_kind: "audio" });
       callRef.current = row; setCall(row);
       const peer = ensureLink();
       peer.addLocal(stream);
       const description = await peer.offer();
-      if (description.sdp) await signal({ type: "offer", sdp: description.sdp, kind: nextKind });
+      if (description.sdp) await signal({ type: "offer", sdp: description.sdp, kind: "audio" });
     } catch (cause) {
       teardown(); sync("idle");
       setError(message(cause));
@@ -247,7 +247,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     setError(""); setEnded(null); setOutgoing(false); sync("connecting");
     answering.current = true;
     try {
-      const stream = await openMedia(current.kind);
+      const stream = await openMedia();
       if (!alive.current) { stream.getTracks().forEach(track => track.stop()); return; }
       localRef.current = stream; setLocal(stream);
       await rpc("answer_call", { p_call: current.id, p_accept: true });

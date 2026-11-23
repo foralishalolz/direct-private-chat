@@ -15,7 +15,7 @@ const DATE_IDEAS = ["Coffee and a long walk", "Cook something new together", "Ma
 
 type ChatProps = { c: Conversation; p: Profile };
 
-export function ChatDetails({ c, p, onRefresh, onExit, onCall }: ChatProps & { onRefresh: () => Promise<void>; onExit: () => void; onCall?: (kind: "audio" | "video") => void }) {
+export function ChatDetails({ c, p, onRefresh, onExit, onCall }: ChatProps & { onRefresh: () => Promise<void>; onExit: () => void; onCall?: (kind: "audio") => void }) {
   const [name, setName] = useState(c.title);
   const [code, setCode] = useState("");
   const [copied, setCopied] = useState(false);

@@ -807,3 +807,59 @@ button.pressed { transform: scale(.965); }
 .relay-form .row.gap { gap: 8px; }
 .relay-form .action-status { font-size: 11px; line-height: 1.5; color: #b7a9d0; min-height: 1em; }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+/* --- Full emoji sheet: every glyph, scrollable, iOS-glass ------------------ */
+.emoji-sheet { display: flex; flex-direction: column; gap: 6px; margin: 0 -2px; }
+.emoji-head { display: flex; align-items: center; gap: 6px; position: sticky; top: 0; z-index: 2; padding: 2px 0 4px; }
+.emoji-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; padding: 3px; border-radius: 15px; background: #ffffff08; border: 1px solid #ffffff10; }
+.emoji-tabs::-webkit-scrollbar { display: none; }
+.emoji-tabs button { flex: 0 0 auto; width: 34px; height: 32px; border-radius: 11px; font-size: 18px; line-height: 1; background: transparent; transition: background .18s var(--snap), transform .18s var(--snap); }
+.emoji-tabs button[aria-selected="true"] { background: linear-gradient(150deg, #ff6ea83d, #c9b6ff26); box-shadow: inset 0 0 0 1px #ff9ec53d; transform: translateY(-1px); }
+.emoji-tabs button:active { transform: scale(.9); }
+.emoji-close { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 12px; font-size: 14px; background: #ffffff0b; border: 1px solid #ffffff14; color: #d8cde8; }
+.emoji-scroll { overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; max-height: min(46dvh, 340px); padding: 0 2px 6px; scroll-behavior: smooth; }
+.emoji-section + .emoji-section { margin-top: 4px; }
+.emoji-section h4 { position: sticky; top: 0; z-index: 1; margin: 0; padding: 6px 2px 3px; font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: #9d90b6; font-weight: 700; background: linear-gradient(#171227f2, #171227b8 70%, transparent); backdrop-filter: blur(8px); }
+.emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.emoji-cell { aspect-ratio: 1; display: grid; place-items: center; font-size: 23px; line-height: 1; border-radius: 12px; background: transparent; transition: transform .14s cubic-bezier(.34,1.56,.64,1), background .14s ease; animation: emoji-in .26s ease backwards; }
+.emoji-cell:hover { background: #ffffff0d; }
+.emoji-cell:active { transform: scale(1.34); background: linear-gradient(150deg, #ff6ea833, #c9b6ff26); }
+@keyframes emoji-in { from { opacity: 0; transform: scale(.72); } to { opacity: 1; transform: none; } }
+.emoji-empty { font-size: 12px; color: #9d90b6; padding: 22px 6px; text-align: center; }
+.emoji-picked { position: fixed; pointer-events: none; z-index: 90; font-size: 30px; animation: emoji-fly .5s cubic-bezier(.2,.9,.3,1) forwards; }
+@keyframes emoji-fly { 0% { opacity: 1; transform: translate(0, 0) scale(1); } 100% { opacity: 0; transform: translate(0, -70px) scale(1.7); } }
+@media (max-width: 760px) {
+  .emoji-grid { grid-template-columns: repeat(7, 1fr); }
+  .emoji-scroll { max-height: 40dvh; }
+  .emoji-cell { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) { .emoji-cell { animation: none; } }
+
+/* Shared canvas and quick feelings — soft, touch-friendly glass. */
+.chat-shortcuts .draw-shortcut,.chat-shortcuts .feels-shortcut { color:#e8d5ff; background:#b197f419; border-color:#d7beff28; }
+.feels-tabs { display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; scrollbar-width:none; }
+.feels-tabs button { flex:1 0 auto; min-height:44px; padding:8px 11px; border-radius:15px; background:#ffffff0c; color:inherit; display:flex; gap:6px; align-items:center; justify-content:center; }
+.feels-tabs button[aria-selected="true"] { background:#b99bff35; box-shadow:inset 0 0 0 1px #d8c5ff55; }
+.feels-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:15px 0; }
+.feels-grid button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; min-height:82px; padding:8px; border:1px solid #ffffff17; border-radius:18px; background:#ffffff0b; }
+.feels-grid button span { font-size:28px; } .feels-grid button small { font-size:11px; }
+.comfort-list,.kiss-list { display:grid; gap:8px; margin:15px 0; }
+.comfort-list button,.kiss-list button { display:flex; align-items:center; gap:12px; width:100%; min-height:62px; padding:11px 14px; text-align:left; border-radius:17px; background:#ffffff0b; border:1px solid #ffffff16; }
+.comfort-list button>span:first-child,.kiss-list button>span:first-child { font-size:26px; }
+.comfort-list button>span:nth-child(2),.kiss-list button>span:nth-child(2) { display:grid; gap:3px; }
+.comfort-list small,.kiss-list small,.board-note { opacity:.7; line-height:1.4; }
+.board-wrap { padding:12px 18px 22px; } .board-head { display:flex; justify-content:space-between; gap:10px; align-items:center; padding:2px 2px 12px; font-size:12px; }
+.board-who i { display:inline-block; width:5px; height:5px; border-radius:50%; background:#e6b5ea; margin:0 5px 2px; } .board-status { opacity:.7; }
+.board-canvas { position:relative; width:100%; height:clamp(240px,46dvh,460px); overflow:hidden; border-radius:20px; background:linear-gradient(145deg,#211d35,#15192b); border:1px solid #ffffff22; box-shadow:inset 0 1px 18px #0003; }
+.board-canvas canvas { display:block; width:100%; height:100%; cursor:crosshair; } .board-canvas.erasing canvas { cursor:cell; }
+.board-loading,.board-hint { position:absolute; inset:0; display:grid; place-items:center; pointer-events:none; color:#cabddb99; text-align:center; padding:20px; font-size:13px; }
+.board-tools { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; padding:14px 0; }
+.board-colors,.board-widths,.board-actions { display:flex; align-items:center; gap:7px; }
+.board-colors button { width:28px; height:28px; border-radius:50%; border:2px solid transparent; }
+.board-colors button.on { outline:2px solid #fff; outline-offset:2px; }
+.board-widths button { display:grid; place-items:center; width:33px; height:36px; border-radius:12px; background:#ffffff0b; }
+.board-widths button.on,.board-actions .selected { background:#b99bff45; } .board-widths i { display:block; border-radius:50%; background:currentColor; }
+.board-note { display:block; font-size:11px; }
+.message-meta .receipt-button { color:#ddd5f4!important; }
+@media(max-width:400px) { .board-wrap { padding-inline:12px; } .board-tools { gap:8px; } .board-colors { gap:5px; } .board-colors button { width:25px; height:25px; } }
+@media(prefers-reduced-motion:reduce) { .emoji-cell,.feels-grid button { animation:none!important; transition:none!important; } }

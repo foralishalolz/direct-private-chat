@@ -15,6 +15,8 @@ import { loadConversation } from "@/lib/conversation";
 import { rpc } from "@/lib/supabase";
 import { useDeepLink } from "@/lib/deeplink";
 import { useIncomingCall } from "@/hooks/useIncomingCall";
+import { useActivityPing, type ActivityKind } from "@/hooks/useActivityPing";
+import type { ActivityTab } from "./Activities";
 import { errorText, label, title, type Conversation, type Profile } from "@/lib/types";
 import { Avatar, Brand, ErrorNote, IconButton, Spinner } from "./UI";
 import SwipeChat from "./SwipeChat";
@@ -52,7 +54,13 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const [linkError, setLinkError] = useState("");
   const [linkName, setLinkName] = useState("");
   useDeepLink(username => setLinkName(username), true);
+  const [activityIntent, setActivityIntent] = useState<{ conversationId: string; tab: ActivityTab; sequence: number } | null>(null);
   const incoming = useIncomingCall(profile.id);
+  const activity = useActivityPing(profile, items, (conversationId, kind: ActivityKind) => {
+    setSelected(conversationId);
+    const tab = kind === "makeout" ? "makeout" : kind === "draw" ? "draw" : kind === "game" || kind === "wyr" ? "games" : kind === "kiss" ? "kiss" : "feels";
+    setActivityIntent(current => ({ conversationId, tab, sequence: (current?.sequence ?? 0) + 1 }));
+  });
   usePressFeedback();
   const tabs = useTabBar();
   const pull = usePullRefresh(() => refresh());
@@ -186,7 +194,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         </footer>
       </aside>
 
-      {active ? <ChatThread key={active.id} conversation={active} profile={profile} onBack={() => setSelected(null)} onRefresh={refresh} /> : selected ? (
+      {active ? <ChatThread key={active.id} conversation={active} profile={profile} activityIntent={activityIntent?.conversationId === active.id ? activityIntent : null} onBack={() => { setActivityIntent(null); setSelected(null); }} onRefresh={refresh} /> : selected ? (
         <section className="chat-thread thread-loading" aria-label="Opening conversation">
           <IconButton label="Back to messages" className="opening-back" onClick={() => setSelected(null)}><ArrowLeft size={23} /></IconButton>
           {openError ? <div className="opening-error"><ErrorNote text={openError} /><button className="primary" onClick={() => setRetry(value => value + 1)}>Retry</button></div> : <Spinner />}

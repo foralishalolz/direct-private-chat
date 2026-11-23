@@ -10,7 +10,8 @@
 
 import { BASE_ICE, relay } from "./turn";
 
-export type CallKind = "audio" | "video";
+/** Calls are audio-only in 2.13: the video path was removed on purpose. */
+export type CallKind = "audio";
 export type CallStatus = "ringing" | "active" | "declined" | "missed" | "ended" | "failed";
 
 export type CallRow = {
@@ -55,28 +56,33 @@ export function mediaSupported() {
   return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof window !== "undefined" && "RTCPeerConnection" in window;
 }
 
-export async function openMedia(kind: CallKind): Promise<MediaStream> {
+/**
+ * Call audio only. Voice is the point: the same bandwidth that would carry a
+ * 360p video frame instead carries a wideband, echo-cancelled audio stream, so
+ * the call holds up on a weak signal and never asks for the camera.
+ */
+export async function openMedia(): Promise<MediaStream> {
   if (!mediaSupported()) throw new Error("This browser cannot make calls.");
-  const constraints: MediaStreamConstraints = kind === "video"
-    ? {
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } },
-      }
-    : { audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false };
+  // Prefer 48 kHz, stereo-capable voice with the OS echo canceller on.
+  const preferred: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    channelCount: { ideal: 1 },
+    sampleRate: { ideal: 48000 },
+    sampleSize: { ideal: 16 },
+  };
   try {
-    return await navigator.mediaDevices.getUserMedia(constraints);
+    return await navigator.mediaDevices.getUserMedia({ audio: preferred, video: false });
   } catch (cause) {
     const name = (cause as { name?: string })?.name;
-    if (name === "NotAllowedError" || name === "SecurityError") throw new Error(kind === "video" ? "Camera and microphone are blocked. Allow them in your browser to call." : "Microphone is blocked. Allow it in your browser to call.");
-    if (name === "NotFoundError" || name === "OverconstrainedError") {
-      // Falling back to audio keeps a video call usable on devices without a camera.
-      if (kind === "video") {
-        if (name === "NotFoundError") throw new Error("No camera or microphone was found on this device.");
-        try { return await navigator.mediaDevices.getUserMedia({ audio: true, video: { facingMode: "user" } }); } catch { /* fall through */ }
-      }
-      throw new Error("No microphone was found on this device.");
+    if (name === "NotAllowedError" || name === "SecurityError") throw new Error("Microphone is blocked. Allow it in your browser to make a call.");
+    if (name === "OverconstrainedError") {
+      // Some phones reject the sample-rate hints; plain audio still works.
+      try { return await navigator.mediaDevices.getUserMedia({ audio: true, video: false }); } catch { /* fall through */ }
     }
-    if (name === "NotReadableError") throw new Error("Another app is using your camera or microphone.");
+    if (name === "NotFoundError") throw new Error("No microphone was found on this device.");
+    if (name === "NotReadableError") throw new Error("Another app is using your microphone.");
     throw new Error("Could not start the call on this device.");
   }
 }
@@ -160,7 +166,7 @@ export class CallLink {
   }
 
   async offer() {
-    const description = await this.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
+    const description = await this.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
     await this.pc.setLocalDescription(description);
     return this.pc.localDescription!;
   }

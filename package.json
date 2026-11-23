@@ -1,6 +1,6 @@
 {
   "name": "bitchat",
-  "version": "2.12.0",
+  "version": "2.13.0",
   "private": true,
   "engines": {
     "node": ">=22.12.0"
@@ -10,10 +10,12 @@
     "build": "next build --webpack && node scripts/build-shell.mjs",
     "start": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "gen:emoji": "node scripts/gen-emoji.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",
+    "emojibase-data": "18.0.0",
     "lucide-react": "1.45.0",
     "next": "16.4.6",
     "react": "19.2.8",
