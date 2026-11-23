@@ -1,0 +1,21 @@
+name: Published website check
+on:
+  push:
+    branches: [bitchat-production]
+    paths: [.github/workflows/published.yml, scripts/published-check.mjs, public/release.json]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  published:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "22"
+      - run: npm ci --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Verify deployed release, login and offline shell
+        run: node scripts/published-check.mjs
