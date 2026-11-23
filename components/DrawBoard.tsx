@@ -4,22 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Eraser, Redo2, Trash2, Undo2 } from "lucide-react";
 import { db, rpc } from "@/lib/supabase";
 import { haptic } from "@/lib/haptics";
+import { mergeBoard, type Point, type Stroke, type BoardEdit } from "@/lib/board";
+export type { Stroke } from "@/lib/board";
 import { errorText, label, type Conversation, type Profile } from "@/lib/types";
 import { ErrorNote, IconButton, Modal, Spinner } from "./UI";
 
-type Point = [x: number, y: number];
-export type Stroke = { id: string; by: string; color: string; width: number; points: Point[] };
-
 const COLORS = ["#ff6ea8", "#c9b6ff", "#7fe3c8", "#ffd479", "#8fc8ff", "#f2f0f6"];
 const WIDTHS = [3, 6, 11];
-const MAX_STROKES = 380;
 const MAX_POINTS = 900;
 
 /**
  * A shared canvas. Both people draw on the same list of strokes and every
  * change is written back to `drawing_board`, so it appears live on the other
  * screen. Either side can undo, erase one stroke by tapping it, or clear it —
- * last write wins, which is exactly what you want for two people doodling.
+ * changes are merged by stroke so concurrent edits to different strokes survive.
  */
 export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profile; onClose: () => void }) {
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -33,13 +31,29 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
   const canvas = useRef<HTMLCanvasElement>(null);
   const live = useRef<Stroke[]>([]);
   const drawing = useRef<{ id: string; points: Point[] } | null>(null);
-  const dirty = useRef(false);
+  const base = useRef<Stroke[]>([]);
+  const pending = useRef(new Map<string, BoardEdit>());
   const savingRef = useRef(false);
   const alive = useRef(true);
   const remote = useRef<string>("");
   const version = useRef(0);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const update = (next: Stroke[]) => { live.current = next; setStrokes(next); };
+  const render = useCallback(() => {
+    const next = mergeBoard(base.current, pending.current);
+    live.current = next;
+    if (alive.current) setStrokes(next);
+  }, []);
+  const applyRemote = useCallback((row: { strokes: Stroke[]; updated_at?: string }) => {
+    if (remote.current && (!row.updated_at || Date.parse(row.updated_at) < Date.parse(remote.current))) { render(); return; }
+    remote.current = row.updated_at ?? remote.current;
+    base.current = row.strokes;
+    render();
+  }, [render]);
+  const edit = (id: string, stroke: Stroke | null) => {
+    version.current++;
+    pending.current.set(id, { stroke, version: version.current });
+    render();
+  };
 
 
   const paint = useCallback(() => {
@@ -87,15 +101,14 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
       if (result.error) throw result.error;
       if (!alive.current) return;
       const rows = (result.data?.strokes as Stroke[] | undefined) ?? [];
-      remote.current = result.data?.updated_at ?? "";
-      if (!dirty.current && !drawing.current) update(rows);
-      setError("");
+      applyRemote({ strokes: rows, updated_at: result.data?.updated_at });
+      if (!pending.current.size) setError("");
     } catch (cause) {
       if (alive.current) setError(errorText(cause));
     } finally {
       if (alive.current) setLoading(false);
     }
-  }, [c.id]);
+  }, [c.id, applyRemote]);
 
   useEffect(() => {
     alive.current = true;
@@ -104,39 +117,39 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
     const channel = client.channel("board:" + c.id)
       .on("postgres_changes", { event: "*", schema: "public", table: "drawing_board", filter: "conversation_id=eq." + c.id }, payload => {
         const row = payload.new as { strokes?: Stroke[]; updated_at?: string; updated_by?: string } | null;
-        // Ignore the echo of my own save; adopt anything newer from them.
-        if (!row?.strokes || row.updated_at === remote.current || row.updated_by === p.id) return;
-        remote.current = row.updated_at ?? "";
-        if (!drawing.current && !dirty.current) update(row.strokes);
+        if (!row?.strokes) return;
+        applyRemote({ strokes: row.strokes, updated_at: row.updated_at });
       })
-      .subscribe();
-    return () => { alive.current = false; void client.removeChannel(channel); };
-  }, [c.id, p.id, load]);
+      .subscribe(status => { if (status === "SUBSCRIBED") void load(); });
+    const poll = setInterval(() => { if (document.visibilityState === "visible") void load(); }, 8000);
+    return () => { alive.current = false; clearInterval(poll); void client.removeChannel(channel); };
+  }, [c.id, load, applyRemote]);
 
-  // Save on a short debounce so a long stroke is one round trip, not fifty.
+  // Send only changed strokes; the server serializes patches per board.
   const flush = useCallback(async () => {
-    if (savingRef.current || !dirty.current) return;
+    if (savingRef.current || pending.current.size === 0) return;
     savingRef.current = true;
     if (alive.current) setSaving(true);
-    const savingVersion = version.current;
+    const snapshot = new Map(pending.current);
+    let succeeded = false;
     try {
-      const payload = live.current.slice(-MAX_STROKES).map(stroke => ({ ...stroke, points: stroke.points.slice(-MAX_POINTS) }));
-      const result = await rpc<{ updated_at: string }>("save_board", { p_conversation: c.id, p_strokes: payload, p_closed: false });
-      remote.current = result?.updated_at ?? remote.current;
-      if (version.current === savingVersion) dirty.current = false;
+      const upserts = [...snapshot.values()].flatMap(({ stroke }) => stroke ? [{ ...stroke, points: stroke.points.slice(0, MAX_POINTS) }] : []);
+      const remove = [...snapshot.entries()].filter(([, value]) => !value.stroke).map(([id]) => id);
+      const result = await rpc<{ strokes: Stroke[]; updated_at: string }>("edit_board", { p_conversation: c.id, p_upserts: upserts, p_remove: remove });
+      for (const [id, sent] of snapshot) if (pending.current.get(id)?.version === sent.version) pending.current.delete(id);
+      applyRemote(result);
+      succeeded = true;
       if (alive.current) setError("");
     } catch (cause) {
       if (alive.current) setError(errorText(cause));
     } finally {
       savingRef.current = false;
       if (alive.current) setSaving(false);
-      if (dirty.current && version.current !== savingVersion) saveTimer.current = setTimeout(() => { saveTimer.current = null; void flush(); }, 250);
+      if (succeeded && pending.current.size && !saveTimer.current) saveTimer.current = setTimeout(() => { saveTimer.current = null; void flush(); }, 250);
     }
-  }, [c.id]);
+  }, [c.id, applyRemote]);
 
   const schedule = useCallback(() => {
-    dirty.current = true;
-    version.current++;
     if (!saveTimer.current) saveTimer.current = setTimeout(() => { saveTimer.current = null; void flush(); }, 250);
   }, [flush]);
 
@@ -154,7 +167,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
       // Tap a stroke to remove it — the partner sees it vanish too.
       const target = findStroke(live.current, at, 0.045);
       if (target) {
-        update(live.current.filter(stroke => stroke.id !== target));
+        edit(target, null);
         setRedo([]);
         haptic("light");
         schedule();
@@ -162,7 +175,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
       return;
     }
     drawing.current = { id: crypto.randomUUID(), points: [at] };
-    update([...live.current, { id: drawing.current.id, by: p.id, color, width, points: [...drawing.current.points] }]);
+    edit(drawing.current.id, { id: drawing.current.id, by: p.id, color, width, points: [...drawing.current.points] });
     setRedo([]);
     schedule();
   }
@@ -173,8 +186,10 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
     const stroke = drawing.current;
     const last = stroke.points.at(-1);
     if (last && Math.hypot(at[0] - last[0], at[1] - last[1]) < 0.004) return;
+    if (stroke.points.length >= MAX_POINTS) return;
     stroke.points.push(at);
-    update(live.current.map(item => item.id === stroke.id ? { ...item, points: [...stroke.points] } : item));
+    const current = live.current.find(item => item.id === stroke.id);
+    if (current) edit(stroke.id, { ...current, points: [...stroke.points] });
     schedule();
   }
 
@@ -187,7 +202,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
   function undo() {
     const last = live.current.at(-1);
     if (!last) return;
-    update(live.current.slice(0, -1));
+    edit(last.id, null);
     setRedo(list => [...list, last].slice(-40));
     haptic("light");
     schedule();
@@ -196,7 +211,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
   function redoLast() {
     const next = redo.at(-1);
     if (!next) return;
-    update([...live.current, next]);
+    edit(next.id, next);
     setRedo(list => list.slice(0, -1));
     schedule();
   }
@@ -205,7 +220,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
     if (!live.current.length) return;
     // Clearing is reversible on this side; the partner sees a blank canvas.
     setRedo(live.current.slice(-40));
-    update([]);
+    for (const stroke of live.current) edit(stroke.id, null);
     haptic("success");
     schedule();
   }
@@ -220,7 +235,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
       </div>
       <div className={"board-canvas" + (erase ? " erasing" : "")}>
         {loading && <div className="board-loading"><Spinner/></div>}
-        <canvas ref={canvas} aria-label="Shared drawing canvas" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up} style={{ touchAction: "none" }}/>
+        <canvas ref={canvas} aria-label="Shared drawing canvas" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} style={{ touchAction: "none" }}/>
         {!loading && !strokes.length && <p className="board-hint">Draw something only they would understand.</p>}
       </div>
       <div className="board-tools">
@@ -235,7 +250,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
       </div>
       <ErrorNote text={error}/>
       {error && <button onClick={() => void flush()}>Retry saving</button>}
-      <small className="board-note">Both of you can draw, undo or clear. Simultaneous edits may overwrite each other; take turns for important drawings.</small>
+      <small className="board-note">Both of you can draw, erase, undo or clear. Different strokes are merged live.</small>
     </div>
   </Modal>;
 }

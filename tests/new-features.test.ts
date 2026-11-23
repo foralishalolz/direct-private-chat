@@ -16,3 +16,14 @@ test("eraser finds strokes between recorded points", () => {
   assert.equal(findStroke(strokes, [0.5, 0.5], 0.04), "line");
   assert.equal(findStroke(strokes, [0.1, 0.9], 0.04), null);
 });
+
+test("pending board edits merge with unrelated server strokes", async () => {
+  const { mergeBoard } = await import("../lib/board");
+  const a: Stroke = { id: "a", by: "1", color: "#ffffff", width: 3, points: [[0, 0]] };
+  const b: Stroke = { ...a, id: "b", by: "2" };
+  const pending = new Map([["a", { stroke: { ...a, points: [[0.5, 0.5]] as [number, number][] }, version: 1 }]]);
+  const merged = mergeBoard([a, b], pending);
+  assert.deepEqual(merged.map(s => s.id).sort(), ["a", "b"]);
+  assert.deepEqual(merged.find(s => s.id === "a")?.points, [[0.5, 0.5]]);
+  assert.deepEqual(mergeBoard([a, b], new Map([["a", { stroke: null, version: 2 }]])).map(s => s.id), ["b"]);
+});

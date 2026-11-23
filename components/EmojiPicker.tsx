@@ -1,10 +1,10 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import { EMOJI_GROUPS, EMOJI_ROWS } from "@/lib/emoji-data";
 
 /**
- * All 1,600+ emoji: one vertically scrolling sheet split into categories, with
+ * Nearly 4,000 emoji and skin-tone variants: one vertically scrolling sheet split into categories, with
  * a pinning tab strip and search that only appears when you ask for it. The
  * grid is memoised so typing in the composer never re-renders it.
  */
@@ -51,26 +51,12 @@ export default memo(function EmojiPicker({ recent, onPick }: Props) {
     return found;
   }, [needle]);
 
-  // Scrolling highlights the tab; tapping a tab scrolls to that section.
-  useEffect(() => {
-    if (hits || !jumping.current) return;
-    const box = scroller.current;
-    if (!box) return;
-    const at = box.scrollTop + 14;
-    let current = "love";
-    for (const name of CATEGORIES) {
-      const node = sections.current[name];
-      if (node && node.offsetTop - 12 <= at) current = name;
-    }
-    setActive(current);
-  }, [hits, active]);
-
   function jump(name: string) {
     setQuery(""); setSearchOpen(false); setActive(name);
     const node = sections.current[name], box = scroller.current;
     if (!node || !box) return;
     jumping.current = true;
-    box.scrollTo({ top: Math.max(0, node.offsetTop - 12), behavior: "smooth" });
+    box.scrollTo({ top: Math.max(0, box.scrollTop + node.getBoundingClientRect().top - box.getBoundingClientRect().top - 4), behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
     setTimeout(() => { jumping.current = false; }, 420);
   }
 
@@ -91,7 +77,7 @@ export default memo(function EmojiPicker({ recent, onPick }: Props) {
         </>}
     </div>
 
-    <div className="emoji-scroll" ref={scroller} onScroll={() => { if (!jumping.current && !hits) { const box = scroller.current; if (!box) return; const at = box.scrollTop + 14; let current = "love"; for (const name of CATEGORIES) { const node = sections.current[name]; if (node && node.offsetTop - 12 <= at) current = name; } if (current !== active) setActive(current); } }}>
+    <div className="emoji-scroll" ref={scroller} onScroll={() => { if (!jumping.current && !hits) { const box = scroller.current; if (!box) return; const at = box.getBoundingClientRect().top + 18; let current = "love"; for (const name of CATEGORIES) { const node = sections.current[name]; if (node && node.getBoundingClientRect().top <= at) current = name; } if (current !== active) setActive(current); } }}>
       {hits ? (hits.length
         ? <div className="emoji-grid">{hits.map((glyph, index) => <button key={glyph + index} className="emoji-cell" aria-label={glyph} onClick={() => onPick(glyph)}>{glyph}</button>)}</div>
         : <p className="emoji-empty">No emoji matches “{query.trim()}”.</p>)
