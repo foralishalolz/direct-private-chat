@@ -796,3 +796,14 @@ button.pressed { transform: scale(.965); }
 .saved-open { margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11px; padding: 6px 11px; border-radius: 11px; background: #ffffff0d; border: 1px solid #ffffff16; color: #e6dcf2; }
 .saved-empty { font-size: 12.5px; line-height: 1.6; padding: 22px 4px; text-align: center; }
 .saved-note { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #857a9c; margin-top: 14px; }
+
+/* --- Call relay settings -------------------------------------------------- */
+.device-setting small { display: block; font-size: 10px; line-height: 1.35; color: #8d82a6; margin-top: 2px; }
+.device-setting[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+.device-setting > svg:last-child { transition: transform .22s cubic-bezier(.34,1.56,.64,1); margin-left: auto; }
+.relay-form { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 8px; animation: sheet-in .24s ease-out; }
+.relay-form p { font-size: 11px; line-height: 1.55; }
+.relay-form input { width: 100%; font-size: 12.5px; padding: 10px 12px; border-radius: 12px; background: #ffffff0a; border: 1px solid #ffffff17; color: #ece5f5; }
+.relay-form .row.gap { gap: 8px; }
+.relay-form .action-status { font-size: 11px; line-height: 1.5; color: #b7a9d0; min-height: 1em; }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }

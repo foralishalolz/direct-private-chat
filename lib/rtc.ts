@@ -8,6 +8,8 @@
  * never stored by us.
  */
 
+import { BASE_ICE, relay } from "./turn";
+
 export type CallKind = "audio" | "video";
 export type CallStatus = "ringing" | "active" | "declined" | "missed" | "ended" | "failed";
 
@@ -35,10 +37,9 @@ export type Signal =
 /** Free STUN keeps most home networks connected; a TURN server can be added by
  *  setting NEXT_PUBLIC_TURN_URL / NEXT_PUBLIC_TURN_USER / NEXT_PUBLIC_TURN_PASS. */
 export function iceServers(): RTCIceServer[] {
-  const servers: RTCIceServer[] = [
-    { urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] },
-    { urls: ["stun:stun.cloudflare.com:3478"] },
-  ];
+  // Device-local relay first (it is the only path that survives carrier NAT),
+  // then an optional build-time relay, then the public STUN pool.
+  const servers: RTCIceServer[] = [...relay(), ...BASE_ICE];
   const url = process.env.NEXT_PUBLIC_TURN_URL;
   if (url) {
     servers.push({

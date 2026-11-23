@@ -56,6 +56,12 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   const [elapsed, setElapsed] = useState(0);
 
   const link = useRef<CallLink | null>(null);
+  // Candidates can arrive before the callee has answered, i.e. before a
+  // CallLink exists. Dropping them makes the caller unreachable on strict
+  // networks, so they wait here and are replayed once the link is built.
+  const early = useRef<RTCIceCandidateInit[]>([]);
+  /** True from the moment we answer a call until its link exists. */
+  const answering = useRef(false);
   const callRef = useRef<CallRow | null>(null);
   const phaseRef = useRef<Phase>("idle");
   const localRef = useRef<MediaStream | null>(null);
@@ -82,6 +88,8 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     ringTimer.current = null;
     link.current?.close();
     link.current = null;
+    early.current.length = 0;
+    answering.current = false;
     localRef.current?.getTracks().forEach(track => { try { track.stop(); } catch {} });
     localRef.current = null;
     pendingOffer.current = null;
@@ -122,6 +130,8 @@ export function useCall(conversationId: string | null, userId: string): CallSess
       onRemote: stream => { if (alive.current) setRemote(new MediaStream(stream.getTracks())); },
       onStats: snapshot => { if (alive.current) setStats(snapshot); },
     }, userId);
+    const queued = early.current.splice(0);
+    for (const candidate of queued) void link.current.candidate(candidate).catch(() => {});
     return link.current;
   }, [finish, signal, sync, userId]);
 
@@ -137,7 +147,8 @@ export function useCall(conversationId: string | null, userId: string): CallSess
       if (frame.type === "offer") {
         const description: RTCSessionDescriptionInit = { type: "offer", sdp: frame.sdp };
         pendingOffer.current = description;
-        if (phaseRef.current === "connecting" || phaseRef.current === "active") {
+        if (phaseRef.current === "connecting" || phaseRef.current === "active" || answering.current) {
+          answering.current = false;
           const peer = ensureLink();
           await peer.answer(description).catch(() => {});
           pendingOffer.current = null;
@@ -151,7 +162,11 @@ export function useCall(conversationId: string | null, userId: string): CallSess
         return;
       }
       if (frame.type === "candidate") {
-        await link.current?.candidate(frame.candidate).catch(() => {});
+        if (!link.current) {
+          if (early.current.length < 200) early.current.push(frame.candidate);
+          return;
+        }
+        await link.current.candidate(frame.candidate).catch(() => {});
         return;
       }
       if (frame.type === "ready") {
@@ -230,6 +245,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     const current = callRef.current;
     if (!current || phaseRef.current !== "ringing") return;
     setError(""); setEnded(null); setOutgoing(false); sync("connecting");
+    answering.current = true;
     try {
       const stream = await openMedia(current.kind);
       if (!alive.current) { stream.getTracks().forEach(track => track.stop()); return; }

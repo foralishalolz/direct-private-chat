@@ -1,4 +1,4 @@
-# BitchAt 2.10
+# BitchAt 2.12
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
 
@@ -71,6 +71,22 @@ Kiss/hug requests include a reply action that preserves the text draft. Muahh, I
 Slow sends remain visible immediately in the existing bounded IndexedDB outbox. New drafts drain immediately after an in-flight send finishes, with stable UUID retries and account-level ordering. Inbox previews update locally instead of waiting for a full HTTP snapshot; delayed responses retain newer previews, read markers, and archive choices. Realtime HTTP reconciliation and local cache writes are coalesced. Older iOS browsers without AbortSignal.any keep request cancellation and deadlines. Rapid sticker saves use a transaction-scoped monotonic timestamp so FIFO eviction remains deterministic even within one millisecond.
 
 The inbox bell opens notification settings directly. Permission is requested only by tapping Message alerts; the existing Supabase Web Push queue and service worker handle background delivery. The browser checks cover opt-in, failure rollback, slow sends, modal gestures, reduced motion, data saver, couple matching, and permission boundaries. Physical-device notification delivery still requires supported OS/browser settings; mobile browser simulation does not verify the phone's notification center.
+
+## Version 2.12
+
+Calling, pinned messages, saved messages and a faster native shell.
+
+**Calls.** One-to-one audio and video calls over WebRTC. The media path is peer to peer (DTLS-SRTP) and nothing is recorded or stored. Signaling never goes client to client: `call_signal()` relays each offer/answer/ICE frame into the private `call:<conversation>` broadcast topic, and only a member of that conversation can read it. Call state itself lives in `public.calls` (ringing → active → ended/declined/missed/failed) with `start_call`, `answer_call`, `end_call` and `call_history`. A ringing call moves 90 seconds of silence to *missed*; a second call in the same chat is refused while one is ringing or active. Candidates that arrive before the callee answers are buffered and replayed, and a duplicate `ready` cannot produce a second offer.
+
+**Reaching a locked phone.** Ringing calls reuse the existing push queue with a `kind` column, separate call subscriptions per endpoint, a high-urgency 45-second payload and `Answer`/`Decline` actions. The service worker posts `bitchat-open-call`; a cold launch opens `/?call=…&chat=…&account=…&accept=1|decline=1`. The call payload carries ids only — no names, text or media.
+
+**Relay.** Public STUN is always included. Two phones on mobile data often need a TURN relay, so Profile → *Call relay* stores a per-device relay (address, username, password) in localStorage, tests it with a real allocation, and refuses to save an address or credential the relay rejects. It is never bundled and never sent to the server. `NEXT_PUBLIC_TURN_URL`/`_USER`/`_PASS` remain available for a build-wide relay, and the CSP now allows `stun:`/`turn:`/`turns:` in `connect-src`.
+
+**Pins and saved messages.** Any message can be pinned (25 per conversation) with a pinned bar, paging and jump-to-message. *Save* keeps a message in `Saved` on this device only (IndexedDB, 300 newest, searchable, removable) — no new table, no upload.
+
+**Fixes and feel.** The emoji/tool tray now closes on every dismissal path (outside tap, Escape, send, switching tools, reply bar, focusing the field) instead of only via its own toggle. `formatDuration(NaN)` no longer renders `NaN:NaN`. Motion uses spring curves with edge-swipe back, pull-to-refresh, rail tuck-away on phones, and haptics on send, save and call actions.
+
+**Verification.** `npm run typecheck`, `npm test` (50 tests), `npm run build`, and the migration applied to the connected project. Relayed calls between two real phones on mobile data are **not** covered by CI and still need a manual check with a configured relay.
 
 ## Version 2.10
 

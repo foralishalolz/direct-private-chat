@@ -51,6 +51,14 @@ export default function ChatThread({conversation:c,profile:p,onBack,onRefresh}:{
  const pinnedIds=useMemo(()=>new Set(pinState.pins.map(pin=>pin.message_id)),[pinState.pins]);
  const jumpTo=useCallback((id:string)=>{const node=document.getElementById("m-"+id);node?.scrollIntoView({behavior:window.matchMedia("(prefers-reduced-motion: reduce)").matches?"instant":"smooth",block:"center"});node?.classList.add("pin-flash");setTimeout(()=>node?.classList.remove("pin-flash"),1600);},[]);
  const [callOpen,setCallOpen]=useState(false);
+ // A home-screen shortcut or a notification may ask for a specific panel.
+ useEffect(()=>{
+  const wanted=new URLSearchParams(window.location.search).get("open");
+  if(wanted==="us")setPanel("moment");
+  const listener=(event:Event)=>{const detail=(event as CustomEvent<{tab?:ActivityTab}>).detail;if(detail?.tab)setPanel(detail.tab);};
+  window.addEventListener("bitchat-open-tab",listener);
+  return()=>window.removeEventListener("bitchat-open-tab",listener);
+ },[]);
  const [reply,setReply]=useState<Message|null>(null),[menu,setMenu]=useState(false),[panel,setPanel]=useState<ActivityTab|null>(null),[capture,setCapture]=useState<"voice"|"camera"|"sticker"|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(""),[now,setNow]=useState(Date.now()),[jump,setJump]=useState(false),[exporting,setExporting]=useState(false),[miss,setMiss]=useState(false);
  const scroll=useRef<HTMLDivElement>(null),file=useRef<HTMLInputElement>(null),near=useRef(true),initial=useRef(true),previous=useRef(""),anchor=useRef<{id:string;top:number}|null>(null),alive=useRef(true),readAt=useRef(""),exportAbort=useRef<AbortController|null>(null),affectionLock=useRef(false);
  const ids=useMemo(()=>state.messages.filter(m=>!m.status).map(m=>m.id),[state.messages]);

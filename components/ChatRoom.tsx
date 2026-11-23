@@ -63,7 +63,10 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
     if (wanted === "journal") setModal("journal");
     if (wanted === "profile") setModal("profile");
     if (wanted === "new") openDiscover();
-  }, []);
+    // "Us" needs a conversation, so land on the first couple chat and let the
+    // thread open its own panel.
+    if (wanted === "us") setSelected(current => current ?? items.find(row => row.kind === "direct")?.id ?? null);
+  }, [items]);
   const open = (id: string | null) => { haptic("light"); setSelected(id); };
   // Answer / decline from a notification or a `?call=` launch.
   useEffect(() => {
