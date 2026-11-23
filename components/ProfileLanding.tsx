@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { readUsername } from "@/lib/deeplink";
+import { usernameFromLocation } from "@/lib/deeplink";
 import { db } from "@/lib/supabase";
 
 /**
@@ -12,8 +12,7 @@ import { db } from "@/lib/supabase";
 export default function ProfileLanding() {
   const [handle, setHandle] = useState("");
   useEffect(() => {
-    const path = window.location.pathname.match(/^\/u\/([^/]+)\/?$/);
-    const found = readUsername(path ? path[1] : "");
+    const found = usernameFromLocation();
     setHandle(found);
     // A signed-in visitor should land on the profile, not on this doorway.
     if (!found) return;

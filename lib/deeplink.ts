@@ -21,12 +21,12 @@ export function readUsername(value: string | null | undefined) {
   return PATTERN.test(name) ? name : "";
 }
 
-function fromLocation(): string {
+export function usernameFromLocation(): string {
   if (typeof window === "undefined") return "";
   const url = new URL(window.location.href);
   const path = url.pathname.match(/^\/u\/([^/]+)\/?$/);
   if (path) return readUsername(path[1]);
-  return readUsername(url.searchParams.get("u"));
+  return readUsername(url.searchParams.get("u") || url.searchParams.get("username"));
 }
 
 /** Persist the target across the login screen, which unmounts the app. */
@@ -42,7 +42,7 @@ export function useDeepLink(onUser: (username: string) => void, ready: boolean) 
   callback.current = onUser;
   useEffect(() => {
     if (!ready) return;
-    const direct = fromLocation();
+    const direct = usernameFromLocation();
     const pending = takeRememberedUser();
     const target = direct || pending;
     if (!target) return;
