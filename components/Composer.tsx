@@ -1,15 +1,17 @@
 "use client";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Mic, Music2, Phone, Plus, Smile, Sticker, Video, X } from "lucide-react";
+import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Link2, Mic, Music2, Phone, Plus, Smile, Sticker, Video, X } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
+import {normalizeReelUrl} from "@/lib/reels";
 import { AFFECTIONS, QUICK_AFFECTIONS, type AffectionId } from "@/lib/affection";
 import { errorText, type Message } from "@/lib/types";
-import { ErrorNote, IconButton, Spinner } from "./UI";
+import { ErrorNote, IconButton, Modal, Spinner } from "./UI";
 
 export type ComposerTool = "media" | "video" | "audio" | "camera" | "sticker" | "capsules" | "polls" | "games" | "call";
 
 const RECENT_KEY = "bitchat-emoji-recent";
 const TOOLS = [
+  { id: "link", label: "Link", Icon: Link2 },
   { id: "media", label: "Photo", Icon: ImagePlus },
   { id: "video", label: "Video", Icon: Video },
   { id: "camera", label: "Instant", Icon: Camera },
@@ -44,9 +46,11 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
   const [sheet, setSheet] = useState<"tools" | "emoji" | "affection" | null>(null);
   const [recent, setRecent] = useState<string[]>([]);
   const [error, setError] = useState("");
+  const [linkOpen, setLinkOpen] = useState(false), [linkValue, setLinkValue] = useState(""), [linkError, setLinkError] = useState("");
+  const linkSelection = useRef({start:0,end:0});
   const [sendingAffection, setSendingAffection] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null), root = useRef<HTMLDivElement>(null), picker = useRef<HTMLDivElement>(null);
-  const lock = useRef(false), alive = useRef(true), revision = useRef(0), affectionLock = useRef(false);
+  const lock = useRef(false), alive = useRef(true), revision = useRef(0), affectionLock = useRef(false), insertingEmoji = useRef(false);
 
   useEffect(() => { alive.current = true; setRecent(readRecent()); return () => { alive.current = false; }; }, []);
 
@@ -111,11 +115,24 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
     const next = text.slice(0, start) + value + text.slice(end);
     if (next.length > 4000) return;
     const current = ++revision.current;
-    setText(next); onTyping(); node?.focus({ preventScroll: true });
+    setText(next); onTyping(); insertingEmoji.current = true; node?.focus({ preventScroll: true }); insertingEmoji.current = false;
     const list = [value, ...recent.filter(item => item !== value)].slice(0, 16);
     setRecent(list);
     try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch {}
     requestAnimationFrame(() => { if (alive.current && revision.current === current) node?.setSelectionRange(start + value.length, start + value.length); });
+  }
+
+  function insertLink() {
+    try {
+      const link = normalizeReelUrl(linkValue), {start,end} = linkSelection.current;
+      const before = text.slice(0,start), after = text.slice(end);
+      const prefix = before && !/\s$/.test(before) ? " " : "", suffix = after && !/^\s/.test(after) ? " " : "";
+      const next = before + prefix + link + suffix + after;
+      if (next.length > 4000) throw new Error("The message is too long.");
+      const cursor = before.length + prefix.length + link.length + suffix.length;
+      revision.current++; setText(next); onTyping(); setLinkOpen(false); setLinkValue(""); setLinkError("");
+      requestAnimationFrame(() => { input.current?.focus({preventScroll:true}); input.current?.setSelectionRange(cursor,cursor); });
+    } catch (cause) { setLinkError(errorText(cause)); }
   }
 
   function keys(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -131,7 +148,7 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
     {sheet && <div className={"composer-sheet " + sheet} ref={picker} role="group" aria-label={sheet === "emoji" ? "Emoji" : sheet === "tools" ? "Attachments" : "Affection"}>
       <div className="composer-sheet-grip" aria-hidden="true"/>
       {sheet === "tools" && <div className="attachment-tray">
-        {TOOLS.filter(tool => tool.id !== "call" || showCall).map(({ id, label, Icon }) => <button key={id} disabled={busy} onClick={() => { close(); onTool(id); }}><Icon/><small>{label}</small></button>)}
+        {TOOLS.filter(tool => tool.id !== "call" || showCall).map(({ id, label, Icon }) => <button key={id} disabled={busy} onClick={() => { close(); if(id === "link") { linkSelection.current = {start:input.current?.selectionStart ?? text.length,end:input.current?.selectionEnd ?? text.length}; setLinkError(""); setLinkOpen(true); } else onTool(id); }}><Icon/><small>{label}</small></button>)}
       </div>}
 
       {sheet === "affection" && <div className="affection-tray" aria-label="Send affection">{AFFECTIONS.filter(item => QUICK_AFFECTIONS.includes(item.id)).map(item => <button key={item.id} disabled={sendingAffection} aria-label={"Send " + item.label.toLowerCase()} onClick={() => void sendAffection(item.id)}><span aria-hidden="true">{item.glyph}</span><small>{item.label}</small></button>)}</div>}
@@ -139,9 +156,10 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
       {sheet === "emoji" && <EmojiPicker recent={recent} onPick={insertEmoji}/>}
     </div>}
 
+    {linkOpen && <Modal title="Share a link" onClose={() => {setLinkOpen(false);setLinkError("");}}><form className="panel-pad link-compose" onSubmit={event=>{event.preventDefault();insertLink();}}><label htmlFor="share-url">Website, reel, video or music link</label><input id="share-url" type="url" inputMode="url" autoComplete="url" placeholder="https://…" maxLength={2048} value={linkValue} onChange={event=>{setLinkValue(event.target.value);setLinkError("");}} required/><small>Add the link to your message, then send it.</small><ErrorNote text={linkError}/><button className="primary full" type="submit">Add to message</button></form></Modal>}
     <form className="composer" onSubmit={event => { event.preventDefault(); void send(); }}>
       <IconButton label="Attachments" data-sheet-toggle aria-expanded={sheet === "tools"} className={sheet === "tools" ? "selected" : ""} onClick={() => toggleSheet("tools")}>{busy ? <Spinner/> : <Plus size={23}/>}</IconButton>
-      <textarea ref={input} rows={1} aria-label="Message" placeholder="Message…" value={text} maxLength={4000} autoComplete="on" autoCorrect="on" autoCapitalize="sentences" spellCheck onChange={event => { revision.current++; setText(event.target.value); onTyping(); }} onKeyDown={keys} onFocus={() => { if (sheet === "emoji") close(); }}/>
+      <textarea ref={input} rows={1} aria-label="Message" placeholder="Message…" value={text} maxLength={4000} autoComplete="on" autoCorrect="on" autoCapitalize="sentences" spellCheck onChange={event => { revision.current++; setText(event.target.value); onTyping(); }} onKeyDown={keys} onFocus={() => { if (sheet === "emoji" && !insertingEmoji.current) close(); }}/>
       <IconButton label="Emoji" data-sheet-toggle aria-expanded={sheet === "emoji"} className={"emoji-toggle " + (sheet === "emoji" ? "selected" : "")} onClick={() => toggleSheet("emoji")}><Smile size={20}/></IconButton>
       {text.trim()
         ? <button type="submit" className="send-button" aria-label="Send message" onPointerDown={event => { if (document.activeElement === input.current) event.preventDefault(); }}><ArrowUp size={22}/></button>

@@ -61,7 +61,7 @@ export default function DiscoverModal({ userId, onOpen, onClose, initialMode = "
     <div className="discover-modes">
       <button className={mode === "direct" ? "active" : ""} onClick={() => setMode("direct")}><Sparkles size={15} />People</button>
       <button aria-label="New group" className={mode === "group" ? "active" : ""} onClick={() => setMode("group")}><Users size={15} />Group</button>
-      <button className={mode === "join" ? "active" : ""} onClick={() => setMode("join")}><Link2 size={15} />Join</button>
+      <button aria-label="Join group" className={mode === "join" ? "active" : ""} onClick={() => setMode("join")}><Link2 size={15} />Join</button>
     </div>
 
     {mode === "join" ? <form className="join-form" onSubmit={e => { e.preventDefault(); void open(); }}>

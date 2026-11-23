@@ -18,6 +18,10 @@ export function reelEmbedUrl(input:string):string {
   else if(url.pathname==="/watch")id=url.searchParams.get("v");
  }
  if(id&&/^[a-zA-Z0-9_-]{11}$/.test(id))return `https://www.youtube.com/embed/${id}?playsinline=1`;
+ if(host==="open.spotify.com"){
+  const match=url.pathname.match(/^\/(track|album|playlist|episode|show)\/([A-Za-z0-9]+)\/?$/);
+  if(match)return `https://open.spotify.com/embed/${match[1]}/${match[2]}`;
+ }
  if(["instagram.com","www.instagram.com"].includes(host)){
   const match=url.pathname.match(/^\/(reel|p)\/([A-Za-z0-9_-]+)\/?/);
   if(match)return `https://www.instagram.com/${match[1]}/${match[2]}/embed/`;

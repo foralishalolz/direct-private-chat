@@ -118,7 +118,7 @@ test("emoji reactions are optimistic, replaceable, removable and rollback on fai
  await mock(page,false,false);await openChat(page);const bubble=page.locator(".message-row.own");
  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
  await page.route("**/rest/v1/rpc/set_reaction",async route=>{await gate;await route.fallback();},{times:1});
- await bubble.getByRole("button",{name:"React to message"}).click();await expect(page.getByRole("dialog",{name:"Reactions"}).locator(".reaction-grid button")).toHaveCount(24);
+ await bubble.getByRole("button",{name:"React to message"}).click();await expect(page.getByRole("dialog",{name:"Reactions"}).locator(".reaction-grid button")).toHaveCount(40);
  await page.getByRole("dialog",{name:"Reactions"}).getByRole("button",{name:"👍",exact:true}).click();await expect(bubble.locator(".message-reactions button")).toHaveAttribute("aria-pressed","true");
  release();await expect(page.getByRole("dialog",{name:"Reactions"})).toHaveCount(0);
  await bubble.getByRole("button",{name:"React to message"}).click();await page.getByRole("dialog",{name:"Reactions"}).getByRole("button",{name:"😂",exact:true}).click();await expect(page.getByRole("dialog",{name:"Reactions"})).toHaveCount(0);await expect(bubble.locator(".message-reactions button")).toContainText("😂");await expect(bubble.locator(".message-reactions button")).toHaveCount(1);
@@ -220,8 +220,8 @@ test("backgrounding releases the camera and resuming requires a fresh tap",async
 
 
 test("emoji insertion respects the caret and never splits a draft at its length limit",async({page})=>{
- await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Hello there");await input.evaluate((node:HTMLTextAreaElement)=>node.setSelectionRange(6,6));await page.getByRole("button",{name:"Emoji",exact:true}).click();await page.locator(".emoji-picker").getByRole("button",{name:"🫶",exact:true}).click();await expect(input).toHaveValue("Hello 🫶there");
- await input.fill("x".repeat(3999));await page.locator(".emoji-picker").getByRole("button",{name:"🫶",exact:true}).click();await expect(input).toHaveValue("x".repeat(3999));
+ await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Hello there");await input.evaluate((node:HTMLTextAreaElement)=>node.setSelectionRange(6,6));await page.getByRole("button",{name:"Emoji",exact:true}).click();await page.locator(".emoji-section").filter({has:page.getByRole("heading",{name:"Love",exact:true})}).getByRole("button",{name:"🫶",exact:true}).click();await expect(input).toHaveValue("Hello 🫶there");
+ await input.fill("x".repeat(3999));await page.locator(".emoji-section").filter({has:page.getByRole("heading",{name:"Love",exact:true})}).getByRole("button",{name:"🫶",exact:true}).click();await expect(input).toHaveValue("x".repeat(3999));
 });
 
 test("swipe reveals private chat actions without opening a conversation",async({page},info)=>{
@@ -351,7 +351,7 @@ async function pushDevice(page:Page){
 test("push opt-in registers one device and disabling removes it without another permission prompt",async({page})=>{
  await pushDevice(page);const calls=await mock(page);expect(await page.evaluate(()=>(window as unknown as {pushStats:{requests:number}}).pushStats.requests)).toBe(0);
  await page.getByRole("button",{name:"Profile",exact:true}).last().click();await page.getByRole("dialog",{name:"Profile",exact:true}).getByRole("button",{name:"Notifications",exact:true}).click();const toggle=page.getByRole("switch",{name:"Message alerts",exact:true});await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","true");
- expect(calls.find(c=>c.name==="register_push_subscription")?.body).toEqual({p_endpoint:"https://fcm.googleapis.com/fcm/send/test-device",p_p256dh:"B"+"A".repeat(86),p_auth:"A".repeat(22)});
+ expect(calls.find(c=>c.name==="register_push_subscription")?.body).toEqual({p_endpoint:"https://fcm.googleapis.com/fcm/send/test-device",p_p256dh:"B"+"A".repeat(86),p_auth:"A".repeat(22),p_kind:"message"});
  await toggle.click();await expect(toggle).toHaveAttribute("aria-checked","false");await expect.poll(()=>calls.filter(c=>c.name==="unregister_push_subscription").length).toBe(1);
  expect(await page.evaluate(()=>(window as unknown as {pushStats:unknown}).pushStats)).toEqual({requests:1,subscribed:1,unsubscribed:1});
 });

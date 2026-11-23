@@ -10,5 +10,6 @@ test('reel links convert known share URLs to embed endpoints',()=>{
  assert.equal(reelEmbedUrl('https://youtu.be/abcdefghijk?t=1'),'https://www.youtube.com/embed/abcdefghijk?playsinline=1');
  assert.equal(reelEmbedUrl('https://www.instagram.com/reel/Abc_123/'),'https://www.instagram.com/reel/Abc_123/embed/');
  assert.equal(reelEmbedUrl('https://www.tiktok.com/@person/video/12345'),'https://www.tiktok.com/embed/v2/12345');
+ assert.equal(reelEmbedUrl('https://open.spotify.com/track/abc123?si=x'),'https://open.spotify.com/embed/track/abc123');
  assert.equal(reelEmbedUrl('https://example.com/path'),'https://example.com/path');
 });

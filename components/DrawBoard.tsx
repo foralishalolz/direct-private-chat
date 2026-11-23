@@ -149,6 +149,12 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
     }
   }, [c.id, applyRemote]);
 
+  useEffect(() => {
+    const flushOnHide = () => { if (document.visibilityState === "hidden") { if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; } void flush(); } };
+    document.addEventListener("visibilitychange", flushOnHide);
+    return () => { document.removeEventListener("visibilitychange", flushOnHide); if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; } void flush(); };
+  }, [flush]);
+
   const schedule = useCallback(() => {
     if (!saveTimer.current) saveTimer.current = setTimeout(() => { saveTimer.current = null; void flush(); }, 250);
   }, [flush]);
@@ -237,7 +243,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
     if (!pending.current.size) onClose();
   }
 
-  return <Modal title="Draw" onClose={() => void closeBoard()} wide>
+  return <Modal title="Draw together" onClose={() => void closeBoard()} full>
     <div className="board-wrap">
       <div className="board-head">
         <span className="board-who">{label(p)} <i/> {label(partner)}</span>
@@ -249,7 +255,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
         {!loading && !strokes.length && <p className="board-hint">Draw together</p>}
       </div>
       <div className="board-tools">
-        <div className="board-colors" role="group" aria-label="Ink colour">{COLORS.map(value => <button key={value} aria-label={"Colour " + value} aria-pressed={!erase && color === value} className={!erase && color === value ? "on" : ""} style={{ background: value }} onClick={() => { setColor(value); setErase(false); }}/>)}</div>
+        <div className="board-colors" role="group" aria-label="Ink colour">{COLORS.map(value => <button key={value} aria-label={"Colour " + value} aria-pressed={!erase && color === value} className={!erase && color === value ? "on" : ""} style={{ "--swatch": value } as React.CSSProperties} onClick={() => { setColor(value); setErase(false); }}/>)}</div>
         <div className="board-widths" role="group" aria-label="Brush size">{WIDTHS.map(value => <button key={value} aria-label={value + " pixel brush"} aria-pressed={width === value} className={width === value ? "on" : ""} onClick={() => setWidth(value)}><i style={{ width: value + 3, height: value + 3 }}/></button>)}</div>
         <div className="board-actions">
           <IconButton label="Erase a stroke" className={erase ? "selected" : ""} aria-pressed={erase} onClick={() => setErase(!erase)}><Eraser size={19}/></IconButton>
