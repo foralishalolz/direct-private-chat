@@ -5,13 +5,14 @@ import { db, rpc } from "@/lib/supabase";
 import { haptic } from "@/lib/haptics";
 import { label, title, type Conversation, type Profile } from "@/lib/types";
 
-export type ActivityKind = "makeout" | "game" | "draw" | "wyr" | "kiss";
+export type ActivityKind = "makeout" | "game" | "draw" | "wyr" | "kiss" | "pet";
 
 const NAMES: Record<ActivityKind, { verb: string; icon: string }> = {
   makeout: { verb: "wants to make out", icon: "💋" },
   game: { verb: "started a game", icon: "🎮" },
   draw: { verb: "opened a drawing for you two", icon: "🎨" },
   wyr: { verb: "has a would-you-rather", icon: "🤔" },
+  pet: { verb: "opened your pet", icon: "🐾" },
   kiss: { verb: "sent you a kiss", icon: "💞" },
 };
 

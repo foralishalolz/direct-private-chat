@@ -58,7 +58,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const incoming = useIncomingCall(profile.id);
   const activity = useActivityPing(profile, items, (conversationId, kind: ActivityKind) => {
     setSelected(conversationId);
-    const tab = kind === "makeout" ? "makeout" : kind === "draw" ? "draw" : kind === "game" || kind === "wyr" ? "games" : kind === "kiss" ? "kiss" : "feels";
+    const tab = kind === "pet" ? "pet" : kind === "makeout" ? "makeout" : kind === "draw" ? "draw" : kind === "game" || kind === "wyr" ? "games" : kind === "kiss" ? "kiss" : "feels";
     setActivityIntent(current => ({ conversationId, tab, sequence: (current?.sequence ?? 0) + 1 }));
   });
   usePressFeedback();
@@ -162,7 +162,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
       <aside className="inbox">
         <header className="inbox-header">
           <div className="mobile-brand"><Brand small /></div>
-          <h1>Messages{unread > 0 && <span className="inbox-count">{unread}</span>}</h1>
+          <div className="home-title"><span>YOUR SPACE</span><h1>Messages{unread > 0 && <span className="inbox-count">{unread}</span>}</h1></div>
           <div className="inbox-header-actions"><IconButton label="Notifications" onClick={() => setModal("notifications")}><Bell size={21}/></IconButton><IconButton label="New message" className="new-chat-button" onClick={() => openDiscover()}><SquarePen size={22} /></IconButton></div>
         </header>
         <div className="inbox-search"><label className="input-icon"><Search size={18} aria-hidden="true" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
@@ -179,6 +179,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         <div className="pull-refresh" style={{ height: pull.pull }} aria-hidden={pull.pull === 0} role="status">
           {pull.busy ? <Spinner/> : pull.pull > 0 ? <span>{pull.pull >= 56 ? "Release to refresh" : "Pull to refresh"}</span> : null}
         </div>
+        <div className="inbox-list-label"><span>Chats</span><small>{unread ? unread + " unread" : "Your conversations"}</small></div>
         <div className="conversation-list" onScroll={tabs.onScroll}>
           {loading && <div className="inbox-skeleton" aria-label="Loading chats" role="status">{[0, 1, 2, 3].map(index => <div key={index}><span /><i /></div>)}</div>}
           {visible.map(conversation => <SwipeChat key={conversation.id} conversation={conversation} selected={conversation.id === selected} open={revealed === conversation.id} busy={archiving !== null} onReveal={setRevealed} onOpen={open} onArchive={(id, archived) => void archive(id, archived)} onDelete={id => setChatAction({ id, action: "clear" })} />)}

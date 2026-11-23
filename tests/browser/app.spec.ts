@@ -18,3 +18,20 @@ async function signedIn(page:Page){
 }
 test("inbox opens a chat, sends text, and shows message actions",async({page})=>{const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));await signedIn(page);await page.goto("/");await page.getByRole("button",{name:/Alex.*Hello/}).click();await expect(page.getByRole("textbox",{name:"Message",exact:true})).toBeVisible();await expect(page.locator(".message-text").filter({hasText:"Hello"})).toBeVisible();await page.getByRole("textbox",{name:"Message",exact:true}).fill("A real draft");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect(page.locator(".message-text").filter({hasText:"A real draft"})).toBeVisible();await page.getByRole("button",{name:"Message actions"}).last().click();await expect(page.getByRole("button",{name:"Reply",exact:true})).toBeVisible();await page.keyboard.press("Escape");expect(errors).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);});
 test("profile and journal dialogs close without breaking navigation",async({page})=>{await signedIn(page);await page.goto("/");await page.getByRole("button",{name:"Journal",exact:true}).last().click();await expect(page.getByRole("dialog",{name:"Journal"})).toBeVisible();await page.getByRole("textbox",{name:"Journal entry"}).fill("Private draft");await page.getByRole("button",{name:"Close",exact:true}).click();await expect(page.getByRole("dialog")).toHaveCount(0);await expect(page.getByRole("button",{name:/Alex.*Hello/})).toBeVisible();});
+test("shared pet and future names work within the phone viewport",async({page})=>{
+ await signedIn(page);
+ let pet:{name:string;species:string;feeds:number;plays:number;cuddles:number;last_action:string}|null=null;
+ let names:{id:string;name:string}[]=[];
+ await page.route("**/rest/v1/**",async(route)=>{
+   const path=new URL(route.request().url()).pathname;
+   if(path.endsWith('/couple_pet')) return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(pet)});
+   if(path.endsWith('/future_names')) return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(names)});
+   if(path.endsWith('/rpc/care_couple_pet')) {const a=route.request().postDataJSON();if(a.p_action==='adopt') pet={name:a.p_name,species:a.p_species,feeds:0,plays:0,cuddles:0,last_action:'adopt'};else if(pet && a.p_action==='feed') pet={...pet,feeds:pet.feeds+1,last_action:'feed'};return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(pet)});}
+   if(path.endsWith('/rpc/change_future_name')) {const a=route.request().postDataJSON();if(a.p_remove) names=names.filter(n=>n.id!==a.p_remove);else names.push({id:'name-1',name:a.p_name});return route.fulfill({status:200,contentType:'application/json',body:'null'});}
+   await route.fallback();
+ });
+ await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.getByRole('button',{name:'Play',exact:true}).first().click();
+ await page.getByRole('textbox',{name:'Add a name'}).fill('Robin');await page.getByRole('button',{name:'Add',exact:true}).click();await expect(page.getByText('Robin',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/Our pet/}).click();await page.getByRole('textbox',{name:'Pet name'}).fill('Mochi');await page.getByRole('button',{name:'Adopt'}).click();await expect(page.getByRole('heading',{name:'Mochi'})).toBeVisible();await page.getByRole('button',{name:/Feed/}).click();await expect(page.getByText('That was tasty!')).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});

@@ -171,3 +171,9 @@ Calls use browser WebRTC with audio only. A TURN relay remains optional but is s
 ### 2.15: Feels and more shared games
 
 Feels messages can be edited before sending. The play screen includes memory, future, guess, emoji and after-dark prompt rounds using the same shared-answer game flow. After-dark prompts are intended for consenting adults; either person can end a round. Makeout taps are sent in serial batches instead of dropping taps above the RPC batch limit. As before, activity popups require an online session, and audio calls still depend on browser support and network conditions; configure a TURN relay for better connectivity on restrictive networks.
+
+### 2.16: A shared little world
+
+The Play sheet includes a shared pet for direct chats: either member can adopt, feed, play with, cuddle, or rename it. Opening the pet also opens it for the other person when they are online; the pet and counters are stored per conversation. The shared names list can hold baby-name ideas, pet names, or other future ideas; either member may add or remove names. Both features use member-only database policies and fall back to periodic refresh if realtime updates are missed. They do not represent actual pregnancies or medical advice.
+
+The mobile shell now uses the visible viewport without desktop padding, with a simpler inbox and a more compact audio-only call screen. Calls still require a configured TURN service for the best chance of connecting on restrictive networks; no relay is bundled.

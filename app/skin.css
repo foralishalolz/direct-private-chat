@@ -926,3 +926,43 @@ button.pressed { transform: scale(.965); }
 .surprise-game { min-height:42px; padding:9px 13px; border-radius:14px; color:#ffe4a5; font-size:11px; font-weight:700; background:linear-gradient(135deg,#e7b86625,#d889e221); border:1px solid #ffe2a52b; transition:transform .18s var(--snap); }
 .surprise-game:active { transform:scale(.95); } .surprise-game:disabled { opacity:.5; }
 @media(prefers-reduced-motion:reduce) { .surprise-game { transition:none; } }
+
+/* Phone-first layout and a calmer home. Keep these overrides after the skin. */
+.home-title { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.home-title>span { font-size:9px; font-weight:700; color:#b6a9c7; letter-spacing:.15em; }
+.home-title h1 { line-height:1.1; }
+.inbox-list-label { display:flex; justify-content:space-between; padding:8px 24px 7px; color:#f2ecf7; font-weight:700; font-size:13px; }
+.inbox-list-label small { color:#a69cb3; font-weight:500; font-size:11px; }
+.conversation-list { min-height:0; }
+.shared-world { margin:18px 0; padding:18px; border:1px solid #ffffff20; border-radius:22px; background:linear-gradient(145deg,#ffffff10,#ffffff06); }
+.world-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.world-heading small { font-size:9px; letter-spacing:.12em; font-weight:700; color:#d2b9e2; }
+.world-heading h3 { margin:4px 0 0; font-size:18px; }
+.world-heading>span { font-size:27px; }
+.shared-world p { color:#c9bed3; font-size:12px; line-height:1.5; margin:10px 0; }
+.world-entry { width:100%; display:flex; align-items:center; gap:12px; padding:14px; margin:12px 0; border-radius:18px; background:#dbaaff18; border:1px solid #e5cbff27; text-align:left; color:#fff; }
+.world-entry>span:first-child { display:grid; place-items:center; width:44px; height:44px; border-radius:14px; background:#ffffff15; font-size:23px; }
+.world-entry>span:nth-child(2) { display:flex; flex:1; flex-direction:column; gap:4px; }.world-entry small { color:#cfc1dc; font-size:11px; }.world-entry>span:last-child { font-size:25px; color:#cebcdc; }
+.pet-choices { display:flex; gap:8px; margin:15px 0; }.pet-choices button { flex:1; min-height:65px; border-radius:16px; background:#ffffff0e; border:1px solid transparent; font-size:30px; }.pet-choices button[aria-pressed=true] { background:#d69dff2d; border-color:#e6c5ff88; }
+.world-form { display:flex; gap:8px; margin:12px 0; }.world-form input { min-width:0; flex:1; height:46px; padding:0 12px; border:1px solid #ffffff2a; border-radius:13px; background:#100c1b80; color:white; font-size:16px; }.world-form button { min-width:64px; padding:0 14px; border-radius:13px; }
+.pet-scene { display:grid; place-items:center; min-height:160px; margin:15px 0 0; border-radius:20px; background:radial-gradient(circle at 50% 70%,#f8b6dd49,transparent 48%),linear-gradient(135deg,#a487cf28,#78c6c51c); font-size:75px; }.shared-world .pet-caption { text-align:center; }
+.pet-actions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }.pet-actions button { display:flex; align-items:center; flex-direction:column; gap:4px; min-height:86px; padding:9px; border:1px solid #ffffff1c; border-radius:16px; background:#ffffff0c; }.pet-actions button span { font-size:24px; }.pet-actions button strong { font-size:12px; }.pet-actions button small { color:#bfb2cc; font-size:11px; }
+.world-link { color:#e8c0e8; font-size:12px; min-height:44px; padding:0 8px; }.name-list { display:flex; flex-wrap:wrap; gap:7px; }.name-list span { display:flex; align-items:center; gap:8px; border-radius:20px; background:#ffffff13; padding:3px 4px 3px 12px; font-size:12px; }.name-list button { display:grid; place-items:center; width:36px; height:36px; border-radius:50%; font-size:20px; color:#debed6; }
+.call-screen { min-height:0; }.call-stage { min-height:0; }.call-actions { flex:none; }.call-action { min-height:70px; }.call-minimize { min-width:44px; min-height:44px; }.call-state { font-size:15px; }.call-privacy { font-size:11px; }
+@media(max-width:760px) {
+ .app-shell { padding:0; gap:0; width:100%; height:var(--app-height,100dvh); }
+ .inbox { min-width:0; padding-bottom:calc(83px + env(safe-area-inset-bottom)); }
+ .inbox-header { height:calc(96px + env(safe-area-inset-top)); min-height:calc(96px + env(safe-area-inset-top)); padding:calc(17px + env(safe-area-inset-top)) 20px 12px; }
+ .inbox-header h1 { font-size:28px; letter-spacing:-.9px; }
+ .inbox-search { padding:3px 20px 14px; }
+ .recent-people { padding:0 20px 15px; }
+ .inbox-filters { margin:0; padding:0 20px 12px; overflow-x:auto; flex:none; scrollbar-width:none; }.inbox-filters button { flex:none; }
+ .inbox-group-actions { padding:0 20px 9px; overflow-x:auto; flex:none; }
+ .inbox-list-label { padding:6px 22px 5px; }
+ .conversation-list { overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+ .conversation-item .conversation { min-height:72px; padding:12px; }
+ .chat-thread { min-height:0; }.message-list { min-height:0; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+ .call-screen { top:var(--app-offset,0px); bottom:auto; height:var(--app-height,100dvh); }
+}
+@media(max-height:650px) and (max-width:760px) { .recent-people { display:none; }.call-rings { width:145px; height:145px; }.call-portrait .avatar { width:96px!important; height:96px!important; }.call-name { margin-top:8px; }.call-detail { display:none; } }
+@media(prefers-reduced-motion:reduce) { .world-entry,.pet-actions button { transition:none; } }

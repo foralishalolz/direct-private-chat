@@ -25,8 +25,9 @@ export default function CallSheet({ c, session, onClose }: {
   const connected = phase === "active";
 
   useEffect(() => {
-    void keepAwake().then(fn => { release.current = fn; });
-    return () => { release.current(); };
+    let active = true;
+    void keepAwake().then(fn => { if (active) release.current = fn; else fn(); });
+    return () => { active = false; release.current(); };
   }, []);
 
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function CallSheet({ c, session, onClose }: {
       <button className="call-minimize" aria-label="Minimise call" onClick={() => setExpanded(false)}><Minimize2 size={18}/></button>
       <div className="call-signal" role="status">
         {connected ? <Signal size={13}/> : phase === "connecting" ? <Spinner/> : <WifiOff size={13} className="call-signal-idle"/>}
-        <span>{connected ? (stats ? Math.round(stats.rtt) + " ms" : "Connected") : label}</span>
+        <span>{connected ? (stats?.rtt ? Math.round(stats.rtt) + " ms" : "Connected") : label}</span>
       </div>
       {connected && stats && <span className="call-quality" title={"Round-trip " + stats.rtt + " ms"}>
         <b style={{ width: Math.max(12, Math.min(100, 100 - Math.min(100, stats.loss * 14) - Math.min(70, stats.rtt / 6))) + "%" }}/>
@@ -102,7 +103,7 @@ export default function CallSheet({ c, session, onClose }: {
       </div>
       <h1 className="call-name">{partnerName}</h1>
       <p className={"call-state " + (connected ? "live" : "")}>{label}</p>
-      {connected && stats && <p className="call-detail">{stats.bitrate ? Math.round(stats.bitrate / 1000) + " kbps" : "wideband audio"} · {stats.loss ? stats.loss + "% loss" : "clear"}</p>}
+      {connected && stats && <p className="call-detail">{stats.bitrate ? Math.round(stats.bitrate / 1000) + " kbps" : "wideband audio"} · {stats.loss ? stats.loss + "% packet loss" : "Voice connected"}</p>}
       {error && <p className="call-error" role="alert">{error}</p>}
     </div>
 
@@ -115,6 +116,6 @@ export default function CallSheet({ c, session, onClose }: {
       <button className="call-action end" aria-label="End call" onClick={() => void session.hangup()}><PhoneOff size={26}/><small>End</small></button>
     </div>}
 
-    <p className="call-privacy">Peer-to-peer voice · nothing is recorded</p>
+    <p className="call-privacy">Voice call · audio only</p>
   </div></>;
 }
