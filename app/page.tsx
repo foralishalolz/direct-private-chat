@@ -10,6 +10,7 @@ import {clearMedia} from "@/lib/media";
 import {PrivacyProvider} from "@/hooks/usePrivacy";
 import {useOutbox} from "@/hooks/useOutbox";
 import {errorText,type Profile} from "@/lib/types";
+import {readUsername} from "@/lib/deeplink";
 import AuthScreen from "@/components/AuthScreen";
 import {Brand,ErrorNote,Spinner} from "@/components/UI";
 import InstallPrompt from "@/components/InstallPrompt";
@@ -17,6 +18,7 @@ const ChatRoom=dynamic(()=>import("@/components/ChatRoom"),{loading:()=> <div cl
 export default function Home(){
  const [session,setSession]=useState<Session|null>(null),[profile,setProfile]=useState<Profile|null>(null),[ready,setReady]=useState(false),[error,setError]=useState(""),[version,setVersion]=useState(0);
  useOutbox(session?.user.id);
+ useEffect(()=>{const path=window.location.pathname.match(/^\/u\/([^/]+)\/?$/);const shared=readUsername(path?path[1]:new URLSearchParams(window.location.search).get("u"));if(shared){try{sessionStorage.setItem("bitchat-open-user",shared);}catch{}}},[]);
  useEffect(()=>{let alive=true,authRevision=0,activeAccount:string|null=null;const client=db();
  const applySession=(next:Session|null)=>{if(!alive)return;const previous=activeAccount;activeAccount=next?.user.id??null;if(previous&&previous!==activeAccount)queueMicrotask(()=>{void disableNotifications(previous).catch(()=>{});});setSession(next);setReady(true);};
  void client.auth.getSession().then(({data,error})=>{if(alive&&authRevision===0){applySession(data.session);if(error)setError(errorText(error));}}).catch(cause=>{if(alive&&authRevision===0){setError(errorText(cause));setReady(true);}});

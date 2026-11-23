@@ -9,11 +9,11 @@ export function IconButton({label:aria,children,...props}:ButtonHTMLAttributes<H
  return <button type="button" aria-label={aria} title={aria} {...props} className={"icon-button "+(props.className??"")}>{children}</button>;
 }
 export function Spinner(){return <LoaderCircle className="spin" size={20} aria-label="Loading" role="status"/>;}
-export function Brand({small=false}:{small?:boolean}){return <span className={"brand "+(small?"small":"")}><span className="brand-mark"><MessageCircle size={small?21:30}/><Heart className="brand-heart" size={small?9:13} aria-hidden="true"/></span><span>BitchAt<span className="brand-dot">.</span></span></span>;}
+export function Brand({small=false}:{small?:boolean}){return <span className={"brand "+(small?"small":"")}><span className="brand-mark"><Heart className="brand-heart" size={small?18:26} aria-hidden="true"/></span><span>BitchAt<span className="brand-dot">.</span></span></span>;}
 export function Avatar({profile,size=44,group=false}:{profile?:Partial<Profile>;size?:number;group?:boolean}){
  const [url,setUrl]=useState("");useEffect(()=>{let active=true;setUrl("");if(profile?.avatar_url)void signed("avatars",profile.avatar_url).then(x=>{if(active)setUrl(x);}).catch(()=>{});return()=>{active=false;};},[profile?.avatar_url,profile?.id]);
- const colors=["#49436a","#325963","#685049","#4c596e","#655077"];const seed=(profile?.id||profile?.username||"group").split("").reduce((sum,char)=>sum+char.charCodeAt(0),0);
- return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.38),background:colors[seed%colors.length],color:"#f6f3ff"}}>{url?<img src={url} alt="" width={size} height={size} loading="lazy" onError={()=>setUrl("")}/>:group?<Users size={size*.45}/>:label(profile).slice(0,1).toUpperCase()||<MessageCircle size={size*.4}/>}</span>;
+ const colors=["linear-gradient(150deg,#ff9dc6,#b58cff)","linear-gradient(150deg,#9ad8ff,#8f8dff)","linear-gradient(150deg,#ffc59a,#ff8fbe)","linear-gradient(150deg,#a7f0c9,#7fb6ff)","linear-gradient(150deg,#f0b8ff,#8fa8ff)"];const seed=(profile?.id||profile?.username||"group").split("").reduce((sum,char)=>sum+char.charCodeAt(0),0);
+ return <span className="avatar" style={{width:size,height:size,fontSize:Math.round(size*.38),background:colors[seed%colors.length],color:"#251530"}}>{url?<img src={url} alt="" width={size} height={size} loading="lazy" onError={()=>setUrl("")}/>:group?<Users size={size*.45}/>:label(profile).slice(0,1).toUpperCase()||<MessageCircle size={size*.4}/>}</span>;
 }
 const modalRoots=new Set<HTMLElement>(),inertBefore=new Map<HTMLElement,{inert:boolean;hidden:string|null}>();
 let modalObserver:MutationObserver|null=null;

@@ -8,6 +8,8 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useAppBadge } from "@/hooks/useAppBadge";
 import { useInbox } from "@/hooks/useInbox";
 import { loadConversation } from "@/lib/conversation";
+import { rpc } from "@/lib/supabase";
+import { useDeepLink } from "@/lib/deeplink";
 import { errorText, label, title, type Conversation, type Profile } from "@/lib/types";
 import { Avatar, Brand, ErrorNote, IconButton, Spinner } from "./UI";
 import SwipeChat from "./SwipeChat";
@@ -41,6 +43,32 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const [filter, setFilter] = useState("all");
   const [modal, setModal] = useState<"new" | "profile" | "journal" | "notifications" | null>(null);
   const [online, setOnline] = useState(true);
+  const [linkError, setLinkError] = useState("");
+  const [linkName, setLinkName] = useState("");
+  useDeepLink(username => setLinkName(username), true);
+
+  useEffect(() => {
+    if (!linkName) return;
+    let current = true;
+    setLinkError("");
+    void (async () => {
+      try {
+        const rows = await rpc<{ id: string }[]>("profile_by_username", { p_username: linkName });
+        const found = rows?.[0];
+        if (!found) throw new Error("No one here is called @" + linkName + " yet.");
+        if (found.id === profile.id) throw new Error("That link is your own profile.");
+        const id = await rpc<string>("open_conversation", { p_other: found.id });
+        if (!current) return;
+        setSelected(id);
+        await refresh();
+        setLinkName("");
+        window.history.replaceState(null, "", "/");
+      } catch (cause) {
+        if (current) { setLinkError(errorText(cause)); setLinkName(""); }
+      }
+    })();
+    return () => { current = false; };
+  }, [linkName, profile.id, refresh]);
   useEffect(() => watchDeviceMode(profile.id), [profile.id]);
   useEffect(() => watchViewport(), []);
 
@@ -138,6 +166,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
           <button className="primary" onClick={() => openDiscover()}><SquarePen size={18} />New message</button>
         </section>
       )}
+      {linkError && <div className="message-toast link-toast" role="status"><span>{linkError}</span><IconButton label="Dismiss" onClick={() => setLinkError("")}><X size={17}/></IconButton></div>}
       {notifications.toast && <div className="message-toast" role="status"><button onClick={() => { setSelected(notifications.toast); notifications.dismiss(); }}><MessageCircle size={20}/><span>New message</span></button><IconButton label="Dismiss notification" onClick={notifications.dismiss}><X size={17}/></IconButton></div>}
       {chatAction && <ChatActionModal conversationId={chatAction.id} userId={profile.id} action={chatAction.action} onClose={() => setChatAction(null)} onDone={async () => { if (selected === chatAction.id) { setSelected(null); setOpened(null); } await refresh(); }}/>}
       {modal === "new" && <Discover initialMode={discoverMode} userId={profile.id} onClose={() => setModal(null)} onOpen={id => { setSelected(id); void refresh(); }} />}

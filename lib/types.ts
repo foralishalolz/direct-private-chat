@@ -1,15 +1,30 @@
 export type Profile = { id: string; username: string; display_name: string; avatar_url: string | null; mood: string | null; is_pro: boolean };
-export type Conversation = { id: string; kind: "direct" | "group"; title: string; member_a: string | null; member_b: string | null; created_by?: string | null; created_at: string; last_activity: string; read_a: string | null; read_b: string | null; couple_a: boolean; couple_b: boolean; partner?: Profile; members?: Profile[]; member_reads?: {user_id:string;read_at:string|null}[]; preview?: string; unread?: boolean; read_at?: string | null; archived?: boolean };
+export type Conversation = { id: string; kind: "direct" | "group"; title: string; member_a: string | null; member_b: string | null; pet_a?: string | null; pet_b?: string | null; created_by?: string | null; created_at: string; last_activity: string; read_a: string | null; read_b: string | null; couple_a: boolean; couple_b: boolean; partner?: Profile; members?: Profile[]; member_reads?: {user_id:string;read_at:string|null}[]; preview?: string; unread?: boolean; read_at?: string | null; archived?: boolean };
 export type Message = { id: string; conversation_id: string; user_id: string; content: string; media_url: string | null; media_kind: "image" | "audio" | "video" | null; kind: "message" | "instant" | "sticker" | "miss"; instant_viewed: boolean; allow_replay?: boolean; per_recipient?: boolean; reply_to?: string | null; created_at: string; status?: "queued" | "failed" };
 export type Reaction = { message_id: string; user_id: string; emoji: string };
 export type Journal = { id: string; body: string; mood: string | null; created_at: string };
 export type Capsule = { id: string; conversation_id: string; user_id: string; unlock_at: string; created_at: string };
 export type Game = { id: string; game_type: "question" | "either" | "tic_tac_toe"; question: string; option_a: string | null; option_b: string | null; created_by: string; next_player: string | null; board: string; winner: string | null; ended_at: string | null; created_at: string };
 export type Poll = { id: string; conversation_id: string; question: string; options: string[]; created_at: string; closes_at: string };
-export const MOODS = ["🥰","😊","🥺","😴","😔","😤","🤍","🫶"];
-export const REACTIONS = ["❤️","😂","🥺","🔥","😘","🫶","👍","👎","😍","🥹","😮","😢","😡","🤍","💯","🎉","✨","👀","🙈","🤗","😈","💋","💕","💀"];
+export const MOODS = ["🥰","😊","🥺","😴","😔","😤","🤍","🫶","😻","🌸","🍓","🧸","🌙","✨","💌","😽"];
+export const REACTIONS = [
+  "❤️","😂","🥺","🔥","😘","🫶","👍","👎","😍","🥹","😮","😢","😡","🤍","💯","🎉","✨","👀","🙈","🤗","😈","💋","💕","💀",
+  "🥰","😻","🫂","🌹","🍓","🧸","🍪","🌙","🌸","💌","💘","💞","🫦","😽","🎀","💓",
+];
+export const QUICK_REACTIONS = ["❤️","😘","🥰","💋","😂","🥺","🔥","💕"];
 export const label = (p?: Partial<Profile>) => p?.display_name || p?.username || "";
-export const title = (c: Conversation) => c.kind === "group" ? c.title : label(c.partner);
+/** pet_a is member_a's nickname for member_b, so the partner's side picks the column. */
+export function theirPet(c: Conversation) {
+  if (c.kind !== "direct" || !c.partner) return "";
+  return (c.partner.id === c.member_b ? c.pet_a : c.pet_b) || "";
+}
+/** The nickname the other person gave me. */
+export function myPet(c: Conversation) {
+  if (c.kind !== "direct" || !c.partner) return "";
+  return (c.partner.id === c.member_b ? c.pet_b : c.pet_a) || "";
+}
+/** Display title: the nickname I chose for them wins over their profile name. */
+export const title = (c: Conversation) => c.kind === "group" ? c.title : theirPet(c) || label(c.partner);
 export const subtitle = (c: Conversation) => c.kind === "group" ? String(c.members?.length ?? 0) + " members" : "@" + (c.partner?.username ?? "");
 export const time = (s: string) => new Date(s).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 export const day = (s: string) => new Date(s).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });

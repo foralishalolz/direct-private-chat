@@ -12,10 +12,14 @@ import {Modal,IconButton,ErrorNote,Spinner} from "./UI";
 import {ChatDetails,MessageHistory,QuickPlay} from "./ChatFeatures";
 import {PrivateMedia} from "./MessageBubble";
 const CoupleMoment=dynamic(()=>import("./CoupleMoment"),{loading:()=> <div className="center pad"><Spinner/></div>});
-export type ActivityTab="capsules"|"games"|"polls"|"stats"|"search"|"archive"|"chat"|"moment";
-export default function Activities({tab,conversation:c,profile:p,onClose,onRefresh,onExit,onAffection}:{tab:ActivityTab;conversation:Conversation;profile:Profile;onClose:()=>void;onRefresh:()=>Promise<void>;onExit:()=>void;onAffection:(id:AffectionId)=>Promise<void>}){
- const titles:Record<ActivityTab,string>={capsules:"Capsules",games:"Play",polls:"Polls",stats:"Together",search:"Search messages",archive:"Message history",chat:"Chat",moment:"Us"};
- return <Modal title={titles[tab]} onClose={onClose} wide><div className={"panel-pad"+(tab==="moment"?" moment-panel":"")}>{tab==="moment"?<CoupleMoment c={c} p={p} onAffection={onAffection}/>:tab==="capsules"?<Capsules c={c} p={p}/>:tab==="games"?<><QuickPlay c={c}/>{c.kind==="direct"&&<Games c={c} p={p}/>}</>:tab==="polls"?<Polls c={c} p={p}/>:tab==="stats"?<Stats c={c} p={p}/>:tab==="archive"?<MessageHistory c={c}/>:tab==="search"?<MessageSearch c={c} archive={false}/>:<ChatDetails c={c} p={p} onRefresh={onRefresh} onExit={onExit}/>}</div></Modal>;
+const MakeoutSheet=dynamic(()=>import("./MakeoutSheet"),{loading:()=> <div className="center pad"><Spinner/></div>});
+const MemoriesModal=dynamic(()=>import("./MemoriesModal"),{loading:()=> <div className="center pad"><Spinner/></div>});
+export type ActivityTab="capsules"|"games"|"polls"|"stats"|"search"|"archive"|"chat"|"moment"|"makeout"|"memories";
+export default function Activities({tab,conversation:c,profile:p,onClose,onRefresh,onExit,onAffection,onTab}:{tab:ActivityTab;conversation:Conversation;profile:Profile;onClose:()=>void;onRefresh:()=>Promise<void>;onExit:()=>void;onAffection:(id:AffectionId)=>Promise<void>;onTab?:(tab:ActivityTab)=>void}){
+ const titles:Record<ActivityTab,string>={capsules:"Capsules",games:"Play",polls:"Polls",stats:"Together",search:"Search messages",archive:"Message history",chat:"Chat",moment:"Us",makeout:"Makeout",memories:"Memories"};
+ if(tab==="makeout")return <MakeoutSheet c={c} p={p} onClose={onClose}/>;
+ if(tab==="memories")return <MemoriesModal c={c} p={p} onClose={onClose}/>;
+ return <Modal title={titles[tab]} onClose={onClose} wide><div className={"panel-pad"+(tab==="moment"?" moment-panel":"")}>{tab==="moment"?<CoupleMoment c={c} p={p} onAffection={onAffection} onTab={tab=>{onClose();onTab?.(tab);}}/>:tab==="capsules"?<Capsules c={c} p={p}/>:tab==="games"?<><QuickPlay c={c}/>{c.kind==="direct"&&<Games c={c} p={p}/>}</>:tab==="polls"?<Polls c={c} p={p}/>:tab==="stats"?<Stats c={c} p={p}/>:tab==="archive"?<MessageHistory c={c}/>:tab==="search"?<MessageSearch c={c} archive={false}/>:<ChatDetails c={c} p={p} onRefresh={onRefresh} onExit={onExit}/>}</div></Modal>;
 }
 function Capsules({c,p}:{c:Conversation;p:Profile}){
  const [limit,setLimit]=useState(30),[body,setBody]=useState(""),[date,setDate]=useState(""),[photo,setPhoto]=useState<File|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[opened,setOpened]=useState<{content:string;media_url:string|null}|null>(null),[now,setNow]=useState(Date.now());const input=useRef<HTMLInputElement>(null),id=useRef(crypto.randomUUID());

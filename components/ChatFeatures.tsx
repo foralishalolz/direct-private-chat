@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { db, rpc } from "@/lib/supabase";
 import { useLive } from "@/hooks/useLive";
 import ChatActionModal from "./ChatActionModal";
 import { downloadMedia } from "@/lib/export";
-import { day, errorText, label, time, type Conversation, type Message, type Profile } from "@/lib/types";
+import { day, errorText, label, theirPet, time, type Conversation, type Message, type Profile } from "@/lib/types";
 import { Avatar, ErrorNote, IconButton, Modal, Spinner } from "./UI";
 import { PrivateMedia } from "./MessageBubble";
 
@@ -61,12 +61,66 @@ export function ChatDetails({ c, p, onRefresh, onExit }: ChatProps & { onRefresh
         <Heart size={20}/><span>Couple mode</span><span className={`switch ${mine ? "on" : ""}`} role="switch" aria-label="Couple mode" aria-checked={mine}/>
       </button>
       {mine && !(c.couple_a && c.couple_b) && <small className="muted">Waiting for {label(c.partner)}</small>}
+      <PetNameEditor c={c} onSaved={onRefresh}/>
       <button className="menu-item" disabled={busy} onClick={() => void act(async () => { await rpc("set_block", { p_other: c.partner?.id, p_blocked: !blocked }); setBlocked(!blocked); })}><ShieldCheck size={20}/>{blocked ? "Unblock" : "Block"}</button>
     </div>}
     <div className="settings-section"><button className="menu-item danger" disabled={busy} onClick={() => setConfirm("clear")}><Trash2 size={20}/>Delete chat</button>
       {c.kind === "group" && <button className="menu-item danger" disabled={busy} onClick={() => setConfirm("leave")}><LogOut size={20}/>Leave group</button>}
     </div><ErrorNote text={error}/>
     {confirm && <ChatActionModal action={confirm} conversationId={c.id} userId={p.id} onClose={() => setConfirm(null)} onDone={async () => { onExit(); await onRefresh(); }}/>}
+  </div>;
+}
+
+const PET_IDEAS = ["baby", "love", "kitten", "dada", "bunny", "sunshine", "my person", "honey", "sweetheart", "angel", "cutie", "muffin", "teddy", "princess", "dumpling", "cuddlebug", "babe", "sugar"];
+const PET_KEY = "bitchat-pet-ideas:";
+
+/** My nickname for my partner. Lives on the conversation so they can read it. */
+export function PetNameEditor({ c, onSaved }: { c: Conversation; onSaved: () => Promise<void> }) {
+  const current = theirPet(c);
+  const [name, setName] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [ideas, setIdeas] = useState<string[]>([]);
+  const lock = useRef(false);
+
+  useEffect(() => { setName(current); }, [current]);
+
+  function suggest() {
+    const picked: string[] = [];
+    while (picked.length < 4) {
+      const idea = PET_IDEAS[crypto.getRandomValues(new Uint32Array(1))[0] % PET_IDEAS.length];
+      if (!picked.includes(idea)) picked.push(idea);
+    }
+    setIdeas(picked);
+    try { localStorage.setItem(PET_KEY + c.id, JSON.stringify(picked)); } catch {}
+  }
+
+  async function save(value: string) {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await rpc<string | null>("set_pet_name", { p_conversation: c.id, p_name: value.trim() || null });
+      setName(value.trim());
+      setIdeas([]);
+      await onSaved();
+    } catch (cause) { setError(errorText(cause)); }
+    finally { lock.current = false; setBusy(false); }
+  }
+
+  return <div className="pet-name">
+    <div className="row"><span className="pet-icon" aria-hidden="true">🎀</span><strong>Nickname for {label(c.partner)}</strong></div>
+    <form className="row spaced" onSubmit={event => { event.preventDefault(); void save(name); }}>
+      <input className="grow" aria-label={"Nickname for " + label(c.partner)} placeholder="baby, kitten, dada…" maxLength={24} value={name} onChange={event => setName(event.target.value)} disabled={busy}/>
+      <button className="primary pet-save" aria-label="Save nickname" disabled={busy || name.trim() === current}>{busy ? <Spinner/> : <Check size={19}/>}</button>
+    </form>
+    <div className="pet-ideas">
+      <button type="button" className="quiet-button" onClick={suggest}><Sparkles size={15}/>Ideas</button>
+      {ideas.map(idea => <button type="button" key={idea} className="pet-chip" onClick={() => void save(idea)} disabled={busy}>{idea}</button>)}
+    </div>
+    {current && <button type="button" className="quiet-button pet-clear" disabled={busy} onClick={() => void save("")}><X size={14}/>Remove nickname</button>}
+    <ErrorNote text={error}/>
   </div>;
 }
 

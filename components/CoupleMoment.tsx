@@ -9,7 +9,7 @@ import { useLive } from "@/hooks/useLive";
 import { Avatar, ErrorNote, Spinner } from "./UI";
 
 type Vote = { poll_id: string; user_id: string; choice: number };
-export default function CoupleMoment({ c, p, onAffection }: { c: Conversation; p: Profile; onAffection: (id: AffectionId) => Promise<void> }) {
+export default function CoupleMoment({ c, p, onAffection, onTab }: { c: Conversation; p: Profile; onAffection: (id: AffectionId) => Promise<void>; onTab?: (tab: "makeout" | "memories") => void }) {
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [celebrate, setCelebrate] = useState(false);
   const [collection, setCollection] = useState<string[]>([]);
   const lock = useRef(false), alive = useRef(true), roundId = useRef(crypto.randomUUID()), celebrated = useRef<string | null>(null);
@@ -50,6 +50,10 @@ export default function CoupleMoment({ c, p, onAffection }: { c: Conversation; p
   if (c.kind !== "direct" || !c.couple_a || !c.couple_b) return null;
   return <div className="couple-moment">
     <div className="moment-pair"><Avatar profile={p} size={54}/><span aria-hidden="true"><Heart size={24}/></span><Avatar profile={c.partner} size={54}/></div>
+    <div className="moment-pair-tabs">
+      <button type="button" onClick={() => onTab?.("makeout")}><span aria-hidden="true">💋</span><strong>Makeout</strong><small>Tap together</small></button>
+      <button type="button" onClick={() => onTab?.("memories")}><span aria-hidden="true">💌</span><strong>Memories</strong><small>Your story</small></button>
+    </div>
     <div className="moment-actions">{AFFECTIONS.filter(item => ["ask_kiss", "muah", "ask_hug", "ily"].includes(item.id)).map(item => <button disabled={busy} key={item.id} aria-label={item.label} onClick={() => void act(() => onAffection(item.id))}><span aria-hidden="true">{item.glyph}</span><small>{item.label}</small></button>)}</div>
     <section className={"sweet-game" + (celebrate ? " treat-celebration" : "")} aria-label="Sweet match">
       <header><span><Sparkles size={17}/><h3>Sweet match</h3></span>{(!poll || finished || expired) && <button className="quiet-button" disabled={busy || live.loading} onClick={() => void act(start)}><Plus size={16}/>{poll ? "New round" : "Play"}</button>}</header>
