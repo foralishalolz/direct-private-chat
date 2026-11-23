@@ -172,6 +172,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
     && (filter === "archived" ? conversation.archived : !conversation.archived && (filter === "all" || filter === "unread" && conversation.unread || filter === "groups" && conversation.kind === "group"))
   );
   const unread = items.filter(conversation => !conversation.archived && conversation.unread).length;
+  const archivedCount = items.filter(conversation => conversation.archived).length;
   useAppBadge(unread);
 
   return (
@@ -192,16 +193,17 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
         <div className="inbox-search"><label className="input-icon"><Search size={18} aria-hidden="true" /><input aria-label="Search chats" placeholder="Search" value={search} onChange={event => setSearch(event.target.value)} /></label></div>
 
         {!needle && filter === "all" && <Stories profile={profile}/>}
-        <div className="inbox-filters" aria-label="Filter chats">{[["all", "All"], ["unread", "Unread"], ["groups", "Groups"], ["archived", "Archived"]].map(([id, text]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => { setFilter(id); setRevealed(null); }}>{text}</button>)}</div>
-        <div className="inbox-group-actions"><button onClick={() => openDiscover("group")}><Users size={16}/>New group</button><button onClick={() => openDiscover("join")}><Link2 size={16}/>Join group</button><button className="saved-shortcut" onClick={() => setModal("saved")}><Bookmark size={16}/>Saved</button></div>
+        <div className="inbox-filters" aria-label="Filter chats">{[["all", "All"], ["unread", "Unread"], ["groups", "Groups"], ["archived", "Archived"]].map(([id, text]) => <button key={id} aria-pressed={filter === id} className={filter === id ? "active" : ""} onClick={() => { setFilter(id); setRevealed(null); }}>{id === "archived" && <Archive size={15} aria-hidden="true"/>}{text}</button>)}</div>
+        {filter !== "archived" && <div className="inbox-group-actions"><button onClick={() => openDiscover("group")}><Users size={16}/>New group</button><button onClick={() => openDiscover("join")}><Link2 size={16}/>Join group</button><button className="saved-shortcut" onClick={() => setModal("saved")}><Bookmark size={16}/>Saved</button></div>}
+        {filter === "archived" && <div className="archive-intro"><span className="archive-intro-icon"><Archive size={21} aria-hidden="true"/></span><span><strong>Archived chats</strong><small>Kept private and out of your inbox. Swipe left or use more options to unarchive.</small></span></div>}
         <div className="pull-refresh" style={{ height: pull.pull }} aria-hidden={pull.pull === 0} role="status">
           {pull.busy ? <Spinner/> : pull.pull > 0 ? <span>{pull.pull >= 56 ? "Release to refresh" : "Pull to refresh"}</span> : null}
         </div>
-        <div className="inbox-list-label"><span>Messages</span><small>{unread ? unread + " unread" : ""}</small></div>
+        <div className="inbox-list-label"><span>{filter === "archived" ? "Archived" : "Messages"}</span><small>{filter === "archived" ? (archivedCount ? archivedCount + (more ? "+" : "") + (archivedCount === 1 && !more ? " chat" : " chats") : "") : unread ? unread + " unread" : ""}</small></div>
         <div className="conversation-list" onScroll={tabs.onScroll}>
           {loading && <div className="inbox-skeleton" aria-label="Loading chats" role="status">{[0, 1, 2, 3].map(index => <div key={index}><span /><i /></div>)}</div>}
           {visible.map(conversation => <SwipeChat key={conversation.id} conversation={conversation} selected={conversation.id === selected} open={revealed === conversation.id} busy={archiving !== null} onReveal={setRevealed} onOpen={open} onArchive={(id, archived) => void archive(id, archived)} onDelete={id => setChatAction({ id, action: "clear" })} />)}
-          {!loading && !visible.length && (filter === "archived" ? <div className="empty-inbox"><span className="empty-inbox-icon"><Archive size={29} /></span><span>No archived chats</span></div> : <button className="empty-inbox" aria-label="Start a conversation" onClick={() => openDiscover()}><span className="empty-inbox-icon"><SquarePen size={29} /></span><span>{needle || filter !== "all" ? "No chats found" : "New message"}</span></button>)}
+          {!loading && !visible.length && (filter === "archived" ? <div className="empty-inbox"><span className="empty-inbox-icon"><Archive size={29} /></span><span>{needle ? "No chats found" : more ? "No archived chats on this page" : "No archived chats"}</span><small>{needle ? "Try a different search." : more ? "Load more chats to continue looking." : "Chats you archive will appear here."}</small></div> : <button className="empty-inbox" aria-label="Start a conversation" onClick={() => openDiscover()}><span className="empty-inbox-icon"><SquarePen size={29} /></span><span>{needle || filter !== "all" ? "No chats found" : "New message"}</span></button>)}
           {more && <IconButton label="More chats" onClick={() => void loadMore()}><ChevronDown size={20} /></IconButton>}
           <ErrorNote text={error} />
           <ErrorNote text={actionError} />

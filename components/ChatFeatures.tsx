@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, Phone, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { Archive, Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, Phone, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { db, rpc } from "@/lib/supabase";
 import { useLive } from "@/hooks/useLive";
 import ChatActionModal from "./ChatActionModal";
@@ -153,14 +153,14 @@ export function MessageHistory({ c }: { c: Conversation }) {
     } catch (e) { if (n === generation.current) setError(errorText(e)); }
     finally { if (n === generation.current) setBusy(false); }
   }
-  return <><div className="segmented" aria-label="History filter">{["all", "edited", "deleted"].map(kind => <button key={kind} aria-pressed={kind === filter} onClick={() => setFilter(kind)}>{kind[0].toUpperCase() + kind.slice(1)}</button>)}</div>
+  return <><p className="history-intro">Review edits and deleted messages from this chat.</p><div className="segmented history-filter" role="group" aria-label="History filter">{["all", "edited", "deleted"].map(kind => <button key={kind} aria-pressed={kind === filter} onClick={() => setFilter(kind)}>{kind[0].toUpperCase() + kind.slice(1)}</button>)}</div>
     <div className="history-list">{rows.map(item => <article className="history-card" key={item.id + item.kind}>
       <header>{item.kind === "edited" ? <Pencil size={15}/> : <Trash2 size={15}/>}<strong>@{item.username}</strong><time>{day(item.event_at)} · {time(item.event_at)}</time></header>
       <p className={item.kind === "edited" ? "previous-text" : ""}>{item.before_content || (item.media_url ? "" : "Media")}</p>
       {item.kind === "edited" && <p>{item.after_content}</p>}
       {item.media_url && <><PrivateMedia path={item.media_url} kind={item.media_kind}/><button className="menu-item" onClick={() => void downloadMedia(item.media_url!).catch(e => setError(errorText(e)))}><Download size={17}/>Save</button></>}
     </article>)}</div>
-    {live.loading || busy ? <Spinner/> : !rows.length && <p className="empty-label">No history</p>}
+    {live.loading || busy ? <Spinner/> : !rows.length && <div className="history-empty"><span><Archive size={24} aria-hidden="true"/></span><p className="empty-label">No history</p><small>There are no {filter === "all" ? "edits or deleted messages" : filter === "edited" ? "edited messages" : "deleted messages"} to show.</small></div>}
     {more && live.data.length === 30 && <IconButton label="Older history" disabled={busy} onClick={() => void loadOlder()}><ChevronDown size={20}/></IconButton>}<ErrorNote text={error || live.error}/>
   </>;
 }

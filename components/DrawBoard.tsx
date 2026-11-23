@@ -247,7 +247,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
     <div className="board-wrap">
       <div className="board-head">
         <span className="board-who">{label(p)} <i/> {label(partner)}</span>
-        <span className="board-status" role="status">{saving ? <Spinner/> : error ? "Not saved" : "Shared live"}</span>
+        <span className="board-status" role="status">{loading ? "Loading board…" : saving ? <Spinner/> : error ? "Not saved" : "Shared live"}</span>
       </div>
       <div className={"board-canvas" + (erase ? " erasing" : "")}>
         {loading && <div className="board-loading"><Spinner/></div>}

@@ -1,7 +1,7 @@
 
 "use client";
 import dynamic from "next/dynamic";
-import {memo,useCallback,useEffect,useRef,useState} from "react";
+import {memo,useCallback,useEffect,useLayoutEffect,useRef,useState} from "react";
 import {Check,CheckCheck,Clock3,ImageIcon,Reply,Trash2,Pencil,RotateCcw,Download,Eye,ArrowUp,Repeat2,Info,MoreHorizontal,SmilePlus,Bookmark,Pin,PinOff,BookmarkCheck} from "lucide-react";
 import { affectionFor, type AffectionId } from "@/lib/affection";
 import { useSwipeReply } from "@/hooks/useSwipeReply";
@@ -43,7 +43,7 @@ function Instant({message,own,isPro}:{message:Message;own:boolean;isPro:boolean}
   return()=>{alive.current=false;generation.current++;document.removeEventListener("visibilitychange",hide);window.removeEventListener("pagehide",close);window.removeEventListener("blur",close);};
  },[close]);
  useEffect(()=>{setViewed(message.instant_viewed);},[message.instant_viewed]);
- useEffect(()=>{if(!blob)return;const timer=setTimeout(close,20000);window.addEventListener("beforeprint",close);if(!replay){window.addEventListener("pointerdown",close,true);window.addEventListener("keydown",close,true);}return()=>{clearTimeout(timer);window.removeEventListener("beforeprint",close);window.removeEventListener("pointerdown",close,true);window.removeEventListener("keydown",close,true);};},[blob,close,replay]);
+ useLayoutEffect(()=>{if(!blob)return;const timer=setTimeout(close,20000);window.addEventListener("beforeprint",close);if(!replay){window.addEventListener("pointerdown",close,true);window.addEventListener("keydown",close,true);}return()=>{clearTimeout(timer);window.removeEventListener("beforeprint",close);window.removeEventListener("pointerdown",close,true);window.removeEventListener("keydown",close,true);};},[blob,close,replay]);
  async function open(){
   if((!replay&&(own||viewed))||lock.current||expired)return;
   lock.current=true;setBusy(true);setError("");const request=++generation.current;

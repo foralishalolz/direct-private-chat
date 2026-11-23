@@ -213,3 +213,7 @@ The mobile login and messages home have been refreshed with a cleaner social-app
 ## 2.23 notes
 
 Audio calls obtain short-lived Cloudflare TURN credentials through the authenticated, rate-limited `turn-credentials` Edge Function; a custom relay remains an optional device override. Signaling attempts an ICE restart after network changes, and the call can be minimized while navigating. The in-call listening drawer uses the existing shared uploaded-audio timeline (including play, pause and seek) and local voice/music volume controls. Synchronization is approximate, not beat-exact; direct stream URLs and transmission of mixed music over WebRTC are not implemented. Browser/OS audio routing and volume control support vary. The Cloudflare service and real two-phone calls still require live verification; local WebRTC tests do not establish mobile-carrier TURN reliability.
+
+## Messaging design
+
+The iOS-inspired home, chat, archive and motion decisions are documented in [docs/ios-messaging-redesign.md](docs/ios-messaging-redesign.md).

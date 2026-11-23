@@ -467,3 +467,34 @@ test("a shrinking iPhone visual viewport keeps the composer and its draft visibl
  await page.evaluate(()=>{const viewport=window.visualViewport!;Reflect.deleteProperty(viewport,"height");Reflect.deleteProperty(viewport,"offsetTop");viewport.dispatchEvent(new Event("resize"));});
  await expect(page.locator(".chat-shortcuts")).toBeVisible();await expect(input).toHaveValue("Keep this thought");
 });
+
+test("archive options are visible without swiping and restore chats without deleting history",async({page},info)=>{
+ const calls=await mock(page);
+ await page.getByRole("button",{name:"More options for Alex"}).click();
+ const archive=page.getByRole("button",{name:"Archive chat with Alex",exact:true});
+ await expect(archive).toBeVisible(); await expect(archive).toBeFocused();
+ await expect.poll(()=>page.locator('.conversation-item.actions-open .conversation').evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+ await archive.click();await page.getByRole('button',{name:'Archived',exact:true}).click();
+ await expect(page.getByText('Archived chats',{exact:true})).toBeVisible();
+ await page.screenshot({path:info.outputPath('archive.png')});
+ await page.getByRole('button',{name:'More options for Alex'}).click();await page.getByRole('button',{name:'Unarchive chat with Alex'}).click();
+ await expect(page.getByText('No archived chats',{exact:true})).toBeVisible();
+ expect(calls.some(c=>c.name==='clear_chat')).toBe(false);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test("history uses an archive icon and has a clear empty state",async({page})=>{
+ await mock(page);await openChat(page);await page.getByRole('button',{name:'Chat menu'}).click();
+ const history=page.getByRole('button',{name:'Message history',exact:true});await expect(history.locator('svg.lucide-archive')).toBeVisible();await history.click();
+ await page.getByRole('button',{name:'Deleted',exact:true}).click();await expect(page.getByText('No history',{exact:true})).toBeVisible();await expect(page.getByText('There are no deleted messages to show.')).toBeVisible();
+});
+
+test("emoji categories remain scrollable and motion respects device preference",async({page})=>{
+ await mock(page);await openChat(page);await page.emulateMedia({reducedMotion:'reduce'});
+ await page.getByRole('button',{name:'Emoji',exact:true}).click();
+ const categories=page.getByRole('group',{name:'Emoji categories'});await categories.getByRole('button',{name:'Nature'}).click();
+ await expect(categories.getByRole('button',{name:'Nature'})).toHaveAttribute('aria-pressed','true');
+ await expect(page.locator('.emoji-scroll')).toBeVisible();
+ expect(await page.locator('.emoji-cell').count()).toBeGreaterThan(1000);
+ expect(await page.locator('.emoji-cell').first().evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
+});

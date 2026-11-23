@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type PointerEvent } from "react";
-import { Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, MoreHorizontal, Trash2 } from "lucide-react";
 import { time, title, type Conversation } from "@/lib/types";
 import { Avatar, Spinner } from "./UI";
 
@@ -19,6 +19,7 @@ export default function SwipeChat({ conversation, selected, open, busy, onReveal
 }) {
   const root = useRef<HTMLDivElement>(null);
   const track = useRef<HTMLButtonElement>(null);
+  const archiveAction = useRef<HTMLButtonElement>(null);
   const gesture = useRef<{ id: number; x: number; y: number; base: number; offset: number; direction: "pending" | "horizontal" | "vertical" } | null>(null);
   const suppressClick = useRef(false);
   const frame = useRef(0);
@@ -94,7 +95,7 @@ export default function SwipeChat({ conversation, selected, open, busy, onReveal
     if (open && event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) onReveal(null);
   }}>
     <div id={actionsId} className="conversation-actions" aria-hidden={!open}>
-      <button type="button" className="chat-archive-action" tabIndex={open ? 0 : -1} disabled={busy} aria-label={(conversation.archived ? "Unarchive" : "Archive") + " chat with " + title(conversation)} onClick={() => onArchive(conversation.id, !conversation.archived)}>
+      <button ref={archiveAction} type="button" className="chat-archive-action" tabIndex={open ? 0 : -1} disabled={busy} aria-label={(conversation.archived ? "Unarchive" : "Archive") + " chat with " + title(conversation)} onClick={() => onArchive(conversation.id, !conversation.archived)}>
         {busy ? <Spinner /> : conversation.archived ? <ArchiveRestore size={20} /> : <Archive size={20} />}<span>{conversation.archived ? "Unarchive" : "Archive"}</span>
       </button>
       <button type="button" className="chat-delete-action" tabIndex={open ? 0 : -1} disabled={busy} aria-label={"Delete chat with " + title(conversation)} onClick={() => { onReveal(null); onDelete(conversation.id); }}><Trash2 size={20} /><span>Delete</span></button>
@@ -116,5 +117,6 @@ export default function SwipeChat({ conversation, selected, open, busy, onReveal
         <span className="row"><span className={"preview" + (conversation.unread ? " unread" : "")}>{conversation.preview || (conversation.kind === "group" ? String(conversation.members?.length ?? 0) + " members" : "@" + (conversation.partner?.username ?? ""))}</span>{conversation.unread && <i className="unread-dot" />}</span>
       </span>
     </button>
+    <button type="button" className="conversation-more" aria-label={"More options for " + title(conversation)} aria-expanded={open} aria-controls={actionsId} disabled={busy} onClick={() => { onReveal(open ? null : conversation.id); if (!open) requestAnimationFrame(() => archiveAction.current?.focus()); }}><MoreHorizontal size={20} aria-hidden="true"/></button>
   </div>;
 }

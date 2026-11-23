@@ -49,8 +49,8 @@ export default memo(function EmojiPicker({ recent, onPick }: Props) {
   }
 
   return <div className="emoji-sheet">
-    <div className="emoji-head"><div className="emoji-tabs" role="tablist" aria-label="Emoji categories">
-      {CATEGORIES.map(name => <button key={name} role="tab" aria-selected={active === name} aria-label={name === "love" ? "Love" : LABELS[name].name} onClick={() => jump(name)}>{name === "love" ? "💖" : LABELS[name].glyph}</button>)}
+    <div className="emoji-head"><div className="emoji-tabs" role="group" aria-label="Emoji categories">
+      {CATEGORIES.map(name => <button key={name} aria-pressed={active === name} aria-label={name === "love" ? "Love" : LABELS[name].name} onClick={() => jump(name)}>{name === "love" ? "💖" : LABELS[name].glyph}</button>)}
     </div></div>
     <div className="emoji-scroll" ref={scroller} onScroll={() => { if (!jumping.current) { const box = scroller.current; if (!box) return; const at = box.getBoundingClientRect().top + 18; let current = "love"; for (const name of CATEGORIES) { const node = sections.current[name]; if (node && node.getBoundingClientRect().top <= at) current = name; } if (current !== active) setActive(current); } }}>
           {grouped.recent.length > 0 && <section className="emoji-section" ref={node => { sections.current.recent = node; }}>
