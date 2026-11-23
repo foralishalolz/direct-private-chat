@@ -20,6 +20,7 @@ export default function CallSheet({ c, session, onClose }: {
   const { phase, kind, remote, stats, error, ended, elapsed, muted, speaker } = session;
   const remoteAudio = useRef<HTMLAudioElement>(null);
   const [expanded, setExpanded] = useState(true);
+  const [audioBlocked, setAudioBlocked] = useState(false);
   const release = useRef<() => void>(() => {});
   const partnerName = title(c) || "your person";
   const connected = phase === "active";
@@ -31,7 +32,8 @@ export default function CallSheet({ c, session, onClose }: {
   }, []);
 
   useEffect(() => {
-    if (remoteAudio.current && remote) { remoteAudio.current.srcObject = remote; void remoteAudio.current.play().catch(() => {}); }
+    if (remoteAudio.current && remote) { remoteAudio.current.srcObject = remote; void remoteAudio.current.play().then(() => setAudioBlocked(false)).catch(() => setAudioBlocked(true)); }
+    else setAudioBlocked(false);
   }, [remote]);
 
   // A gentle two-note ring while waiting, nothing once connected.
@@ -104,6 +106,7 @@ export default function CallSheet({ c, session, onClose }: {
       <h1 className="call-name">{partnerName}</h1>
       <p className={"call-state " + (connected ? "live" : "")}>{label}</p>
       {connected && stats && <p className="call-detail">{stats.bitrate ? Math.round(stats.bitrate / 1000) + " kbps" : "wideband audio"} · {stats.loss ? stats.loss + "% packet loss" : "Voice connected"}</p>}
+      {audioBlocked && <button className="call-audio-retry" onClick={() => void remoteAudio.current?.play().then(() => setAudioBlocked(false)).catch(() => setAudioBlocked(true))}>Tap to hear audio</button>}
       {error && <p className="call-error" role="alert">{error}</p>}
     </div>
 

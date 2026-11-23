@@ -54,7 +54,6 @@ export default function CoupleMoment({ c, p, onAffection, onTab }: { c: Conversa
       <button type="button" onClick={() => onTab?.("makeout")}><span aria-hidden="true">💋</span><strong>Makeout</strong><small>Tap together</small></button>
       <button type="button" onClick={() => onTab?.("memories")}><span aria-hidden="true">💌</span><strong>Memories</strong><small>Your story</small></button>
     </div>
-    <div className="moment-actions">{AFFECTIONS.filter(item => ["ask_kiss", "muah", "ask_hug", "ily"].includes(item.id)).map(item => <button disabled={busy} key={item.id} aria-label={item.label} onClick={() => void act(() => onAffection(item.id))}><span aria-hidden="true">{item.glyph}</span><small>{item.label}</small></button>)}</div>
     <section className={"sweet-game" + (celebrate ? " treat-celebration" : "")} aria-label="Sweet match">
       <header><span><Sparkles size={17}/><h3>Sweet match</h3></span>{(!poll || finished || expired) && <button className="quiet-button" disabled={busy || live.loading} onClick={() => void act(start)}><Plus size={16}/>{poll ? "New round" : "Play"}</button>}</header>
       {live.loading ? <div className="center pad"><Spinner/></div> : !valid ? <div className="treat-start" aria-hidden="true">🍪 🍓 🍦</div> : <>

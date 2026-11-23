@@ -130,6 +130,8 @@ export class CallLink {
   private lastBytes = 0;
   private lastAt = 0;
   private closed = false;
+  private offerFlight: Promise<RTCSessionDescription> | null = null;
+  private answerFlight: Promise<RTCSessionDescription> | null = null;
   remoteOpenedTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private handlers: Handlers, private selfId: string) {
@@ -166,17 +168,28 @@ export class CallLink {
   }
 
   async offer() {
-    const description = await this.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
-    await this.pc.setLocalDescription(description);
-    return this.pc.localDescription!;
+    const existing = this.pc.localDescription;
+    if (existing?.type === "offer") return existing;
+    if (this.offerFlight) return this.offerFlight;
+    this.offerFlight = (async () => {
+      const description = await this.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false });
+      await this.pc.setLocalDescription(description);
+      return this.pc.localDescription!;
+    })();
+    try { return await this.offerFlight; } finally { this.offerFlight = null; }
   }
 
   async answer(offer: RTCSessionDescriptionInit) {
-    await this.pc.setRemoteDescription(offer);
-    await this.flush();
-    const description = await this.pc.createAnswer();
-    await this.pc.setLocalDescription(description);
-    return this.pc.localDescription!;
+    if (this.answerFlight) return this.answerFlight;
+    if (this.pc.remoteDescription?.sdp === offer.sdp && this.pc.localDescription?.type === "answer") return this.pc.localDescription;
+    this.answerFlight = (async () => {
+      await this.pc.setRemoteDescription(offer);
+      await this.flush();
+      const description = await this.pc.createAnswer();
+      await this.pc.setLocalDescription(description);
+      return this.pc.localDescription!;
+    })();
+    try { return await this.answerFlight; } finally { this.answerFlight = null; }
   }
 
   async accept(description: RTCSessionDescriptionInit) {

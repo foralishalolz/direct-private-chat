@@ -177,3 +177,11 @@ Feels messages can be edited before sending. The play screen includes memory, fu
 The Play sheet includes a shared pet for direct chats: either member can adopt, feed, play with, cuddle, or rename it. Opening the pet also opens it for the other person when they are online; the pet and counters are stored per conversation. The shared names list can hold baby-name ideas, pet names, or other future ideas; either member may add or remove names. Both features use member-only database policies and fall back to periodic refresh if realtime updates are missed. They do not represent actual pregnancies or medical advice.
 
 The mobile shell now uses the visible viewport without desktop padding, with a simpler inbox and a more compact audio-only call screen. Calls still require a configured TURN service for the best chance of connecting on restrictive networks; no relay is bundled.
+
+### 2.17: Live play and listening
+
+Couple-specific pet, future-name, makeout and Us surfaces require both partners to enable couple mode. Existing chat history is not deleted; preset relationship-message suggestions are no longer presented. Regular calls, drawing and play remain available in direct chats.
+
+Live games include Four in a Row, a cooperative Garden and Tap Race. They use server-validated turns, and the race starts when both players are ready; its winner is the first tap received by the server, so network latency matters. Starting a game opens it for the other online participant. Shared drawing refreshes more frequently if realtime is interrupted. Instant photos can be decorated with an emoji and your own caption before sending.
+
+Listen together works with audio files or voice notes already sent in the direct chat (within the existing 24-hour media lifetime), not Spotify or other streaming catalogues. Both people must tap Join; either can play or pause for both. Playback is approximate and depends on network latency, device clocks, format support and browser autoplay restrictions. Minimise an audio call to use the listening or game sheet during the call; headphones can reduce echo. A TURN service is still recommended for calls behind restrictive networks.

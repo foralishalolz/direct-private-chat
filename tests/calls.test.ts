@@ -65,3 +65,37 @@ test("the service worker answers calls without ever opening a chat URL for them"
   // The call payload carries ids only — no names, message text or media.
   assert.doesNotMatch(source, /display_name|avatar_url/);
 });
+
+test("duplicate call offers are coalesced and answered idempotently", async () => {
+  const { CallLink } = await import("../lib/rtc");
+  const oldPC=globalThis.RTCPeerConnection,oldStream=globalThis.MediaStream;
+  let offers=0,answers=0;
+  class FakeStream { getTracks(){return [];} addTrack(){} }
+  class FakePeer {
+    localDescription: RTCSessionDescription|null=null;
+    remoteDescription: RTCSessionDescription|null=null;
+    currentLocalDescription: RTCSessionDescription|null=null;
+    signalingState="stable";
+    async createOffer(){offers++;await new Promise(resolve=>setTimeout(resolve,5));return {type:"offer",sdp:"offer-sdp"};}
+    async createAnswer(){answers++;await new Promise(resolve=>setTimeout(resolve,5));return {type:"answer",sdp:"answer-sdp"};}
+    async setLocalDescription(d: RTCSessionDescription){this.localDescription=d;this.currentLocalDescription=d;}
+    async setRemoteDescription(d: RTCSessionDescription){this.remoteDescription=d;}
+    async addIceCandidate(){} close(){} getSenders(){return [];}
+  }
+  Object.assign(globalThis,{RTCPeerConnection:FakePeer,MediaStream:FakeStream});
+  try {
+    const link=new CallLink({onSignal:()=>{},onState:()=>{},onRemote:()=>{}},"me");
+    const [o1,o2]=await Promise.all([link.offer(),link.offer()]);
+    assert.equal(o1.sdp,"offer-sdp");assert.equal(o2.sdp,"offer-sdp");assert.equal(offers,1);
+    await link.offer();assert.equal(offers,1);
+    const [a1,a2]=await Promise.all([link.answer({type:"offer",sdp:"remote-sdp"}),link.answer({type:"offer",sdp:"remote-sdp"})]);
+    assert.equal(a1.sdp,"answer-sdp");assert.equal(a2.sdp,"answer-sdp");assert.equal(answers,1);
+    await link.answer({type:"offer",sdp:"remote-sdp"});assert.equal(answers,1);link.close();
+  } finally { Object.assign(globalThis,{RTCPeerConnection:oldPC,MediaStream:oldStream}); }
+});
+
+test("call signaling sends SDP answers and retries the ready handshake", () => {
+  const hook=readFileSync("hooks/useCall.ts","utf8");
+  assert.match(hook,/signal\(\{ type: "answer", sdp: response\.sdp \}\)/);
+  assert.match(hook,/setInterval\(\(\) => \{ if \(phaseRef\.current === "connecting"\) void signal\(\{ type: "ready" \}\); \}, 3000\)/);
+});

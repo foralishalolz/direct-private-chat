@@ -68,6 +68,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   const pendingOffer = useRef<RTCSessionDescriptionInit | null>(null);
   const startedAt = useRef(0);
   const alive = useRef(true);
+  const attempt = useRef(0);
   const ringTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sync = useCallback((next: Phase) => {
@@ -100,6 +101,7 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   }, []);
 
   const finish = useCallback((status: EndedStatus, mine = false) => {
+    attempt.current++;
     teardown();
     callRef.current = null;
     startedAt.current = 0;
@@ -123,7 +125,9 @@ export function useCall(conversationId: string | null, userId: string): CallSess
         }
         if (state === "disconnected" && phaseRef.current === "active") sync("connecting");
         if (state === "failed") {
+          const current = callRef.current;
           void signal({ type: "bye", reason: "failed" });
+          if (current) void rpc("end_call", { p_call: current.id }).catch(() => {});
           finish("failed");
         }
       },
@@ -147,10 +151,10 @@ export function useCall(conversationId: string | null, userId: string): CallSess
       if (frame.type === "offer") {
         const description: RTCSessionDescriptionInit = { type: "offer", sdp: frame.sdp };
         pendingOffer.current = description;
-        if (phaseRef.current === "connecting" || phaseRef.current === "active" || answering.current) {
-          answering.current = false;
+        if ((phaseRef.current === "connecting" || phaseRef.current === "active") && localRef.current && !answering.current) {
           const peer = ensureLink();
-          await peer.answer(description).catch(() => {});
+          const response = await peer.answer(description).catch(() => null);
+          if (response?.sdp && callRef.current?.id === current.id) await signal({ type: "answer", sdp: response.sdp });
           pendingOffer.current = null;
         }
         return;
@@ -171,13 +175,11 @@ export function useCall(conversationId: string | null, userId: string): CallSess
       }
       if (frame.type === "ready") {
         if (current.caller !== userId || !link.current) return;
-        // A "ready" that overtook our first offer must not strand the call.
-        if (link.current.hasLocalDescription()) {
-          if (phaseRef.current === "calling") sync("connecting");
-          return;
-        }
+        // Offers sent while the callee was joining can be missed. Re-send the
+        // same offer on ready; CallLink coalesces concurrent offer creation.
         const description = await link.current.offer().catch(() => null);
-        if (description?.sdp) await signal({ type: "offer", sdp: description.sdp, kind: current.kind });
+        if (description?.sdp && callRef.current?.id === current.id) await signal({ type: "offer", sdp: description.sdp, kind: current.kind });
+        if (phaseRef.current === "calling") sync("connecting");
         return;
       }
       if (frame.type === "bye") {
@@ -195,6 +197,10 @@ export function useCall(conversationId: string | null, userId: string): CallSess
         if (!frame || !current || frame.from === userId) return;
         if (!frame.from || !current) return;
         void handle(frame, current);
+      });
+      instance.on("broadcast", { event: "call" }, ({ payload }) => {
+        if (disposed || !alive.current || !callRef.current || payload?.call_id !== callRef.current.id || payload?.by === userId) return;
+        if (payload.status === "declined" || payload.status === "missed" || payload.status === "ended") finish(payload.status);
       });
       await instance.subscribe();
     })().catch(() => {});
@@ -220,22 +226,34 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     return () => { if (ringTimer.current) clearTimeout(ringTimer.current); ringTimer.current = null; };
   }, [phase]);
 
+  // Until connected the callee can safely request the same offer again.
+  useEffect(() => {
+    if (phase !== "connecting" || outgoing) return;
+    const retry = setInterval(() => { if (phaseRef.current === "connecting") void signal({ type: "ready" }); }, 3000);
+    return () => clearInterval(retry);
+  }, [phase, outgoing, signal]);
+
   // --- Call actions ---------------------------------------------------------
   async function start(nextKind: CallKind = "audio") {
     if (!conversationId || phaseRef.current !== "idle") return;
+    const version = ++attempt.current;
     setError(""); setEnded(null); setCall(null); setKind(nextKind); setOutgoing(true); sync("calling");
     try {
       const stream = await openMedia();
-      if (!alive.current) { stream.getTracks().forEach(track => track.stop()); return; }
+      if (!alive.current || attempt.current !== version || (phaseRef.current as Phase) !== "calling") { stream.getTracks().forEach(track => track.stop()); return; }
       localRef.current = stream; setLocal(stream);
       const row = await rpc<CallRow>("start_call", { p_conversation: conversationId, p_kind: "audio" });
+      if (!alive.current || attempt.current !== version || (phaseRef.current as Phase) !== "calling") { stream.getTracks().forEach(track => track.stop()); void rpc("end_call", { p_call: row.id }).catch(() => {}); return; }
       callRef.current = row; setCall(row);
       const peer = ensureLink();
       peer.addLocal(stream);
       const description = await peer.offer();
-      if (description.sdp) await signal({ type: "offer", sdp: description.sdp, kind: "audio" });
+      if (description.sdp && attempt.current === version && callRef.current?.id === row.id) await signal({ type: "offer", sdp: description.sdp, kind: "audio" });
     } catch (cause) {
-      teardown(); sync("idle");
+      if (!alive.current || attempt.current !== version) return;
+      const failed = callRef.current;
+      if (failed) void rpc("end_call", { p_call: failed.id }).catch(() => {});
+      callRef.current = null; teardown(); sync("idle");
       setError(message(cause));
       setEnded({ status: "failed", mine: true });
     }
@@ -244,41 +262,49 @@ export function useCall(conversationId: string | null, userId: string): CallSess
   async function accept() {
     const current = callRef.current;
     if (!current || phaseRef.current !== "ringing") return;
+    const version = ++attempt.current;
     setError(""); setEnded(null); setOutgoing(false); sync("connecting");
     answering.current = true;
     try {
       const stream = await openMedia();
-      if (!alive.current) { stream.getTracks().forEach(track => track.stop()); return; }
+      if (!alive.current || attempt.current !== version || (phaseRef.current as Phase) !== "connecting") { stream.getTracks().forEach(track => track.stop()); return; }
       localRef.current = stream; setLocal(stream);
       await rpc("answer_call", { p_call: current.id, p_accept: true });
+      if (!alive.current || attempt.current !== version || (phaseRef.current as Phase) !== "connecting") { stream.getTracks().forEach(track => track.stop()); void rpc("end_call", { p_call: current.id }).catch(() => {}); return; }
       const peer = ensureLink();
       peer.addLocal(stream);
-      if (pendingOffer.current) { await peer.answer(pendingOffer.current); pendingOffer.current = null; }
-      await signal({ type: "ready" });
+      answering.current = false;
+      if (pendingOffer.current) {
+        const offer = pendingOffer.current; pendingOffer.current = null;
+        const response = await peer.answer(offer);
+        if (response.sdp && attempt.current === version && callRef.current?.id === current.id) await signal({ type: "answer", sdp: response.sdp });
+      }
+      if (attempt.current === version && callRef.current?.id === current.id) await signal({ type: "ready" });
     } catch (cause) {
+      if (!alive.current || attempt.current !== version) return;
       teardown(); sync("idle"); setError(message(cause));
-      await rpc("answer_call", { p_call: current.id, p_accept: false }).catch(() => {});
-      callRef.current = null; setCall(null); setEnded({ status: "declined", mine: true });
+      await rpc("end_call", { p_call: current.id }).catch(() => {});
+      callRef.current = null; setCall(null); setEnded({ status: "failed", mine: true });
     }
   }
 
   async function decline() {
+    attempt.current++;
     const current = callRef.current;
     teardown();
     callRef.current = null; startedAt.current = 0;
-    if (current) await rpc("answer_call", { p_call: current.id, p_accept: false }).catch(() => {});
     sync("idle"); setCall(null); setEnded({ status: "declined", mine: true });
+    if (current) await rpc("answer_call", { p_call: current.id, p_accept: false }).catch(() => {});
   }
 
   async function hangup() {
     const current = callRef.current;
     const ringing = phaseRef.current === "calling" || phaseRef.current === "ringing";
-    if (current) {
-      await signal({ type: "bye", reason: "ended" }).catch(() => {});
-      await rpc("end_call", { p_call: current.id }).catch(() => {});
-      callRef.current = null;
-    }
+    // Stop local audio immediately, even if the network is slow.
+    const sent = current ? signal({ type: "bye", reason: "ended" }) : Promise.resolve();
     finish(ringing ? "missed" : "ended", true);
+    await sent.catch(() => {});
+    if (current) await rpc("end_call", { p_call: current.id }).catch(() => {});
   }
   const hangupRef = useRef(hangup);
   hangupRef.current = hangup;
@@ -375,7 +401,15 @@ export function useCall(conversationId: string | null, userId: string): CallSess
     return () => clearInterval(timer);
   }, [conversationId, sync, userId]);
 
-  useEffect(() => () => { alive.current = false; teardown(); }, [teardown]);
+  useEffect(() => () => {
+    const current = callRef.current;
+    if (current) {
+      void signal({ type: "bye", reason: "ended" });
+      void rpc("end_call", { p_call: current.id }).catch(() => {});
+      callRef.current = null;
+    }
+    attempt.current++; alive.current = false; teardown();
+  }, [teardown, signal]);
 
   return {
     phase, call, outgoing, kind, local, remote, stats, error, ended,

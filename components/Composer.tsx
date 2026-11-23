@@ -1,17 +1,18 @@
 "use client";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Mic, Phone, Plus, Smile, Sticker, X } from "lucide-react";
+import { ArrowUp, BarChart3, Camera, Gamepad2, Heart, ImagePlus, LockKeyhole, Mic, Music2, Phone, Plus, Smile, Sticker, X } from "lucide-react";
 import EmojiPicker from "./EmojiPicker";
 import { AFFECTIONS, QUICK_AFFECTIONS, type AffectionId } from "@/lib/affection";
 import { errorText, type Message } from "@/lib/types";
 import { ErrorNote, IconButton, Spinner } from "./UI";
 
-export type ComposerTool = "media" | "camera" | "sticker" | "capsules" | "polls" | "games" | "call";
+export type ComposerTool = "media" | "audio" | "camera" | "sticker" | "capsules" | "polls" | "games" | "call";
 
 const RECENT_KEY = "bitchat-emoji-recent";
 const TOOLS = [
   { id: "media", label: "Photo", Icon: ImagePlus },
   { id: "camera", label: "Instant", Icon: Camera },
+  { id: "audio", label: "Audio", Icon: Music2 },
   { id: "sticker", label: "Sticker", Icon: Sticker },
   { id: "call", label: "Call", Icon: Phone },
   { id: "capsules", label: "Capsule", Icon: LockKeyhole },
@@ -129,7 +130,6 @@ export default memo(function Composer({ busy, reply, replyName, showCall = false
     {sheet && <div className={"composer-sheet " + sheet} ref={picker} role="group" aria-label={sheet === "emoji" ? "Emoji" : sheet === "tools" ? "Attachments" : "Affection"}>
       <div className="composer-sheet-grip" aria-hidden="true"/>
       {sheet === "tools" && <div className="attachment-tray">
-        <button className="affection-tool" aria-label="Affection" onClick={() => setSheet("affection")}><Heart/><small>Affection</small></button>
         {TOOLS.filter(tool => tool.id !== "call" || showCall).map(({ id, label, Icon }) => <button key={id} disabled={busy} onClick={() => { close(); onTool(id); }}><Icon/><small>{label}</small></button>)}
       </div>}
 

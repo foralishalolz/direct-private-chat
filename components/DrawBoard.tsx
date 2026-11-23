@@ -121,7 +121,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
         applyRemote({ strokes: row.strokes, updated_at: row.updated_at });
       })
       .subscribe(status => { if (status === "SUBSCRIBED") void load(); });
-    const poll = setInterval(() => { if (document.visibilityState === "visible") void load(); }, 8000);
+    const poll = setInterval(() => { if (document.visibilityState === "visible") void load(); }, 4000);
     return () => { alive.current = false; clearInterval(poll); void client.removeChannel(channel); };
   }, [c.id, load, applyRemote]);
 
@@ -217,7 +217,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
   }
 
   function clear() {
-    if (!live.current.length) return;
+    if (!live.current.length || !window.confirm("Clear the drawing for both of you?")) return;
     // Clearing is reversible on this side; the partner sees a blank canvas.
     setRedo(live.current.slice(-40));
     for (const stroke of live.current) edit(stroke.id, null);
@@ -226,8 +226,18 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
   }
 
   const partner = c.partner;
+  async function closeBoard() {
+    if (savingRef.current) return;
+    if (error && pending.current.size) {
+      if (window.confirm("Some changes have not saved. Close anyway?")) onClose();
+      return;
+    }
+    if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+    if (pending.current.size) await flush();
+    if (!pending.current.size) onClose();
+  }
 
-  return <Modal title="Draw" onClose={onClose} wide>
+  return <Modal title="Draw" onClose={() => void closeBoard()} wide>
     <div className="board-wrap">
       <div className="board-head">
         <span className="board-who">{label(p)} <i/> {label(partner)}</span>
@@ -236,7 +246,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
       <div className={"board-canvas" + (erase ? " erasing" : "")}>
         {loading && <div className="board-loading"><Spinner/></div>}
         <canvas ref={canvas} aria-label="Shared drawing canvas" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up} style={{ touchAction: "none" }}/>
-        {!loading && !strokes.length && <p className="board-hint">Draw something only they would understand.</p>}
+        {!loading && !strokes.length && <p className="board-hint">Draw together</p>}
       </div>
       <div className="board-tools">
         <div className="board-colors" role="group" aria-label="Ink colour">{COLORS.map(value => <button key={value} aria-label={"Colour " + value} aria-pressed={!erase && color === value} className={!erase && color === value ? "on" : ""} style={{ background: value }} onClick={() => { setColor(value); setErase(false); }}/>)}</div>
@@ -250,7 +260,7 @@ export default function DrawBoard({ c, p, onClose }: { c: Conversation; p: Profi
       </div>
       <ErrorNote text={error}/>
       {error && <button onClick={() => void flush()}>Retry saving</button>}
-      <small className="board-note">Both of you can draw, erase, undo or clear. Different strokes are merged live.</small>
+
     </div>
   </Modal>;
 }

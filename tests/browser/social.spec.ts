@@ -304,13 +304,9 @@ test("old inbox responses cannot undo archiving and newer device changes still a
 });
 
 
-test("affection sends kisses and hugs without disturbing a reply or a typed draft",async({page})=>{
- const calls=await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Keep this thought");
- for(const kind of ["kiss","hug"]){await page.getByRole("button",{name:"Attachments",exact:true}).click();await page.getByRole("button",{name:"Affection",exact:true}).click();await page.getByRole("button",{name:"Send "+kind,exact:true}).click();await expect(input).toHaveValue("Keep this thought");await expect(page.locator(".affection-tray")).toHaveCount(0);}
- await expect(page.locator(".affection-caption").filter({hasText:"A kiss for you"})).toBeVisible();await expect(page.locator(".affection-caption").filter({hasText:"A hug for you"})).toBeVisible();
- await expect.poll(()=>calls.filter(c=>c.name==="messages"&&String(c.body.content).includes("for you")).length).toBe(2);
- await page.getByRole("button",{name:"I miss you",exact:true}).click();await expect(page.locator(".affection-caption").filter({hasText:"I miss you"})).toBeVisible();await expect(input).toHaveValue("Keep this thought");
- await expect.poll(()=>calls.some(c=>c.name==="messages"&&c.body.kind==="miss"&&c.body.content==="🤍 I miss you")).toBe(true);
+test("preset relationship messages are not offered and drafts stay intact",async({page})=>{
+ await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Keep this thought");
+ await page.getByRole("button",{name:"Attachments",exact:true}).click();await expect(page.getByRole("button",{name:"Affection",exact:true})).toHaveCount(0);await expect(input).toHaveValue("Keep this thought");await expect(page.getByRole("button",{name:"I miss you",exact:true})).toHaveCount(0);
 });
 test("swipe to reply works in both directions of authorship and keeps a typed draft",async({page},info)=>{
  const calls=await mock(page);await openChat(page);const input=page.getByRole("textbox",{name:"Message",exact:true});await input.fill("Yes please");
@@ -339,11 +335,10 @@ test("exposed screenshot keys close an instant while opted-in replay photos reta
  await openChat(page);await page.locator(".instant-card").first().click();await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toBeVisible();await page.keyboard.press("PrintScreen");await expect(page.getByRole("dialog",{name:"Instant",exact:true})).toHaveCount(0);
  await page.locator(".instant-card").nth(1).click();const replay=page.getByRole("dialog",{name:"Replayable photo",exact:true});await expect(replay.getByRole("button",{name:"Save photo",exact:true})).toBeVisible();await replay.locator(".instant-surface").click();await expect(replay).toBeVisible();await replay.getByRole("button",{name:"Close",exact:true}).click();
 });
-test("couple mode gives a romantic accent and a date picker inside Play",async({page},info)=>{
- const calls=await mock(page,false,true,true);await openChat(page);await expect(page.locator(".chat-thread")).toHaveClass(/romantic-chat/);
- await page.getByRole("button",{name:"I miss you",exact:true}).click();await expect(page.locator(".affection-caption")).toContainText("I miss you");
- if(info.project.name==="mobile")console.log("ROMANTIC_MOBILE "+(await page.screenshot({type:"jpeg",quality:80})).toString("base64"));
- await page.locator(".chat-shortcuts").getByRole("button",{name:"Play",exact:true}).click();await page.getByRole("button",{name:"Pick our date",exact:true}).click();await expect.poll(()=>calls.some(c=>c.name==="messages"&&String(c.body.content).startsWith("💌 "))).toBe(true);
+test("couple mode exposes the shared pet while removing preset date messages",async({page})=>{
+ await mock(page,false,true,true);await openChat(page);await expect(page.locator(".chat-thread")).toHaveClass(/romantic-chat/);
+ await page.locator(".chat-shortcuts").getByRole("button",{name:"Play",exact:true}).click();
+ await expect(page.getByRole("button",{name:/Our pet/})).toBeVisible();await expect(page.getByRole("button",{name:"Pick our date"})).toHaveCount(0);
 });
 async function pushDevice(page:Page){
  await page.addInitScript(()=>{
@@ -384,14 +379,12 @@ test("the inbox bell asks for permission only after an explicit alert toggle",as
  await page.getByRole("button",{name:"Close",exact:true}).click();await expect(page.locator(".conversation")).toHaveCount(2);
 });
 
-test("a received kiss request has a muah reply action that preserves the draft",async({page})=>{
- const calls=await mock(page);await page.route("**/rest/v1/messages?*",async route=>{
+test("older preset messages remain visible without offering a preset reply",async({page})=>{
+ await mock(page);await page.route("**/rest/v1/messages?*",async route=>{
   if(route.request().method()!=="GET")return route.fallback();
   await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify([...messages,{...messages[0],id:"99999999-9999-4999-8999-999999999999",content:"🥺 A kiss, please?",created_at:new Date().toISOString()}])});
  });
- await openChat(page);await page.getByRole("textbox",{name:"Message",exact:true}).fill("My little thought");await page.getByRole("button",{name:"Send a kiss back",exact:true}).click();
- await expect.poll(()=>calls.some(call=>call.name==="messages"&&call.body.content==="💋 Muahh!")).toBe(true);
- await expect(page.getByRole("textbox",{name:"Message",exact:true})).toHaveValue("My little thought");await expect(page.locator(".affection-caption").filter({hasText:"Muahh!"})).toBeVisible();
+ await openChat(page);await expect(page.locator(".affection-caption").filter({hasText:"A kiss, please?"})).toBeVisible();await expect(page.getByRole("button",{name:"Send a kiss back"})).toHaveCount(0);
 });
 
 test("slow sends stay optimistic and the next draft drains without a five-second pause",async({page})=>{
@@ -445,10 +438,9 @@ test("glass sheets isolate background controls and restore them on close",async(
  await expect(page.getByRole("dialog",{name:"Notifications",exact:true})).toHaveCount(0);await expect(page.locator(".app-shell")).not.toHaveAttribute("aria-hidden","true");await expect(page.locator(".inbox-header").getByRole("button",{name:"New message",exact:true})).toBeVisible();
 });
 
-test("reduced motion disables decorative animation while affection remains usable",async({page})=>{
- await page.emulateMedia({reducedMotion:"reduce"});await mock(page);await openChat(page);await page.getByRole("button",{name:"I miss you",exact:true}).click();const glyph=page.locator(".affection-glyph");await expect(glyph).toBeVisible();expect(await glyph.evaluate(node=>getComputedStyle(node).animationName)).toBe("none");
+test("reduced motion disables decorative animation",async({page})=>{
+ await page.emulateMedia({reducedMotion:"reduce"});await mock(page,false,true,true);await openChat(page);await page.getByRole("button",{name:"Makeout",exact:true}).click();const heart=page.locator(".makeout-heart");await expect(heart).toBeVisible();expect(await heart.evaluate(node=>getComputedStyle(node).animationName)).toBe("none");
 });
-
 
 test("older iOS cancellation support still allows the chat to send",async({page})=>{
  await page.addInitScript(()=>Object.defineProperty(AbortSignal,"any",{configurable:true,value:undefined}));const calls=await mock(page);await openChat(page);await page.getByRole("textbox",{name:"Message",exact:true}).fill("Hello from an older phone");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect.poll(()=>calls.some(call=>call.name==="messages"&&call.body.content==="Hello from an older phone")).toBe(true);

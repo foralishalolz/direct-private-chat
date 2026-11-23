@@ -5,11 +5,11 @@ test("invalid login reports the real error without crashing",async({page})=>{awa
 test("login route works on a direct navigation",async({page})=>{await page.goto("/login/");await expect(page.getByRole("textbox",{name:"Username"})).toBeVisible();});
 const uid="11111111-1111-4111-8111-111111111111",other="22222222-2222-4222-8222-222222222222",cid="33333333-3333-4333-8333-333333333333";
 const profile={id:uid,username:"sample_user",display_name:"Sam",avatar_url:null,mood:"🥰",is_pro:true},partner={...profile,id:other,username:"alex",display_name:"Alex",is_pro:false};
-async function signedIn(page:Page){
+async function signedIn(page:Page,couple=false){
  await page.addInitScript(({uid,profile})=>{const header=btoa(JSON.stringify({alg:"HS256",typ:"JWT"})),payload=btoa(JSON.stringify({sub:uid,exp:Math.floor(Date.now()/1000)+3600,role:"authenticated",aud:"authenticated"}));localStorage.setItem("sb-llweydgvtpwgnslvgnqm-auth-token",JSON.stringify({access_token:header+"."+payload+".test",refresh_token:"test-refresh",expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,token_type:"bearer",user:{id:uid,aud:"authenticated",role:"authenticated",email:"sample_user@chat.local",app_metadata:{},user_metadata:{},created_at:new Date().toISOString()}}));},{uid,profile});
  await page.route("**/rest/v1/**",async route=>{const url=new URL(route.request().url()),path=url.pathname;let body:unknown=[];
  if(path.endsWith("/profiles"))body=url.searchParams.get("id")?.startsWith("in.")?[profile,partner]:profile;
- if(path.endsWith("/rpc/inbox_page"))body=[{id:cid,kind:"direct",title:"",member_a:uid,member_b:other,last_activity:"2026-09-14T10:00:00Z",created_at:"2026-09-14T09:00:00Z",read_a:null,read_b:null,couple_a:false,couple_b:false,members:[profile,partner],preview:"Hello",read_at:null}];
+ if(path.endsWith("/rpc/inbox_page"))body=[{id:cid,kind:"direct",title:"",member_a:uid,member_b:other,last_activity:"2026-09-14T10:00:00Z",created_at:"2026-09-14T09:00:00Z",read_a:null,read_b:null,couple_a:couple,couple_b:couple,members:[profile,partner],preview:"Hello",read_at:null}];
  if(path.endsWith("/messages")){if(route.request().method()==="POST"){const sent=route.request().postDataJSON();body={...sent,created_at:new Date().toISOString(),instant_viewed:false};}else body=[{id:"44444444-4444-4444-8444-444444444444",conversation_id:cid,user_id:other,content:"Hello",media_url:null,media_kind:null,kind:"message",instant_viewed:false,created_at:"2026-09-14T10:00:00Z"}];}
  if(path.endsWith("/rpc/my_privacy"))body={revision:0,share_online:true,share_last_active:true,share_typing:true,share_receipts:true};
  if(path.endsWith("/rpc/my_blocks"))body=[];if(path.endsWith("/rpc/mark_read"))body=null;
@@ -19,7 +19,7 @@ async function signedIn(page:Page){
 test("inbox opens a chat, sends text, and shows message actions",async({page})=>{const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));await signedIn(page);await page.goto("/");await page.getByRole("button",{name:/Alex.*Hello/}).click();await expect(page.getByRole("textbox",{name:"Message",exact:true})).toBeVisible();await expect(page.locator(".message-text").filter({hasText:"Hello"})).toBeVisible();await page.getByRole("textbox",{name:"Message",exact:true}).fill("A real draft");await page.getByRole("button",{name:"Send message",exact:true}).click();await expect(page.locator(".message-text").filter({hasText:"A real draft"})).toBeVisible();await page.getByRole("button",{name:"Message actions"}).last().click();await expect(page.getByRole("button",{name:"Reply",exact:true})).toBeVisible();await page.keyboard.press("Escape");expect(errors).toEqual([]);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);});
 test("profile and journal dialogs close without breaking navigation",async({page})=>{await signedIn(page);await page.goto("/");await page.getByRole("button",{name:"Journal",exact:true}).last().click();await expect(page.getByRole("dialog",{name:"Journal"})).toBeVisible();await page.getByRole("textbox",{name:"Journal entry"}).fill("Private draft");await page.getByRole("button",{name:"Close",exact:true}).click();await expect(page.getByRole("dialog")).toHaveCount(0);await expect(page.getByRole("button",{name:/Alex.*Hello/})).toBeVisible();});
 test("shared pet and future names work within the phone viewport",async({page})=>{
- await signedIn(page);
+ await signedIn(page,true);
  let pet:{name:string;species:string;feeds:number;plays:number;cuddles:number;last_action:string}|null=null;
  let names:{id:string;name:string}[]=[];
  await page.route("**/rest/v1/**",async(route)=>{
@@ -33,5 +33,26 @@ test("shared pet and future names work within the phone viewport",async({page})=
  await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.getByRole('button',{name:'Play',exact:true}).first().click();
  await page.getByRole('textbox',{name:'Add a name'}).fill('Robin');await page.getByRole('button',{name:'Add',exact:true}).click();await expect(page.getByText('Robin',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:/Our pet/}).click();await page.getByRole('textbox',{name:'Pet name'}).fill('Mochi');await page.getByRole('button',{name:'Adopt'}).click();await expect(page.getByRole('heading',{name:'Mochi'})).toBeVisible();await page.getByRole('button',{name:/Feed/}).click();await expect(page.getByText('That was tasty!')).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+test("friend chats keep games but hide couple-only features",async({page})=>{
+ await signedIn(page);await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();
+ await expect(page.getByRole('button',{name:'Makeout',exact:true})).toHaveCount(0);
+ await page.locator('.chat-shortcuts').getByRole('button',{name:'Play',exact:true}).click();
+ await expect(page.getByRole('button',{name:/Live games/})).toBeVisible();
+ await expect(page.getByRole('button',{name:/Our pet/})).toHaveCount(0);
+ await expect(page.getByText('Names we love')).toHaveCount(0);
+});
+test("live four in a row starts and submits a column",async({page})=>{
+ await signedIn(page);
+ let game:{round_id:string;mode:string;board:string;next_player:string;winner:null;finished:boolean;ready_a:boolean;ready_b:boolean;ready_at:null}|null=null;
+ await page.route('**/rest/v1/**',async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith('/live_arcade'))return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(game)});
+  if(path.endsWith('/rpc/start_live_arcade')){game={round_id:'round',mode:'four',board:'-'.repeat(42),next_player:uid,winner:null,finished:false,ready_a:false,ready_b:false,ready_at:null};return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(game)});}
+  if(path.endsWith('/rpc/play_live_arcade')){if(game){game.board=game.board.slice(0,35)+'A'+game.board.slice(36);game.next_player=other;}return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(game)});}
+  return route.fallback();
+ });
+ await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.locator('.chat-shortcuts').getByRole('button',{name:'Play',exact:true}).click();await page.getByRole('button',{name:/Live games/}).click();await page.getByRole('button',{name:/Four in a row/}).click();await page.getByRole('button',{name:'Drop in column 1'}).click();await expect(page.getByText('Alex’s turn')).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });

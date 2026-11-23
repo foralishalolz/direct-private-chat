@@ -58,7 +58,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const incoming = useIncomingCall(profile.id);
   const activity = useActivityPing(profile, items, (conversationId, kind: ActivityKind) => {
     setSelected(conversationId);
-    const tab = kind === "pet" ? "pet" : kind === "makeout" ? "makeout" : kind === "draw" ? "draw" : kind === "game" || kind === "wyr" ? "games" : kind === "kiss" ? "kiss" : "feels";
+    const tab = kind === "listen" ? "listen" : kind === "arcade" ? "arcade" : kind === "pet" ? "pet" : kind === "makeout" ? "makeout" : kind === "draw" ? "draw" : kind === "game" || kind === "wyr" ? "games" : kind === "kiss" ? "kiss" : "feels";
     setActivityIntent(current => ({ conversationId, tab, sequence: (current?.sequence ?? 0) + 1 }));
   });
   usePressFeedback();
@@ -73,7 +73,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
     if (wanted === "new") openDiscover();
     // "Us" needs a conversation, so land on the first couple chat and let the
     // thread open its own panel.
-    if (wanted === "us") setSelected(current => current ?? items.find(row => row.kind === "direct")?.id ?? null);
+    if (wanted === "us") setSelected(current => current ?? items.find(row => row.kind === "direct" && row.couple_a && row.couple_b)?.id ?? null);
   }, [items]);
   const open = (id: string | null) => { haptic("light"); setSelected(id); };
   // Answer / decline from a notification or a `?call=` launch.
