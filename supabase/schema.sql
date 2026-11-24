@@ -3502,7 +3502,7 @@ create or replace function private.cancel_call_push()
 returns trigger language plpgsql security definer set search_path = '' as $$
 begin
   delete from private.push_jobs where kind = 'call' and call_id = new.id;
-  if new.status = 'missed' and new.callee is not null and not private.blocked(new.callee, new.caller) then
+  if new.status = 'missed' and new.started_at > now() - interval '24 hours' and new.callee is not null and not private.blocked(new.callee, new.caller) then
     insert into private.push_jobs(subscription_id, conversation_id, message_id, call_id, kind)
     select s.id, new.conversation_id, null::uuid, new.id, 'missed_call'
       from private.push_subscriptions s
