@@ -130,8 +130,9 @@ export async function restoreNotifications(userId: string): Promise<void> {
     const json = subscription.toJSON();
     await current(userId, operation);
     const { error } = await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth, p_kind: "message" }).abortSignal(AbortSignal.timeout(5000));
-    await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth, p_kind: "call" }).abortSignal(AbortSignal.timeout(5000)).then(result => result, () => undefined);
     if (error) throw error;
+    const { error: callError } = await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth, p_kind: "call" }).abortSignal(AbortSignal.timeout(5000));
+    if (callError) throw callError;
   });
 }
 

@@ -107,11 +107,11 @@ test("push worker sends ringing calls with high urgency and skips ended calls", 
   const admin={rpc:async(name:string,args:any)=>{if(name==='push_server_config')return {data:{publicKey:'p',privateKey:'p',subject:'https://example.com'},error:null};if(name==='claim_push_jobs')return {data:claims++?[]:jobs,error:null};if(name==='finish_push_job'){finished.push(args);return {error:null};}throw Error(name);},from:()=>({select:()=>({eq:(_key:string,id:string)=>({maybeSingle:async()=>{calls.push(id);return {data:{status:id===jobs[0].call_id?'ringing':'ended'},error:null};}})})})};
   const deno={env:{get:(name:string)=>name==='SUPABASE_URL'?'https://example.com':name==='SUPABASE_SECRET_KEYS'?'{}':'server-key'},serve:(fn:typeof handler)=>{handler=fn;}};
   const webpush={generateRequestDetails:(_subscription:unknown,payload:string,options:unknown)=>{sent.push({payload:JSON.parse(payload),options});return {endpoint:'https://fcm.googleapis.com/fcm/send/test',headers:{},body:'encrypted'};}};
-  vm.runInNewContext(source,{Deno:deno,webpush,createClient:()=>admin,Response,URL,Date,AbortSignal,fetch:async()=>new Response(null,{status:201})});
+  vm.runInNewContext(source,{Deno:deno,webpush,createClient:()=>admin,Response,URL,Date,AbortSignal,btoa,fetch:async()=>new Response(null,{status:201})});
   const response=await handler(new Request('https://worker.test',{method:'POST',headers:{'x-push-secret':'a'.repeat(64)}}));
   assert.equal(response.status,200);assert.equal(calls.length,2);assert.equal(sent.length,2);
   const ringing=sent.find(item=>item.payload.kind==='call'), message=sent.find(item=>item.payload.messageId===messageId);
-  assert.ok(ringing);assert.equal(ringing.options.urgency,'high');assert.equal(ringing.options.TTL,45);
+  assert.ok(ringing);assert.equal(ringing.options.urgency,'high');assert.equal(ringing.options.TTL,45);assert.match(ringing.options.topic,/^[A-Za-z0-9_-]{1,32}$/);
   assert.ok(message);assert.equal(message.options.urgency,'normal');
   assert.equal(finished.length,3);assert.equal(finished.find(x=>x.p_subscription===jobs[0].subscription_id).p_message,null);
 });

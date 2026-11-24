@@ -57,7 +57,7 @@ Deno.serve(async (req: Request) => {
                   TTL: call ? 45 : 3600,
                   contentEncoding: "aes128gcm",
                   urgency: call ? "high" : "normal",
-                  topic: call ? "call-" + job.conversation_id.replaceAll("-", "") : job.conversation_id.replaceAll("-", ""),
+                  topic: call ? "c-" + btoa(job.conversation_id.replaceAll("-", "").match(/../g)!.map(byte => String.fromCharCode(parseInt(byte, 16))).join("")).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "") : job.conversation_id.replaceAll("-", ""),
                 },
               );
               const response = await fetch(request.endpoint, { method: "POST", headers: request.headers, body: request.body, redirect: "error", signal: AbortSignal.timeout(8000) });
