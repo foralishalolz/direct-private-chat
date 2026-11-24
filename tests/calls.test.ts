@@ -125,3 +125,61 @@ test("common phone audio MIME aliases match supported storage formats", async ()
  assert.equal(canonicalMediaType("audio/x-wav"), "audio/wav");
  assert.equal(canonicalMediaType("audio/mpeg; codecs=mp3"), "audio/mpeg");
 });
+
+test("invalid saved relay entries cannot suppress automatic relay", async () => {
+  const { readTurn } = await import('../lib/turn');
+  const old=globalThis.localStorage;
+  let raw='';
+  Object.assign(globalThis,{localStorage:{getItem:()=>raw}});
+  try {
+    for (const url of ['', 'turn:', 'turn:bad host', 'turn:example.org:99999', 'https://example.org']) {
+      raw=JSON.stringify({url}); assert.equal(readTurn(),null);
+    }
+    raw=JSON.stringify({url:'turn:relay.example:3478',username:'',credential:''}); assert.equal(readTurn(),null);
+    raw=JSON.stringify({url:'turn:relay.example:3478?transport=udp',username:'user',credential:'pass'});
+    assert.equal(readTurn()?.url,'turn:relay.example:3478?transport=udp');
+  } finally { Object.assign(globalThis,{localStorage:old}); }
+});
+
+test("ICE candidates arriving early are applied after the remote description", async () => {
+  const { CallLink }=await import('../lib/rtc');const pcOld=globalThis.RTCPeerConnection, streamOld=globalThis.MediaStream;
+  const added:string[]=[];let created:any;
+  class Stream { getTracks(){return [];} addTrack(){} }
+  class Peer {
+    remoteDescription:any=null; localDescription:any=null; signalingState='stable';
+    constructor(public config:RTCConfiguration){created=this;}
+    async setRemoteDescription(d:any){this.remoteDescription=d;}
+    async addIceCandidate(c:any){added.push(c.candidate);}
+    async createAnswer(){return {type:'answer',sdp:'v=0'};}
+    async setLocalDescription(d:any){this.localDescription=d;}
+    close(){} getSenders(){return [];}
+  }
+  Object.assign(globalThis,{RTCPeerConnection:Peer,MediaStream:Stream});
+  try {
+    const link=new CallLink({onSignal:()=>{},onState:()=>{},onRemote:()=>{}},'me',[]);
+    await link.candidate({candidate:'early-one'});await link.candidate({candidate:'early-two'});
+    assert.deepEqual(added,[]);await link.answer({type:'offer',sdp:'v=0'});
+    assert.deepEqual(added,['early-one','early-two']);assert.equal(created.config.iceCandidatePoolSize,10);link.close();
+  } finally { Object.assign(globalThis,{RTCPeerConnection:pcOld,MediaStream:streamOld}); }
+});
+
+
+test("restart candidates received before their SDP are retried", async () => {
+  const { CallLink }=await import('../lib/rtc'); const pcOld=globalThis.RTCPeerConnection, streamOld=globalThis.MediaStream;
+  const added:string[]=[];
+  class Stream { getTracks(){return [];} addTrack(){} }
+  class Peer {
+    remoteDescription:any={type:'offer',sdp:'old'}; localDescription:any={type:'answer',sdp:'answer'}; signalingState='stable';
+    async setRemoteDescription(d:any){this.remoteDescription=d;}
+    async addIceCandidate(c:any){if(this.remoteDescription.sdp==='old')throw new Error('wrong ICE generation');added.push(c.candidate);}
+    async createAnswer(){return {type:'answer',sdp:'answer'};}
+    async setLocalDescription(d:any){this.localDescription=d;}
+    close(){} getSenders(){return [];}
+  }
+  Object.assign(globalThis,{RTCPeerConnection:Peer,MediaStream:Stream});
+  try {
+    const link=new CallLink({onSignal:()=>{},onState:()=>{},onRemote:()=>{}},'me',[]);
+    await link.candidate({candidate:'new-generation'});assert.deepEqual(added,[]);
+    await link.answer({type:'offer',sdp:'new'});assert.deepEqual(added,['new-generation']);link.close();
+  } finally { Object.assign(globalThis,{RTCPeerConnection:pcOld,MediaStream:streamOld}); }
+});

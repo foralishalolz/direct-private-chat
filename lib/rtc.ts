@@ -9,7 +9,7 @@
  */
 
 import { BASE_ICE, relay } from "./turn";
-import { endpoint } from "./supabase";
+import { relayEndpoint } from "./supabase";
 
 /** Calls are audio-only in 2.13: the video path was removed on purpose. */
 export type CallKind = "audio";
@@ -43,7 +43,7 @@ export function iceServers(): RTCIceServer[] { return [...relay(), ...BASE_ICE];
 export async function callIceServers(callId: string): Promise<RTCIceServer[]> {
   const manual = relay();
   if (manual.length) return [...manual, ...BASE_ICE];
-  const response = await endpoint("turn-credentials", { callId });
+  const response = await relayEndpoint(callId);
   const data = await response.json() as { iceServers?: RTCIceServer[] };
   if (!Array.isArray(data.iceServers) || !data.iceServers.some(server => (Array.isArray(server.urls) ? server.urls : [server.urls]).some(url => typeof url === "string" && /^turns?:/i.test(url)) && typeof server.username === "string" && typeof server.credential === "string")) throw new Error("Call relay unavailable. Please try again.");
   return [...data.iceServers, ...BASE_ICE];
@@ -153,7 +153,7 @@ export class CallLink {
   remoteOpenedTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private handlers: Handlers, private selfId: string, servers: RTCIceServer[] = iceServers()) {
-    this.pc = new RTCPeerConnection({ iceServers: servers, iceCandidatePoolSize: 2, bundlePolicy: "max-bundle" });
+    this.pc = new RTCPeerConnection({ iceServers: servers, iceCandidatePoolSize: 10, bundlePolicy: "max-bundle" });
     this.pc.onicecandidate = event => {
       if (event.candidate) handlers.onSignal({ type: "candidate", candidate: event.candidate.toJSON(), from: selfId });
     };
@@ -197,6 +197,10 @@ export class CallLink {
 
   signalingStable() { return this.pc.signalingState === "stable"; }
 
+  connectionState() { return this.pc.connectionState; }
+
+  requestIceRestart() { if (!this.closed && typeof this.pc.restartIce === "function") this.pc.restartIce(); }
+
   /** The caller alone creates restart offers, avoiding simultaneous-offer glare. */
   async restartOffer() {
     if (this.offerFlight) return this.offerFlight;
@@ -229,8 +233,13 @@ export class CallLink {
   }
 
   async candidate(candidate: RTCIceCandidateInit) {
-    if (!this.pc.remoteDescription || this.pc.remoteDescription.type === undefined) { this.pending.push(candidate); return; }
-    try { await this.pc.addIceCandidate(candidate); } catch { /* a stale candidate is harmless */ }
+    if (!this.pc.remoteDescription || this.pc.remoteDescription.type === undefined) { if (this.pending.length < 200) this.pending.push(candidate); return; }
+    try { await this.pc.addIceCandidate(candidate); }
+    catch {
+      // A restart candidate can arrive before its new remote SDP. Retry it
+      // once when that description is applied; stale candidates are discarded.
+      if (this.pending.length < 200) this.pending.push(candidate);
+    }
   }
 
   private async flush() {

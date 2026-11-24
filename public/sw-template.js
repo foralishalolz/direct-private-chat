@@ -37,21 +37,19 @@ self.addEventListener("push",event=>{
  if(data.kind==="call"&&data.callId){
   // A ringing call is a live event, not a message: no staleness window beyond
   // one minute, a call tag that replaced calls inherit, and buttons that can
-  // answer without opening a full tab first.
+  // open the call screen for a microphone permission gesture.
   if(!valid.test(data.conversationId||"")||!valid.test(data.callId)||typeof data.timestamp!=="number"||!Number.isFinite(data.timestamp)||Date.now()-data.timestamp>60000||data.timestamp-Date.now()>120000)return;
   event.waitUntil((async()=>{
+   if(!await acceptPush({...data,messageId:"call:"+data.callId}))return;
    await self.registration.showNotification("Incoming BitchAt call",{
-    body:"Tap to answer",
+    body:"Open to answer",
     icon:"/icon-192.png",badge:"/badge.png",
     tag:"call:"+data.userId+":"+data.conversationId,renotify:true,
     requireInteraction:true,silent:false,
     vibrate:[300,120,300,120,300],
-    actions:[{action:"accept",title:"Answer"},{action:"decline",title:"Decline"}],
+    actions:[{action:"accept",title:"Open call"},{action:"decline",title:"Decline"}],
     data:{userId:data.userId,conversationId:data.conversationId,callId:data.callId,kind:"call"},
    });
-   // A ringing phone should vibrate again while it keeps ringing.
-   const again=setInterval(async()=>{const shown=await self.registration.getNotifications({tag:"call:"+data.userId+":"+data.conversationId});if(!shown.length){clearInterval(again);return;}try{navigator.vibrate?.([300,120,300]);}catch{}},4000);
-   setTimeout(()=>clearInterval(again),45000);
   })().catch(()=>{}));
   return;
  }
@@ -68,7 +66,7 @@ self.addEventListener("notificationclick",event=>{
  if(!valid.test(data.userId||"")||!valid.test(data.conversationId||""))return;
  const callId=valid.test(data.callId||"")?data.callId:"";
  event.waitUntil((async()=>{
-  // Answer / decline straight from the notification, or open the ring screen.
+  // Open the ringing screen or pass a decline intent to the app.
   if(data.kind==="call"&&callId){
    const action=event.action;
    const url="/?call="+encodeURIComponent(callId)+"&chat="+encodeURIComponent(data.conversationId)+"&account="+encodeURIComponent(data.userId)+(action==="decline"?"&decline=1":action==="accept"?"&accept=1":"");

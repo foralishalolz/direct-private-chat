@@ -6,8 +6,8 @@ test("relay addresses are validated before they can break calling", () => {
   assert.deepEqual(normalizeTurn({ url: "turn:relay.example.com:3478", username: " u ", credential: " p " }), {
     url: "turn:relay.example.com:3478", username: "u", credential: "p",
   });
-  assert.equal(normalizeTurn({ url: " turns:relay.example.com:5349?transport=tcp ", username: "", credential: "" }).url, "turns:relay.example.com:5349?transport=tcp");
-  assert.equal(normalizeTurn({ url: "turn:10.0.0.1:3478?transport=udp", username: "", credential: "" }).url, "turn:10.0.0.1:3478?transport=udp");
+  assert.equal(normalizeTurn({ url: " turns:relay.example.com:5349?transport=tcp ", username: "u", credential: "p" }).url, "turns:relay.example.com:5349?transport=tcp");
+  assert.equal(normalizeTurn({ url: "turn:10.0.0.1:3478?transport=udp", username: "u", credential: "p" }).url, "turn:10.0.0.1:3478?transport=udp");
 });
 
 test("relay addresses that are not relays are rejected", () => {
@@ -20,4 +20,10 @@ test("relay credentials cannot be used to smuggle long payloads into storage", (
   const result = normalizeTurn({ url: "turn:r.example.com:3478", username: "u".repeat(500), credential: "c".repeat(500) });
   assert.equal(result.username.length, 200);
   assert.equal(result.credential.length, 200);
+});
+
+
+test("blank relay credentials and secure UDP are rejected", () => {
+  assert.throws(() => normalizeTurn({url:"turn:relay.example:3478",username:"",credential:""}), /username and password/);
+  assert.throws(() => normalizeTurn({url:"turns:relay.example:5349?transport=udp",username:"u",credential:"p"}), /TCP/);
 });

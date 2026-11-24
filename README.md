@@ -217,3 +217,11 @@ Audio calls obtain short-lived Cloudflare TURN credentials through the authentic
 ## Messaging design
 
 The iOS-inspired home, chat, archive and motion decisions are documented in [docs/ios-messaging-redesign.md](docs/ios-messaging-redesign.md).
+
+## Calling diagnostics
+
+Audio calls wait for their private signaling subscription before negotiating. The authenticated `/api/turn-credentials/` endpoint is a same-origin Vercel rewrite to the Supabase Edge Function (the static local server proxies it too). Both GET with a `callId` query and POST with `{"callId":"…"}` require a signed-in participant in a current call. The server issues rate-limited Cloudflare TURN credentials; long-lived TURN keys and tokens remain only in Supabase secrets. Google STUN is retained even when TURN is present. A valid, explicitly saved custom TURN server overrides automatic TURN on that device.
+
+The call pill reports relay fetching, signaling/connection and the selected path where browser statistics expose it. Reconnection renegotiates ICE with the caller as offerer. If a crashed tab leaves a call marked active, the explicit **End previous call** action can end it for both participants before redialing. Closing a page stops local tracks immediately and sends a best-effort end request; browser or network failure may still interrupt that request.
+
+Uploaded music is played separately on each device, with synchronized play/pause/seek over shared state, independent local volume and voice ducking. It is not mixed into a WebRTC track, and timing is approximate. Notification acceptance opens the ringing screen; tap Accept there to grant microphone access in a page gesture. iOS autoplay and output selection vary by browser; users may need to tap to enable audio or use device controls. A successful local browser WebRTC test does not establish mobile-carrier TURN reachability; validate relay issuance and two physical devices on Wi-Fi and cellular before relying on calls.

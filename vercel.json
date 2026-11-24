@@ -46,6 +46,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/turn-credentials/",
+      "destination": "https://llweydgvtpwgnslvgnqm.supabase.co/functions/v1/turn-credentials"
+    },
+    {
       "source": "/u/:username/",
       "destination": "/u/"
     }

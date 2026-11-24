@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Maximize2, Mic, MicOff, Minimize2, Music2, Phone, PhoneOff, Signal, Volume2, WifiOff, X } from "lucide-react";
+import { attachCallAudio, clearCallAudio, primeCallAudio } from "@/lib/callAudio";
 import { buzz, formatDuration, keepAwake } from "@/lib/rtc";
 import type { CallSession } from "@/hooks/useCall";
 import { title, type Conversation } from "@/lib/types";
@@ -13,14 +14,14 @@ import ListenTogether from "./ListenTogether";
  * a timer, a live quality meter and a translucent dock. Audio only by design —
  * the same bandwidth buys a wideband voice stream instead of a soft video.
  */
-export default function CallSheet({ c, session, onClose, onUploadAudio }: {
+export default function CallSheet({ c, session, remoteAudio, onClose, onUploadAudio }: {
   c: Conversation;
   session: CallSession;
+  remoteAudio: RefObject<HTMLAudioElement | null>;
   onClose: () => void;
   onUploadAudio: (file: File) => Promise<void>;
 }) {
   const { phase, kind, remote, stats, error, ended, elapsed, muted } = session;
-  const remoteAudio = useRef<HTMLAudioElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(true);
   const [audioBlocked, setAudioBlocked] = useState(false);
@@ -39,9 +40,10 @@ export default function CallSheet({ c, session, onClose, onUploadAudio }: {
   }, []);
 
   useEffect(() => {
-    if (remoteAudio.current && remote) { remoteAudio.current.srcObject = remote; void remoteAudio.current.play().then(() => setAudioBlocked(false)).catch(() => setAudioBlocked(true)); }
+    if (remoteAudio.current && remote) { void attachCallAudio(remoteAudio.current, remote, voiceVolume).then(() => setAudioBlocked(false)).catch(() => setAudioBlocked(true)); }
     else setAudioBlocked(false);
-  }, [remote]);
+  }, [remote, remoteAudio]);
+  useEffect(() => () => clearCallAudio(remoteAudio.current), [remoteAudio]);
 
   useEffect(() => { if (remoteAudio.current) remoteAudio.current.volume = voiceVolume; }, [voiceVolume, remote]);
 
@@ -102,8 +104,8 @@ export default function CallSheet({ c, session, onClose, onUploadAudio }: {
   }, [phase]);
 
   useEffect(() => {
-    if (!ended && phase !== "idle") return;
-    const timer = setTimeout(onClose, ended ? (ended.status === "failed" ? 5000 : 1600) : 0);
+    if ((!ended && phase !== "idle") || ended?.status === "failed") return;
+    const timer = setTimeout(onClose, ended ? 1600 : 0);
     return () => clearTimeout(timer);
   }, [ended, phase, onClose]);
 
@@ -124,13 +126,12 @@ export default function CallSheet({ c, session, onClose, onUploadAudio }: {
     </button>}
 
   <div ref={screen} style={{ display: expanded ? undefined : "none" }} className={"call-screen audio " + (connected ? "live " : "")} role="dialog" aria-modal="true" aria-label={"Call with " + partnerName}>
-    <audio ref={remoteAudio} autoPlay playsInline/>
 
     <header className="call-top">
       <button className="call-minimize" aria-label="Collapse call" onClick={() => setExpanded(false)}><Minimize2 size={18}/></button>
       <div className="call-signal" role="status">
         {connected ? <Signal size={13}/> : phase === "connecting" ? <Spinner/> : <WifiOff size={13} className="call-signal-idle"/>}
-        <span>{connected ? (stats?.path === "relay" ? "Relay" : stats?.path === "direct" ? "Direct" : "Connected") : label}</span>
+        <span>{session.fetchingRelay ? "Fetching relay" : connected ? (stats?.path === "relay" ? "Connected • Relay" : stats?.path === "direct" ? "Connected • Direct" : "Connected") : ended?.status === "failed" ? "Failed" : phase === "connecting" ? "Connecting" : label}</span>
       </div>
       {connected && stats && <span className="call-quality" title={"Round-trip " + stats.rtt + " ms"}>
         <b style={{ width: Math.max(12, Math.min(100, 100 - Math.min(100, stats.loss * 14) - Math.min(70, stats.rtt / 6))) + "%" }}/>
@@ -145,19 +146,21 @@ export default function CallSheet({ c, session, onClose, onUploadAudio }: {
       </div>
       <h1 className="call-name">{partnerName}</h1>
       <p className={"call-state " + (connected ? "live" : "")}>{label}</p>
+      {phase === "connecting" && !session.fetchingRelay && <button className="call-audio-retry" onClick={session.retryConnection}>Retry connection</button>}
       {audioBlocked && <button className="call-audio-retry" onClick={() => void remoteAudio.current?.play().then(() => setAudioBlocked(false)).catch(() => setAudioBlocked(true))}>Tap to hear audio</button>}
       {error && <p className="call-error" role="alert">{error}</p>}
+      {ended?.status === "failed" && /call is already in progress/i.test(error) && <button className="call-audio-retry" onClick={() => void session.endPreviousCall().then(ok => { if (ok) onClose(); })}>End previous call</button>}
     </div>
 
     {phase === "ringing" ? <div className="call-actions incoming">
       <button className="call-action decline" aria-label="Decline call" onClick={() => void session.decline()}><PhoneOff size={26}/><small>Decline</small></button>
-      <button className="call-action accept" aria-label="Accept call" onClick={() => void session.accept()}><Phone size={26}/><small>Accept</small></button>
+      <button className="call-action accept" aria-label="Accept call" onClick={() => { primeCallAudio(remoteAudio.current); void session.accept(); }}><Phone size={26}/><small>Accept</small></button>
     </div> : <div className="call-actions">
       <button className={"call-action " + (muted ? "on" : "")} aria-pressed={muted} aria-label={muted ? "Unmute" : "Mute"} onClick={session.toggleMute}>{muted ? <MicOff size={24}/> : <Mic size={24}/>}<small>{muted ? "Unmute" : "Mute"}</small></button>
       <button className="call-action" aria-label="Audio output" disabled={!supportsOutput || !connected} onClick={() => void chooseOutput()}><Volume2 size={24}/><small>Output</small></button>
       <button className="call-action" aria-label="Share music" disabled={!connected} onClick={() => { setMusicLoaded(true); setMusicOpen(true); }}><Music2 size={24}/><small>Music</small></button>
       <button className="call-action" aria-label="Minimise call" onClick={() => setExpanded(false)}><Minimize2 size={24}/><small>Minimise</small></button>
-      <button className="call-action end" aria-label="End call" onClick={() => void session.hangup()}><PhoneOff size={26}/><small>End</small></button>
+      <button className="call-action end" aria-label="End call" onClick={() => { if (ended?.status === "failed") onClose(); else void session.hangup(); }}><PhoneOff size={26}/><small>End</small></button>
     </div>}
 
     {(outputError || !supportsOutput) && connected && <p className="call-output-note" role="status">{outputError || "Use your device controls to change audio output."}</p>}

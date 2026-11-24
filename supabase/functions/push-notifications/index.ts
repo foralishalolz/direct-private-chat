@@ -37,11 +37,21 @@ Deno.serve(async (req: Request) => {
           if (endpointAllowed(job.endpoint)) {
             try {
               const call = isCallJob(job);
+              // Do not dispatch a queued ring that ended before the worker ran.
+              if (call && job.call_id) {
+                const { data: ringing, error: checkError } = await admin.from("calls").select("status").eq("id", job.call_id).maybeSingle();
+                if (checkError) throw checkError;
+                if (ringing?.status !== "ringing") {
+                  await admin.rpc("finish_push_job", { p_secret: secret, p_subscription: job.subscription_id, p_conversation: job.conversation_id, p_message: job.message_id, p_lease: job.lease, p_status: 204 });
+                  continue;
+                }
+              }
+              if (call && !job.call_id || !call && !job.message_id) throw new Error("Invalid notification job.");
               const request = webpush.generateRequestDetails(
                 { endpoint: job.endpoint, keys: { p256dh: job.p256dh, auth: job.auth_secret } },
                 // A call keeps its own tag so a ringing phone is never shadowed
                 // by a chat notification for the same chat.
-                call && job.call_id ? callPushPayload({ ...job, call_id: job.call_id }) : pushPayload(job),
+                call && job.call_id ? callPushPayload({ ...job, call_id: job.call_id }) : pushPayload({ ...job, message_id: job.message_id ?? "" }),
                 {
                   vapidDetails: config,
                   TTL: call ? 45 : 3600,

@@ -36,7 +36,7 @@ export function useIncomingCall(userId: string, enabled = true) {
     // Foreground rings must reach the user even when no conversation is open.
     const client = db(); let disposed = false;
     const receive = (row: { id?: string; conversation_id?: string; callee?: string; status?: string; started_at?: string }) => {
-      if (disposed || row.callee !== userId || row.status !== "ringing" || !row.id || !row.conversation_id || !row.started_at || Date.now() - Date.parse(row.started_at) > 55000) return;
+      if (disposed || row.callee !== userId || row.status !== "ringing" || !row.id || !row.conversation_id || !row.started_at || !Number.isFinite(Date.parse(row.started_at)) || Date.now() - Date.parse(row.started_at) > 55000) return;
       accept(row.id, row.conversation_id, "open");
     };
     const channel = client.channel("incoming-global:" + userId).on("postgres_changes", { event:"INSERT", schema:"public", table:"calls", filter:"callee=eq." + userId }, event => receive(event.new)).subscribe();
@@ -54,7 +54,7 @@ export function useIncomingCall(userId: string, enabled = true) {
     if (callId && conversationId && (!account || account === userId)) {
       const action = url.searchParams.get("decline") ? "decline" : url.searchParams.get("accept") ? "accept" : "open";
       accept(callId, conversationId, action);
-      url.searchParams.delete("call"); url.searchParams.delete("accept"); url.searchParams.delete("decline");
+      url.searchParams.delete("call"); url.searchParams.delete("chat"); url.searchParams.delete("account"); url.searchParams.delete("accept"); url.searchParams.delete("decline");
       history.replaceState(null, "", url);
     }
 

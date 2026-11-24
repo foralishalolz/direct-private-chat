@@ -17,9 +17,7 @@ export function readTurn(): TurnConfig | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<TurnConfig>;
-    const url = clean(String(parsed.url ?? ""));
-    if (!/^turns?:/.test(url)) return null;
-    return { url, username: String(parsed.username ?? ""), credential: String(parsed.credential ?? "") };
+    return normalizeTurn({ url: String(parsed.url ?? ""), username: String(parsed.username ?? ""), credential: String(parsed.credential ?? "") });
   } catch {
     return null;
   }
@@ -31,9 +29,14 @@ export function normalizeTurn(config: TurnConfig): TurnConfig {
   if (!/^turns?:/.test(url)) throw new Error("A relay address starts with turn: or turns:.");
   const host = url.slice(url.indexOf(":") + 1);
   if (!/^[a-z0-9.\-]+(:\d{1,5})?(\?transport=(udp|tcp))?$/i.test(host)) throw new Error("That relay address does not look right.");
+  const hostname = host.split("?")[0].replace(/:\d+$/, "");
+  if (hostname.length > 253 || !hostname.split(".").every(label => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))) throw new Error("That relay address does not look right.");
   const port = /:(\d{1,5})/.exec(host)?.[1];
   if (port && (Number(port) < 1 || Number(port) > 65535)) throw new Error("That relay port is out of range.");
-  return { url, username: clean(config.username).slice(0, 200), credential: clean(config.credential).slice(0, 200) };
+  if (/^turns:/i.test(url) && /\?transport=udp$/i.test(url)) throw new Error("Secure relay addresses require TCP transport.");
+  const username = clean(config.username).slice(0, 200), credential = clean(config.credential).slice(0, 200);
+  if (!username || !credential) throw new Error("A relay username and password are required.");
+  return { url, username, credential };
 }
 
 export function writeTurn(config: TurnConfig | null): TurnConfig | null {

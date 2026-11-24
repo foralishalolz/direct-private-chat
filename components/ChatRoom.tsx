@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Archive, ArrowLeft, Bell, Bookmark, ChevronDown, Heart, Link2, MessageCircle, Search, SquarePen, Users, WifiOff, X } from "lucide-react";
 import { watchDeviceMode, watchViewport } from "@/lib/device";
@@ -16,6 +16,8 @@ import { db, rpc } from "@/lib/supabase";
 import { useDeepLink } from "@/lib/deeplink";
 import { useIncomingCall } from "@/hooks/useIncomingCall";
 import { useCall } from "@/hooks/useCall";
+import { primeCallAudio } from "@/lib/callAudio";
+import { clearCallNotification } from "@/lib/notifications";
 import { upload } from "@/lib/media";
 import { enqueue, announce } from "@/lib/offline";
 import { useActivityPing, type ActivityKind } from "@/hooks/useActivityPing";
@@ -140,8 +142,10 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   // Keep the call outside the selected thread so minimizing survives navigation.
   const [callConversation, setCallConversation] = useState<Conversation | null>(null);
   const [callOpen, setCallOpen] = useState(false);
+  const callAudio = useRef<HTMLAudioElement>(null);
   const call = useCall(callConversation?.id ?? (active?.kind === "direct" ? active.id : null), profile.id);
   const incoming = useIncomingCall(profile.id, call.phase === "idle");
+  useEffect(() => { if (call.call?.conversation_id) void clearCallNotification(profile.id, call.call.conversation_id).catch(() => {}); }, [profile.id, call.call?.id, call.call?.conversation_id, call.phase]);
   useEffect(() => { if (incoming.intent && call.phase === "idle") setSelected(incoming.intent.conversationId); }, [incoming.intent, call.phase]);
   useEffect(() => {
     if (call.phase !== "idle") {
@@ -152,7 +156,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   function startCall() {
     if (call.phase !== "idle") { setCallOpen(true); return; }
     if (!active || active.kind !== "direct") return;
-    setCallConversation(active); setCallOpen(true); void call.start("audio");
+    primeCallAudio(callAudio.current); setCallConversation(active); setCallOpen(true); void call.start("audio");
   }
   async function uploadCallAudio(file: File) {
     if (!callConversation || !file.type.startsWith("audio/")) throw new Error("Choose an audio file.");
@@ -177,6 +181,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
 
   return (
     <main className={"app-shell " + (selected ? "has-thread " : "") + (tabs.hidden ? "tabs-hidden" : "")}>
+      <audio ref={callAudio} autoPlay playsInline aria-hidden="true"/>
       <nav className="rail" aria-label="Main navigation">
         <a href="/" aria-label="BitchAt" className="rail-brand"><Brand small /></a>
         <IconButton label="Messages" className="active" onClick={() => open(null)}><MessageCircle size={24} /><span className="rail-label">Messages</span></IconButton>
@@ -226,7 +231,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
           <button className="primary" onClick={() => openDiscover()}><SquarePen size={18} />New message</button>
         </section>
       )}
-      {callOpen && callConversation && (call.phase !== "idle" || call.ended || call.error) && <CallSheet c={callConversation} session={call} onUploadAudio={uploadCallAudio} onClose={() => { setCallOpen(false); call.reset(); setCallConversation(null); }} />}
+      {callOpen && callConversation && (call.phase !== "idle" || call.ended || call.error) && <CallSheet c={callConversation} session={call} remoteAudio={callAudio} onUploadAudio={uploadCallAudio} onClose={() => { setCallOpen(false); call.reset(); setCallConversation(null); }} />}
       {linkError && <div className="message-toast link-toast" role="status"><span>{linkError}</span><IconButton label="Dismiss" onClick={() => setLinkError("")}><X size={17}/></IconButton></div>}
       {notifications.toast && <div className="message-toast" role="status"><button onClick={() => { setSelected(notifications.toast); notifications.dismiss(); }}><MessageCircle size={20}/><span>New message</span></button><IconButton label="Dismiss notification" onClick={notifications.dismiss}><X size={17}/></IconButton></div>}
       {chatAction && <ChatActionModal conversationId={chatAction.id} userId={profile.id} action={chatAction.action} onClose={() => setChatAction(null)} onDone={async () => { if (selected === chatAction.id) { setSelected(null); setOpened(null); } await refresh(); }}/>}

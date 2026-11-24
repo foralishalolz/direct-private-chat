@@ -16,7 +16,7 @@ export function useNotifications(userId: string, selected: string | null, onOpen
     };
     if ("serviceWorker" in navigator) navigator.serviceWorker.addEventListener("message", receive);
     const url = new URL(location.href), id = url.searchParams.get("chat");
-    if (id) {
+    if (id && !url.searchParams.has("call")) {
       if (url.searchParams.get("account") === userId && UUID.test(id)) open.current(id);
       url.searchParams.delete("chat"); url.searchParams.delete("account"); history.replaceState(null, "", url);
     }

@@ -12,7 +12,7 @@ export function pushPayload(job: Pick<PushJob, "user_id" | "conversation_id" | "
   return JSON.stringify({ userId: job.user_id, conversationId: job.conversation_id, messageId: job.message_id, timestamp: Date.now() });
 }
 
-export type CallPushJob = PushJob & { call_id: string | null; kind: string };
+export type CallPushJob = Omit<PushJob, "message_id"> & { message_id: string | null; call_id: string | null; kind: string };
 
 /**
  * A ringing call must feel like a phone call: high urgency, no collapse, and a

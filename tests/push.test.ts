@@ -63,6 +63,20 @@ test("service worker delivers closed-tab push once, keeps content private, and r
   assert.equal(notifications.length, 1);
   await writePushState(null); await deliver({ ...payload, messageId: crypto.randomUUID() }); assert.equal(notifications.length, 1);
 });
+test("call pushes only ring for the opted-in account and are deduplicated", async () => {
+  const handlers = new Map<string, (event: unknown) => void>(), shown: {title:string;options:Record<string,unknown>}[] = [];
+  const worker = { addEventListener: (name:string, handler:(event:unknown)=>void)=>handlers.set(name,handler), registration: { showNotification: async (title:string,options:Record<string,unknown>)=>{shown.push({title,options});} }, location: {origin:"https://bitchwyat.vercel.app"} };
+  vm.runInNewContext(readFileSync("public/sw-template.js","utf8"),{self:worker,indexedDB,URL,Date,VERSION:"test",ASSETS:[]});
+  const callId=crypto.randomUUID(), payload={kind:"call",userId,conversationId,callId,timestamp:Date.now()};
+  async function deliver(value:unknown){let pending=Promise.resolve();handlers.get("push")!({data:{json:()=>value},waitUntil:(work:Promise<void>)=>{pending=work;}});await pending;}
+  await writePushState({userId,enabled:true});
+  await deliver({...payload,userId:crypto.randomUUID()}); assert.equal(shown.length,0);
+  await deliver(payload); await deliver(payload); assert.equal(shown.length,1);
+  assert.equal(shown[0].title,"Incoming BitchAt call");
+  await deliver({...payload,callId:crypto.randomUUID(),timestamp:Date.now()-61000});assert.equal(shown.length,1);
+  await writePushState(null);await deliver({...payload,callId:crypto.randomUUID()});assert.equal(shown.length,1);
+});
+
 test("a worker update activates without reloading a draft and retains the previous immutable chunks", async () => {
   const handlers = new Map<string, (event: unknown) => void>(), removed: string[] = [];
   let activated = 0, claimed = 0;
@@ -77,4 +91,27 @@ test("a worker update activates without reloading a draft and retains the previo
   assert.equal(await (await response!).text(), "previous chunk"); response = undefined;
   handlers.get("fetch")!({ request: { method: "GET", url: "https://llweydgvtpwgnslvgnqm.supabase.co/storage/v1/photo" }, respondWith: (work: Promise<Response>) => { response = work; } });
   assert.equal(response, undefined);
+});
+
+test("push worker sends ringing calls with high urgency and skips ended calls", async () => {
+  const { build } = await import('esbuild');
+  const bundle=await build({entryPoints:['supabase/functions/push-notifications/index.ts'],bundle:true,write:false,format:'esm',platform:'neutral',external:['npm:*']});
+  const source=bundle.outputFiles[0].text.replace(/^import .*;\n/gm,'');
+  let handler:(req:Request)=>Promise<Response>=async()=>new Response(null,{status:500});
+  const calls:string[]=[];const sent:{payload:any,options:any}[]=[];const finished:any[]=[];let claims=0;
+  const jobs=[
+    {subscription_id:crypto.randomUUID(),conversation_id:conversationId,message_id:null,call_id:crypto.randomUUID(),user_id:userId,endpoint:'https://fcm.googleapis.com/fcm/send/test',p256dh:'p',auth_secret:'a',lease:crypto.randomUUID(),kind:'call'},
+    {subscription_id:crypto.randomUUID(),conversation_id:conversationId,message_id:null,call_id:crypto.randomUUID(),user_id:userId,endpoint:'https://fcm.googleapis.com/fcm/send/test',p256dh:'p',auth_secret:'a',lease:crypto.randomUUID(),kind:'call'},
+    {subscription_id:crypto.randomUUID(),conversation_id:conversationId,message_id:messageId,call_id:null,user_id:userId,endpoint:'https://fcm.googleapis.com/fcm/send/test',p256dh:'p',auth_secret:'a',lease:crypto.randomUUID(),kind:'message'},
+  ];
+  const admin={rpc:async(name:string,args:any)=>{if(name==='push_server_config')return {data:{publicKey:'p',privateKey:'p',subject:'https://example.com'},error:null};if(name==='claim_push_jobs')return {data:claims++?[]:jobs,error:null};if(name==='finish_push_job'){finished.push(args);return {error:null};}throw Error(name);},from:()=>({select:()=>({eq:(_key:string,id:string)=>({maybeSingle:async()=>{calls.push(id);return {data:{status:id===jobs[0].call_id?'ringing':'ended'},error:null};}})})})};
+  const deno={env:{get:(name:string)=>name==='SUPABASE_URL'?'https://example.com':name==='SUPABASE_SECRET_KEYS'?'{}':'server-key'},serve:(fn:typeof handler)=>{handler=fn;}};
+  const webpush={generateRequestDetails:(_subscription:unknown,payload:string,options:unknown)=>{sent.push({payload:JSON.parse(payload),options});return {endpoint:'https://fcm.googleapis.com/fcm/send/test',headers:{},body:'encrypted'};}};
+  vm.runInNewContext(source,{Deno:deno,webpush,createClient:()=>admin,Response,URL,Date,AbortSignal,fetch:async()=>new Response(null,{status:201})});
+  const response=await handler(new Request('https://worker.test',{method:'POST',headers:{'x-push-secret':'a'.repeat(64)}}));
+  assert.equal(response.status,200);assert.equal(calls.length,2);assert.equal(sent.length,2);
+  const ringing=sent.find(item=>item.payload.kind==='call'), message=sent.find(item=>item.payload.messageId===messageId);
+  assert.ok(ringing);assert.equal(ringing.options.urgency,'high');assert.equal(ringing.options.TTL,45);
+  assert.ok(message);assert.equal(message.options.urgency,'normal');
+  assert.equal(finished.length,3);assert.equal(finished.find(x=>x.p_subscription===jobs[0].subscription_id).p_message,null);
 });

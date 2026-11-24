@@ -72,8 +72,10 @@ export default function ChatThread({conversation:c,profile:p,onBack,onRefresh,ac
   if(!callIntent)return;
   if(call.phase!=="ringing"||call.call?.id!==callIntent.callId)return;
   onShowCall();
-  if(callIntent.action==="open"){onCallIntentHandled();return;}
-  if(callIntent.action==="decline")void call.decline();else void call.accept();
+  // A notification action runs in the service worker, not a page gesture.
+  // Open the ringing sheet and let the user tap Accept there so microphone
+  // permission and audio playback are initiated by a real browser gesture.
+  if(callIntent.action==="decline")void call.decline();
   onCallIntentHandled();
  },[callIntent,call.phase,call.call?.id]); // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>{alive.current=true;const timer=setInterval(()=>{if(document.visibilityState==="visible")setNow(Date.now());},30000);return()=>{alive.current=false;clearInterval(timer);exportAbort.current?.abort();};},[]);
