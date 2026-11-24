@@ -30,3 +30,17 @@ export async function endpoint(name: string,body: unknown,authenticated=true) {
   if(!response.ok){const data=await response.json().catch(()=>({error:"Please try again."}));throw new Error(data.error??"Please try again.");}
   return response;
 }
+
+/** Same-origin production proxy for the relay function; static local servers
+ * without Vercel rewrites can fall back to the authenticated Edge endpoint. */
+export async function relayEndpoint(callId: string) {
+  const {data:{session}} = await db().auth.getSession();
+  if (!session) throw new Error("Sign in again.");
+  const response = await fetch("/api/turn-credentials/", {
+    method:"POST", headers:{"Content-Type":"application/json", apikey:SUPABASE_KEY, Authorization:"Bearer "+session.access_token},
+    body:JSON.stringify({callId}), cache:"no-store", signal:AbortSignal.timeout(15000)
+  });
+  if (response.status === 404 || response.status === 405) return endpoint("turn-credentials", {callId});
+  if (!response.ok) { const data = await response.json().catch(()=>({error:"Call relay unavailable."})); throw new Error(data.error ?? "Call relay unavailable."); }
+  return response;
+}

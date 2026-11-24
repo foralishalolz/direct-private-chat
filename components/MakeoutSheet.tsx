@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Heart, Sparkles } from "lucide-react";
 import { db, rpc } from "@/lib/supabase";
+import { haptic } from "@/lib/haptics";
 import { useLive } from "@/hooks/useLive";
-import { kissLevel, heartBurst, streakWord, type KissMeter } from "@/lib/kiss";
+import { kissLevel, heartBurst, streakWord, kissBatch, type KissMeter } from "@/lib/kiss";
 import { errorText, label, type Conversation, type Profile } from "@/lib/types";
 import { Avatar, ErrorNote, Modal } from "./UI";
 
@@ -33,7 +34,7 @@ export default function MakeoutSheet({ c, p, onClose }: { c: Conversation; p: Pr
   const [pops, setPops] = useState<Pop[]>([]);
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
-  const alive = useRef(true), queue = useRef(0), timer = useRef<ReturnType<typeof setTimeout> | null>(null), popId = useRef(0), streakTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alive = useRef(true), queue = useRef(0), inFlight = useRef(false), flushRef = useRef<() => void>(() => {}), timer = useRef<ReturnType<typeof setTimeout> | null>(null), popId = useRef(0), streakTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const partner = c.partner;
 
   useEffect(() => {
@@ -42,31 +43,36 @@ export default function MakeoutSheet({ c, p, onClose }: { c: Conversation; p: Pr
       alive.current = false;
       if (timer.current) clearTimeout(timer.current);
       if (streakTimer.current) clearTimeout(streakTimer.current);
-      // Taps made in the last few hundred ms still count after the sheet closes.
-      const leftover = Math.min(queue.current, 12);
-      queue.current = 0;
-      if (leftover) void rpc("kiss", { p_conversation: c.id, p_count: leftover }).catch(() => {});
+      // Flush unsent taps, including bursts larger than the RPC batch limit.
+      void flushRef.current();
     };
   }, [c.id]);
 
   const flush = useCallback(async () => {
-    const count = queue.current;
-    if (!count) return;
-    queue.current = 0;
-    setPending(value => Math.max(0, value - count));
-    setSending(true);
+    if (inFlight.current || !queue.current) return;
+    const count = kissBatch(queue.current);
+    queue.current -= count;
+    inFlight.current = true;
+    if (alive.current) setSending(true);
+    let success = false;
     try {
-      const result = await rpc<{ taps_a: number; taps_b: number; last_at: string }>("kiss", { p_conversation: c.id, p_count: Math.min(count, 12) });
-      if (!alive.current) return;
-      live.setData({ meter: { taps_a: result.taps_a, taps_b: result.taps_b, last_at: result.last_at } });
-      setError("");
-      if (queue.current) void flush();
+      const result = await rpc<{ taps_a: number; taps_b: number; last_at: string }>("kiss", { p_conversation: c.id, p_count: count });
+      success = true;
+      if (alive.current) {
+        setPending(value => Math.max(0, value - count));
+        live.setData({ meter: { taps_a: result.taps_a, taps_b: result.taps_b, last_at: result.last_at } });
+        setError("");
+      }
     } catch (cause) {
+      queue.current += count;
       if (alive.current) setError(errorText(cause));
     } finally {
+      inFlight.current = false;
       if (alive.current) setSending(false);
+      if (success && queue.current) void flushRef.current();
     }
   }, [c.id, live]);
+  flushRef.current = () => { void flush(); };
 
   function tap() {
     queue.current += 1;
@@ -77,6 +83,7 @@ export default function MakeoutSheet({ c, p, onClose }: { c: Conversation; p: Pr
       streakTimer.current = setTimeout(() => { if (alive.current) setStreak(0); }, 1800);
       return next;
     });
+    if (popId.current % 3 === 0) haptic("light");
     const id = ++popId.current;
     const index = popId.current;
     setPops(list => [...list.slice(-14), { id, ...heartBurst(index), glyph: GLYPHS[index % GLYPHS.length] }]);
@@ -89,6 +96,7 @@ export default function MakeoutSheet({ c, p, onClose }: { c: Conversation; p: Pr
   const mine = (isA ? meter?.taps_a : meter?.taps_b) ?? 0;
   const theirs = (isA ? meter?.taps_b : meter?.taps_a) ?? 0;
   const total = mine + theirs + pending;
+  const partnerTotal = theirs;
   const level = kissLevel(total);
   const streakText = streak > 2 ? streakWord(streak) : "";
 
@@ -113,7 +121,10 @@ export default function MakeoutSheet({ c, p, onClose }: { c: Conversation; p: Pr
         <button type="button" className="makeout-stage" aria-label="Kiss" onClick={tap}>
           <span className="makeout-lips" aria-hidden="true">💋</span>
           <span className="makeout-taps">
-            <b>{mine.toLocaleString()}</b> you · <b>{theirs.toLocaleString()}</b> {label(partner)}
+            <b>{mine.toLocaleString()}</b> you · <b>{partnerTotal.toLocaleString()}</b> {label(partner)}
+          </span>
+          <span className="makeout-live" role="status">
+            {theirs > mine ? label(partner) + " is winning" : mine > theirs ? "You are winning" : "Neck and neck"}
           </span>
           {streakText && <span className="makeout-streak" role="status" key={streak}>{streakText}</span>}
           <span className="makeout-pops" aria-hidden="true">
@@ -135,6 +146,7 @@ export default function MakeoutSheet({ c, p, onClose }: { c: Conversation; p: Pr
         </div>
 
         <ErrorNote text={error || live.error} />
+      {error && <button className="quiet-button" onClick={() => void flush()}>Retry kisses</button>}
       </div>
     </Modal>
   );

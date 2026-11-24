@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
+import { Archive, Check, CheckCheck, ChevronDown, Coins, Copy, Dices, Download, Heart, Link2, LogOut, Pencil, Phone, ShieldCheck, Sparkles, Trash2, X } from "lucide-react";
 import { db, rpc } from "@/lib/supabase";
 import { useLive } from "@/hooks/useLive";
 import ChatActionModal from "./ChatActionModal";
+import CallHistory from "./CallHistory";
 import { downloadMedia } from "@/lib/export";
 import { day, errorText, label, theirPet, time, type Conversation, type Message, type Profile } from "@/lib/types";
 import { Avatar, ErrorNote, IconButton, Modal, Spinner } from "./UI";
@@ -14,7 +15,7 @@ const DATE_IDEAS = ["Coffee and a long walk", "Cook something new together", "Ma
 
 type ChatProps = { c: Conversation; p: Profile };
 
-export function ChatDetails({ c, p, onRefresh, onExit }: ChatProps & { onRefresh: () => Promise<void>; onExit: () => void }) {
+export function ChatDetails({ c, p, onRefresh, onExit, onCall }: ChatProps & { onRefresh: () => Promise<void>; onExit: () => void; onCall?: (kind: "audio") => void }) {
   const [name, setName] = useState(c.title);
   const [code, setCode] = useState("");
   const [copied, setCopied] = useState(false);
@@ -64,6 +65,7 @@ export function ChatDetails({ c, p, onRefresh, onExit }: ChatProps & { onRefresh
       <PetNameEditor c={c} onSaved={onRefresh}/>
       <button className="menu-item" disabled={busy} onClick={() => void act(async () => { await rpc("set_block", { p_other: c.partner?.id, p_blocked: !blocked }); setBlocked(!blocked); })}><ShieldCheck size={20}/>{blocked ? "Unblock" : "Block"}</button>
     </div>}
+    {c.kind === "direct" && onCall && <div className="settings-section call-details-section"><h4 className="details-heading"><Phone size={15}/>Calls</h4><CallHistory c={c} onCall={onCall}/></div>}
     <div className="settings-section"><button className="menu-item danger" disabled={busy} onClick={() => setConfirm("clear")}><Trash2 size={20}/>Delete chat</button>
       {c.kind === "group" && <button className="menu-item danger" disabled={busy} onClick={() => setConfirm("leave")}><LogOut size={20}/>Leave group</button>}
     </div><ErrorNote text={error}/>
@@ -151,14 +153,14 @@ export function MessageHistory({ c }: { c: Conversation }) {
     } catch (e) { if (n === generation.current) setError(errorText(e)); }
     finally { if (n === generation.current) setBusy(false); }
   }
-  return <><div className="segmented" aria-label="History filter">{["all", "edited", "deleted"].map(kind => <button key={kind} aria-pressed={kind === filter} onClick={() => setFilter(kind)}>{kind[0].toUpperCase() + kind.slice(1)}</button>)}</div>
+  return <><p className="history-intro">Review edits and deleted messages from this chat.</p><div className="segmented history-filter" role="group" aria-label="History filter">{["all", "edited", "deleted"].map(kind => <button key={kind} aria-pressed={kind === filter} onClick={() => setFilter(kind)}>{kind[0].toUpperCase() + kind.slice(1)}</button>)}</div>
     <div className="history-list">{rows.map(item => <article className="history-card" key={item.id + item.kind}>
       <header>{item.kind === "edited" ? <Pencil size={15}/> : <Trash2 size={15}/>}<strong>@{item.username}</strong><time>{day(item.event_at)} · {time(item.event_at)}</time></header>
       <p className={item.kind === "edited" ? "previous-text" : ""}>{item.before_content || (item.media_url ? "" : "Media")}</p>
       {item.kind === "edited" && <p>{item.after_content}</p>}
       {item.media_url && <><PrivateMedia path={item.media_url} kind={item.media_kind}/><button className="menu-item" onClick={() => void downloadMedia(item.media_url!).catch(e => setError(errorText(e)))}><Download size={17}/>Save</button></>}
     </article>)}</div>
-    {live.loading || busy ? <Spinner/> : !rows.length && <p className="empty-label">No history</p>}
+    {live.loading || busy ? <Spinner/> : !rows.length && <div className="history-empty"><span><Archive size={24} aria-hidden="true"/></span><p className="empty-label">No history</p><small>There are no {filter === "all" ? "edits or deleted messages" : filter === "edited" ? "edited messages" : "deleted messages"} to show.</small></div>}
     {more && live.data.length === 30 && <IconButton label="Older history" disabled={busy} onClick={() => void loadOlder()}><ChevronDown size={20}/></IconButton>}<ErrorNote text={error || live.error}/>
   </>;
 }
@@ -172,5 +174,5 @@ export function QuickPlay({ c }: { c: Conversation }) {
     try { if (kind === "date") { const message = "💌 " + DATE_IDEAS[crypto.getRandomValues(new Uint32Array(1))[0] % DATE_IDEAS.length]; const { error } = await db().from("messages").insert({ id: crypto.randomUUID(), conversation_id: c.id, content: message }); if (error) throw error; } else await rpc("quick_play", { p_id: crypto.randomUUID(), p_conversation: c.id, p_kind: kind }); setResult("Sent to chat"); }
     catch (e) { setError(errorText(e)); } finally { lock.current = false; setBusy(false); }
   }
-  return <div className="quick-play"><div className="play-tiles"><button disabled={busy} onClick={() => void play("dice")}><Dices size={27}/><span>Roll a dice</span></button><button disabled={busy} onClick={() => void play("coin")}><Coins size={27}/><span>Flip a coin</span></button>{c.kind === "direct" && c.couple_a && c.couple_b && <button disabled={busy} onClick={() => void play("date")}><Heart size={27}/><span>Pick our date</span></button>}</div><span className="action-status" role="status">{busy ? <Spinner/> : result}</span><ErrorNote text={error}/></div>;
+  return <div className="quick-play"><div className="play-tiles"><button disabled={busy} onClick={() => void play("dice")}><Dices size={27}/><span>Roll a dice</span></button><button disabled={busy} onClick={() => void play("coin")}><Coins size={27}/><span>Flip a coin</span></button></div><span className="action-status" role="status">{busy ? <Spinner/> : result}</span><ErrorNote text={error}/></div>;
 }

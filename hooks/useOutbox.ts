@@ -26,8 +26,8 @@ export function useOutbox(userId: string | undefined) {
           for (const row of due) {
             if (!active || !navigator.onLine || sent >= 20) break;
             sent++;
-            const { id, conversation_id, user_id, content, media_url, media_kind, kind, reply_to } = row.message;
-            let { data, error } = await db().from("messages").insert({ id, conversation_id, user_id, content, media_url, media_kind, kind, reply_to: reply_to ?? null }).select("*").abortSignal(abort.signal).single();
+            const { id, conversation_id, user_id, content, media_url, media_kind, kind, reply_to, text_effect } = row.message;
+            let { data, error } = await db().from("messages").insert({ id, conversation_id, user_id, content, media_url, media_kind, kind, reply_to: reply_to ?? null, text_effect: text_effect ?? null }).select("*").abortSignal(abort.signal).single();
             if (!active) break;
             if (error?.code === "23505") {
               const result = await db().from("messages").select("*").eq("id", id).eq("user_id", userId).abortSignal(abort.signal).maybeSingle();

@@ -1,0 +1,185 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { callLabel, formatDuration, iceServers, mediaSupported } from "../lib/rtc";
+import { isCallJob } from "../supabase/functions/_shared/push";
+
+const base = { started_at: new Date(Date.now() - 120000).toISOString(), answered_at: null, ended_at: null };
+
+test("call durations format like a phone app and never go negative", () => {
+  assert.equal(formatDuration(0), "0:00");
+  assert.equal(formatDuration(9), "0:09");
+  assert.equal(formatDuration(65), "1:05");
+  assert.equal(formatDuration(3600), "1:00:00");
+  assert.equal(formatDuration(3671), "1:01:11");
+  assert.equal(formatDuration(-40), "0:00");
+  assert.equal(formatDuration(Number.NaN), "0:00");
+});
+
+test("call labels separate missed, declined, failed and answered calls", () => {
+  assert.equal(callLabel({ ...base, status: "missed" }), "Missed");
+  assert.equal(callLabel({ ...base, status: "declined" }), "Declined");
+  assert.equal(callLabel({ ...base, status: "failed" }), "Couldn’t connect");
+  assert.equal(callLabel({ ...base, status: "ringing" }), "Ringing…");
+  // Answered two minutes ago and never ended: duration, not "Ringing".
+  const answered = callLabel({ ...base, status: "active", answered_at: new Date(Date.now() - 120000).toISOString() });
+  assert.match(answered, /^2:0\d$/);
+  // Answered but hung up 30s later: the answer time is what counts.
+  const ended = callLabel({
+    started_at: new Date(Date.now() - 600000).toISOString(),
+    answered_at: new Date(Date.now() - 120000).toISOString(),
+    ended_at: new Date(Date.now() - 90000).toISOString(),
+    status: "ended",
+  });
+  assert.equal(ended, "0:30");
+});
+
+test("ICE always offers STUN and only adds TURN when configured", () => {
+  const servers = iceServers();
+  assert.ok(servers.length >= 1);
+  assert.ok(servers.every(server => Array.isArray(server.urls) || typeof server.urls === "string"));
+  const flat = servers.flatMap(server => (Array.isArray(server.urls) ? server.urls : [server.urls]));
+  assert.ok(flat.some(url => url.startsWith("stun:")));
+  assert.ok(flat.every(url => /^(stun|turn|turns):/.test(url)), "no plain-text or http peers");
+});
+
+test("media support is a boolean in a headless environment", () => {
+  assert.equal(typeof mediaSupported(), "boolean");
+  assert.equal(mediaSupported(), false);
+});
+
+test("push jobs distinguish a ringing call from a message", () => {
+  assert.equal(isCallJob({ kind: "call" }), true);
+  assert.equal(isCallJob({ kind: "message" }), false);
+  assert.equal(isCallJob({}), false);
+  assert.equal(isCallJob({ kind: null }), false);
+});
+
+test("the service worker answers calls without ever opening a chat URL for them", () => {
+  const source = readFileSync("public/sw-template.js", "utf8");
+  assert.match(source, /bitchat-open-call/);
+  assert.match(source, /call:"\+data\.userId/);
+  assert.match(source, /actions:\[\{action:"accept"/);
+  // Calls must expire quickly so a stale ring is never shown hours later.
+  assert.match(source, /Date\.now\(\)-data\.timestamp>60000/);
+  // The call payload carries ids only — no names, message text or media.
+  assert.doesNotMatch(source, /display_name|avatar_url/);
+});
+
+test("duplicate call offers are coalesced and answered idempotently", async () => {
+  const { CallLink } = await import("../lib/rtc");
+  const oldPC=globalThis.RTCPeerConnection,oldStream=globalThis.MediaStream;
+  let offers=0,answers=0;
+  class FakeStream { getTracks(){return [];} addTrack(){} }
+  class FakePeer {
+    localDescription: RTCSessionDescription|null=null;
+    remoteDescription: RTCSessionDescription|null=null;
+    currentLocalDescription: RTCSessionDescription|null=null;
+    signalingState="stable";
+    async createOffer(){offers++;await new Promise(resolve=>setTimeout(resolve,5));return {type:"offer",sdp:"offer-sdp"};}
+    async createAnswer(){answers++;await new Promise(resolve=>setTimeout(resolve,5));return {type:"answer",sdp:"answer-sdp"};}
+    async setLocalDescription(d: RTCSessionDescription){this.localDescription=d;this.currentLocalDescription=d;}
+    async setRemoteDescription(d: RTCSessionDescription){this.remoteDescription=d;}
+    async addIceCandidate(){} close(){} getSenders(){return [];}
+  }
+  Object.assign(globalThis,{RTCPeerConnection:FakePeer,MediaStream:FakeStream});
+  try {
+    const link=new CallLink({onSignal:()=>{},onState:()=>{},onRemote:()=>{}},"me");
+    const [o1,o2]=await Promise.all([link.offer(),link.offer()]);
+    assert.equal(o1.sdp,"offer-sdp");assert.equal(o2.sdp,"offer-sdp");assert.equal(offers,1);
+    await link.offer();assert.equal(offers,1);
+    const [a1,a2]=await Promise.all([link.answer({type:"offer",sdp:"remote-sdp"}),link.answer({type:"offer",sdp:"remote-sdp"})]);
+    assert.equal(a1.sdp,"answer-sdp");assert.equal(a2.sdp,"answer-sdp");assert.equal(answers,1);
+    await link.answer({type:"offer",sdp:"remote-sdp"});assert.equal(answers,1);link.close();
+  } finally { Object.assign(globalThis,{RTCPeerConnection:oldPC,MediaStream:oldStream}); }
+});
+
+test("call signaling sends SDP answers and retries the ready handshake", () => {
+  const hook=readFileSync("hooks/useCall.ts","utf8");
+  assert.match(hook,/signal\(\{ type: "answer", sdp: response\.sdp \}\)/);
+  assert.match(hook,/setInterval\(\(\) => \{ if \(phaseRef\.current === "connecting"\) void signal\(\{ type: "ready" \}\); \}, 3000\)/);
+});
+
+test("calls replay early candidates and bound failed connections", () => {
+  const hook=readFileSync("hooks/useCall.ts","utf8");
+  assert.match(hook,/sentCandidates\.current\.push\(frame\)/);
+  assert.match(hook,/for \(const candidate of sentCandidates\.current\)/);
+  assert.match(hook,/Couldn’t connect\. Check your network or call relay/);
+  const thread=readFileSync("components/ChatThread.tsx","utf8");
+  assert.match(thread,/call\.call\?\.id!==callIntent\.callId/);
+});
+
+test("Opus is preferred and updated without duplicating parameters", async () => {
+  const { preferOpus } = await import("../lib/rtc");
+  const sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 0 111 8\r\na=rtpmap:111 opus/48000/2\r\na=fmtp:111 minptime=10;usedtx=1;stereo=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n";
+  const result = preferOpus(sdp);
+  assert.match(result, /m=audio 9 UDP\/TLS\/RTP\/SAVPF 111 0 8/);
+  assert.match(result, /minptime=10;maxaveragebitrate=64000;stereo=1;sprop-stereo=1;usedtx=0/);
+  assert.equal(preferOpus(result), result);
+  assert.equal(preferOpus("v=0\r\nm=audio 9 RTP/AVP 0\r\n"), "v=0\r\nm=audio 9 RTP/AVP 0\r\n");
+});
+
+test("common phone audio MIME aliases match supported storage formats", async () => {
+ const { canonicalMediaType } = await import("../lib/media");
+ assert.equal(canonicalMediaType("audio/x-m4a"), "audio/mp4");
+ assert.equal(canonicalMediaType("audio/x-wav"), "audio/wav");
+ assert.equal(canonicalMediaType("audio/mpeg; codecs=mp3"), "audio/mpeg");
+});
+
+test("invalid saved relay entries cannot suppress automatic relay", async () => {
+  const { readTurn } = await import('../lib/turn');
+  const old=globalThis.localStorage;
+  let raw='';
+  Object.assign(globalThis,{localStorage:{getItem:()=>raw}});
+  try {
+    for (const url of ['', 'turn:', 'turn:bad host', 'turn:example.org:99999', 'https://example.org']) {
+      raw=JSON.stringify({url}); assert.equal(readTurn(),null);
+    }
+    raw=JSON.stringify({url:'turn:relay.example:3478',username:'',credential:''}); assert.equal(readTurn(),null);
+    raw=JSON.stringify({url:'turn:relay.example:3478?transport=udp',username:'user',credential:'pass'});
+    assert.equal(readTurn()?.url,'turn:relay.example:3478?transport=udp');
+  } finally { Object.assign(globalThis,{localStorage:old}); }
+});
+
+test("ICE candidates arriving early are applied after the remote description", async () => {
+  const { CallLink }=await import('../lib/rtc');const pcOld=globalThis.RTCPeerConnection, streamOld=globalThis.MediaStream;
+  const added:string[]=[];let created:any;
+  class Stream { getTracks(){return [];} addTrack(){} }
+  class Peer {
+    remoteDescription:any=null; localDescription:any=null; signalingState='stable';
+    constructor(public config:RTCConfiguration){created=this;}
+    async setRemoteDescription(d:any){this.remoteDescription=d;}
+    async addIceCandidate(c:any){added.push(c.candidate);}
+    async createAnswer(){return {type:'answer',sdp:'v=0'};}
+    async setLocalDescription(d:any){this.localDescription=d;}
+    close(){} getSenders(){return [];}
+  }
+  Object.assign(globalThis,{RTCPeerConnection:Peer,MediaStream:Stream});
+  try {
+    const link=new CallLink({onSignal:()=>{},onState:()=>{},onRemote:()=>{}},'me',[]);
+    await link.candidate({candidate:'early-one'});await link.candidate({candidate:'early-two'});
+    assert.deepEqual(added,[]);await link.answer({type:'offer',sdp:'v=0'});
+    assert.deepEqual(added,['early-one','early-two']);assert.equal(created.config.iceCandidatePoolSize,10);link.close();
+  } finally { Object.assign(globalThis,{RTCPeerConnection:pcOld,MediaStream:streamOld}); }
+});
+
+
+test("restart candidates received before their SDP are retried", async () => {
+  const { CallLink }=await import('../lib/rtc'); const pcOld=globalThis.RTCPeerConnection, streamOld=globalThis.MediaStream;
+  const added:string[]=[];
+  class Stream { getTracks(){return [];} addTrack(){} }
+  class Peer {
+    remoteDescription:any={type:'offer',sdp:'old'}; localDescription:any={type:'answer',sdp:'answer'}; signalingState='stable';
+    async setRemoteDescription(d:any){this.remoteDescription=d;}
+    async addIceCandidate(c:any){if(this.remoteDescription.sdp==='old')throw new Error('wrong ICE generation');added.push(c.candidate);}
+    async createAnswer(){return {type:'answer',sdp:'answer'};}
+    async setLocalDescription(d:any){this.localDescription=d;}
+    close(){} getSenders(){return [];}
+  }
+  Object.assign(globalThis,{RTCPeerConnection:Peer,MediaStream:Stream});
+  try {
+    const link=new CallLink({onSignal:()=>{},onState:()=>{},onRemote:()=>{}},'me',[]);
+    await link.candidate({candidate:'new-generation'});assert.deepEqual(added,[]);
+    await link.answer({type:'offer',sdp:'new'});assert.deepEqual(added,['new-generation']);link.close();
+  } finally { Object.assign(globalThis,{RTCPeerConnection:pcOld,MediaStream:streamOld}); }
+});

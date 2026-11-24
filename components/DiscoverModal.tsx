@@ -7,7 +7,6 @@ import { errorText, label, type Profile } from "@/lib/types";
 import { Avatar, ErrorNote, IconButton, Modal, Spinner } from "./UI";
 
 type Mode = "direct" | "group" | "join";
-type Suggestion = Profile & { mood?: string | null; shared?: number };
 
 const SHARE_BASE = "https://bitchwyat.vercel.app";
 
@@ -18,17 +17,8 @@ export default function DiscoverModal({ userId, onOpen, onClose, initialMode = "
   const [query, setQuery] = useState(""), [results, setResults] = useState<Profile[]>([]), [selected, setSelected] = useState<Profile[]>([]);
   const [mode, setMode] = useState<Mode>(initialMode), [name, setName] = useState(""), [code, setCode] = useState("");
   const [busy, setBusy] = useState(false), [searching, setSearching] = useState(false), [error, setError] = useState("");
-  const [suggested, setSuggested] = useState<Suggestion[]>([]), [suggestionsLoading, setSuggestionsLoading] = useState(true);
   const [linkFor, setLinkFor] = useState<Profile | null>(null), [copied, setCopied] = useState("");
   const generation = useRef(0), lock = useRef(false);
-
-  useEffect(() => {
-    let active = true;
-    void rpc<Suggestion[]>("suggested_profiles").then(rows => {
-      if (active) setSuggested(rows.filter(row => row.id !== userId));
-    }).catch(() => {}).finally(() => { if (active) setSuggestionsLoading(false); });
-    return () => { active = false; };
-  }, [userId]);
 
   useEffect(() => {
     const n = ++generation.current;
@@ -65,13 +55,13 @@ export default function DiscoverModal({ userId, onOpen, onClose, initialMode = "
     else void open(person);
   }
 
-  const rows = results.length ? results : needle(query) ? [] : suggested;
+  const rows = needle(query) ? results : [];
 
   return <Modal title="New message" onClose={onClose}><div className="panel-pad">
     <div className="discover-modes">
       <button className={mode === "direct" ? "active" : ""} onClick={() => setMode("direct")}><Sparkles size={15} />People</button>
       <button aria-label="New group" className={mode === "group" ? "active" : ""} onClick={() => setMode("group")}><Users size={15} />Group</button>
-      <button className={mode === "join" ? "active" : ""} onClick={() => setMode("join")}><Link2 size={15} />Join</button>
+      <button aria-label="Join group" className={mode === "join" ? "active" : ""} onClick={() => setMode("join")}><Link2 size={15} />Join</button>
     </div>
 
     {mode === "join" ? <form className="join-form" onSubmit={e => { e.preventDefault(); void open(); }}>
@@ -84,21 +74,20 @@ export default function DiscoverModal({ userId, onOpen, onClose, initialMode = "
         <div className="chips">{selected.map(p => <button key={p.id} onClick={() => setSelected(previous => previous.filter(x => x.id !== p.id))}>@{p.username} ×</button>)}</div>
       </>}
 
-      {!needle(query) && rows.length > 0 && <p className="section-label"><Sparkles size={13} />Suggested for you</p>}
+      {!needle(query) && <p className="empty-label">Search by name or username (at least 3 characters).</p>}
       <div className="search-results">
         {searching ? <Spinner /> : rows.map(person => {
           const chosen = selected.some(x => x.id === person.id);
           return <div key={person.id} className={"person-row-wrap" + (chosen ? " chosen" : "")}>
             <button className="person-row" disabled={busy} onClick={() => toggle(person)}>
               <Avatar profile={person} />
-              <span><strong>{label(person)}</strong><small>@{person.username}{(person as Suggestion).mood ? " " + (person as Suggestion).mood : ""}</small></span>
+              <span><strong>{label(person)}</strong><small>@{person.username}</small></span>
               {mode === "group" ? (chosen && <Check size={18} />) : <ArrowRight size={16} />}
             </button>
             <IconButton label={"Share link for " + label(person)} className="person-share" onClick={() => setLinkFor(person)}><Link2 size={16} /></IconButton>
           </div>;
         })}
         {!searching && needle(query) && !results.length && <p className="empty-label">No results</p>}
-        {mode === "direct" && suggestionsLoading && <div className="center pad"><Spinner /></div>}
       </div>
 
       {mode === "group" && <button className="primary full" aria-label="Create group" disabled={busy || selected.length < 2 || !name.trim()} onClick={() => void open()}>{busy ? <Spinner /> : <ArrowRight size={22} />}</button>}

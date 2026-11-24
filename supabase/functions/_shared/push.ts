@@ -11,3 +11,25 @@ export function endpointAllowed(endpoint: string) {
 export function pushPayload(job: Pick<PushJob, "user_id" | "conversation_id" | "message_id">) {
   return JSON.stringify({ userId: job.user_id, conversationId: job.conversation_id, messageId: job.message_id, timestamp: Date.now() });
 }
+
+export type CallPushJob = Omit<PushJob, "message_id"> & { message_id: string | null; call_id: string | null; kind: string };
+
+/**
+ * A ringing call must feel like a phone call: high urgency, no collapse, and a
+ * distinct tag so it never overwrites a message notification. The payload only
+ * carries ids — never names, content or media.
+ */
+export function callPushPayload(job: Pick<PushJob, "user_id" | "conversation_id"> & { call_id: string }) {
+  return JSON.stringify({
+    userId: job.user_id,
+    conversationId: job.conversation_id,
+    callId: job.call_id,
+    kind: "call",
+    timestamp: Date.now(),
+  });
+}
+
+export function missedCallPushPayload(job: Pick<PushJob, "user_id" | "conversation_id"> & { call_id: string }) {
+  return JSON.stringify({ userId: job.user_id, conversationId: job.conversation_id, callId: job.call_id, kind: "missed_call", timestamp: Date.now() });
+}
+export const isCallJob = (job: { kind?: string | null }) => job.kind === "call" || job.kind === "missed_call";

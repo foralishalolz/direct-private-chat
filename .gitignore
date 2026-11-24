@@ -10,3 +10,7 @@ next-env.d.ts
 playwright-report/
 test-results/
 
+
+.cache/
+
+.arena/

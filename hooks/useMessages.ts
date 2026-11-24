@@ -3,6 +3,7 @@ import {useCallback,useEffect,useLayoutEffect,useRef,useState} from "react";
 import {db} from "@/lib/supabase";
 import {acknowledge,announce,cache,cached,cacheable,enqueue,pending,clearConversation,visibleRows} from "@/lib/offline";
 import {errorText,historyIds,merge,type Message} from "@/lib/types";
+import {normalizeTextEffect,type TextEffect} from "@/lib/textEffects";
 export function useMessages(conversationId:string,userId:string){
   const [messages,setMessages]=useState<Message[]>([]),[loading,setLoading]=useState(true),[more,setMore]=useState(true),[older,setOlder]=useState(false),[connected,setConnected]=useState(false),[error,setError]=useState("");
   const rows=useRef<Message[]>([]),events=useRef(new Map<string,{row:Message|null;revision:number}>()),revision=useRef(0),alive=useRef(false),refreshing=useRef(false),refreshAgain=useRef(false),paging=useRef(false),lastSync=useRef(0);
@@ -83,9 +84,10 @@ export function useMessages(conversationId:string,userId:string){
       setMessages(previous=>{const next=merge(visibleRows(userId,conversationId,fetched),previous);rows.current=next;return next;});setMore(r.data.length===30);setError("");
     }catch(e){if(alive.current)setError(errorText(e));}finally{paging.current=false;if(alive.current)setOlder(false);}
   },[conversationId,userId,personalize]);
-  const send=useCallback(async(content:string,media_url:string|null=null,media_kind:Message["media_kind"]=null,kind:Message["kind"]="message",reply_to:string|null=null)=>{
-    const message:Message={id:crypto.randomUUID(),conversation_id:conversationId,user_id:userId,content:content.trim(),media_url,media_kind,kind,reply_to,instant_viewed:false,created_at:new Date().toISOString()};
-    try{await enqueue(message);}catch(e){if(!navigator.onLine)throw e;const r=await db().from("messages").insert({id:message.id,conversation_id:conversationId,user_id:userId,content:message.content,media_url,media_kind,kind,reply_to}).select("*").single();if(r.error)throw r.error;announce(userId,r.data as Message);}
+  const send=useCallback(async(content:string,media_url:string|null=null,media_kind:Message["media_kind"]=null,kind:Message["kind"]="message",reply_to:string|null=null,text_effect:TextEffect|null="normal")=>{
+    const effect=normalizeTextEffect(text_effect);
+    const message:Message={id:crypto.randomUUID(),conversation_id:conversationId,user_id:userId,content:content.trim(),media_url,media_kind,kind,reply_to,instant_viewed:false,text_effect:effect,created_at:new Date().toISOString()};
+    try{await enqueue(message);}catch(e){if(!navigator.onLine)throw e;const r=await db().from("messages").insert({id:message.id,conversation_id:conversationId,user_id:userId,content:message.content,media_url,media_kind,kind,reply_to,text_effect:effect}).select("*").single();if(r.error)throw r.error;announce(userId,r.data as Message);}
   },[conversationId,userId]);
   const edit=useCallback(async(id:string,content:string)=>{
     const r=await db().from("messages").update({content:content.trim()}).eq("id",id).eq("user_id",userId).select("*").single();if(r.error)throw r.error;

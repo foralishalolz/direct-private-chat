@@ -3,8 +3,8 @@
   "short_name": "BitchAt",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0912",
-  "theme_color": "#0a0912",
+  "background_color": "#0d1018",
+  "theme_color": "#0d1018",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -18,5 +18,37 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "id": "/",
+  "shortcuts": [
+    {
+      "name": "Messages",
+      "url": "/",
+      "description": "Open your chats"
+    },
+    {
+      "name": "Journal",
+      "url": "/?open=journal",
+      "description": "Write to your journal"
+    },
+    {
+      "name": "Us",
+      "url": "/?open=us",
+      "description": "Couple space"
+    }
+  ],
+  "categories": [
+    "social",
+    "communication",
+    "lifestyle"
+  ],
+  "display_override": [
+    "standalone",
+    "minimal-ui",
+    "browser"
+  ],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "orientation": "portrait"
 }

@@ -1,0 +1,152 @@
+/* Final native-system pass. Loaded last so the glass, scroll geometry, emoji
+   typography and iOS text effects have one authoritative visual language. */
+:root {
+  --native-ease: cubic-bezier(.32, .72, 0, 1);
+  --native-spring: cubic-bezier(.2, .9, .2, 1);
+  --native-ink: #0d1018;
+  --native-glass: rgba(20, 23, 33, .74);
+  --native-line: rgba(255, 255, 255, .12);
+  --native-accent: #b9b7ff;
+  color-scheme: dark;
+}
+html, body { background: var(--native-ink); }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Inter, system-ui, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, textarea { font-family: inherit; }
+input, textarea { letter-spacing: -.01em; }
+button { transition: transform .16s var(--native-spring), background .16s ease, color .16s ease, border-color .16s ease; }
+button:active:not(:disabled) { transform: scale(.965); }
+.icon-button, .conversation, .rail-profile { -webkit-tap-highlight-color: transparent; }
+.emoji-cell, .emoji-tabs button, .emoji-row button, .reaction-grid button, .affection-glyph, .message-text, .shortcut-glyph {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-variant-emoji: emoji;
+}
+
+/* A real app viewport: every scroll lives inside one of the two panes. */
+.app-shell { height: var(--app-height, 100dvh); min-height: 0; overflow: hidden; overscroll-behavior: none; }
+.inbox, .chat-thread { height: 100%; min-height: 0; }
+.inbox > *:not(.conversation-list) { flex: 0 0 auto; }
+.conversation-list, .thread-scroll, .composer-sheet, .emoji-scroll {
+  min-height: 0;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.conversation-list, .thread-scroll { flex: 1 1 auto; overflow-y: auto; scrollbar-gutter: stable; }
+.chat-thread > .thread-header, .chat-thread > .chat-shortcuts, .chat-thread > .composer-wrap { flex: 0 0 auto; }
+.thread-scroll { flex: 1 1 auto; }
+
+/* Quiet glass over layered depth. Blur is stationary chrome only. */
+.inbox, .chat-thread, .thread-empty {
+  background-image:
+    radial-gradient(ellipse at 12% -10%, rgba(142, 139, 255, .13), transparent 42%),
+    radial-gradient(ellipse at 92% 105%, rgba(255, 126, 174, .08), transparent 46%),
+    linear-gradient(165deg, #171b28, #0f121a 76%);
+}
+.inbox-header, .thread-header, .rail, .modal, .composer, .composer-sheet, .pin-bar, .call-mini {
+  border-color: var(--native-line);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .09), 0 20px 50px rgba(0, 0, 0, .22);
+}
+.inbox-header, .thread-header, .rail, .modal, .composer, .composer-sheet, .pin-bar, .call-mini {
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+}
+.inbox-header { background: linear-gradient(180deg, rgba(25, 28, 40, .88), rgba(18, 21, 31, .58)); }
+.thread-header { background: linear-gradient(180deg, rgba(24, 27, 39, .92), rgba(20, 23, 33, .72)); }
+.composer { background: rgba(35, 39, 52, .86); }
+.rail { background: rgba(20, 23, 33, .84); }
+.modal { background: linear-gradient(155deg, rgba(39, 42, 57, .97), rgba(20, 22, 32, .96)); }
+.inbox-search .input-icon, .inbox-filters button.active, .chat-shortcuts button, .conversation.selected {
+  border-color: rgba(255, 255, 255, .14);
+}
+.call-screen .call-actions:not(.incoming) { animation: native-call-dock .42s var(--native-spring) both; }
+@keyframes native-call-dock { from { opacity: 0; transform: translate3d(0, 18px, 0) scale(.98); } to { opacity: 1; transform: none; } }
+.call-action { transition: transform .18s var(--native-spring), background .18s ease, box-shadow .18s ease; }
+.call-action:active { transform: scale(.92); }
+.call-action.end { box-shadow: 0 12px 32px rgba(244, 63, 80, .32); }
+
+/* iOS text effects tray --------------------------------------------------- */
+.composer-effect-chip {
+  display: inline-flex; align-items: center; gap: 7px; align-self: flex-start;
+  margin: 0 4px 2px; padding: 5px 7px 5px 10px;
+  border: 1px solid rgba(185, 183, 255, .35); border-radius: 99px;
+  background: rgba(185, 183, 255, .12); color: #e8e6ff; font-size: 11px; font-weight: 650;
+  animation: native-chip-in .22s var(--native-spring) both;
+}
+.composer-effect-chip button { width: 22px; height: 22px; border-radius: 50%; color: inherit; background: rgba(255, 255, 255, .1); }
+@keyframes native-chip-in { from { opacity: 0; transform: translateY(5px) scale(.96); } to { opacity: 1; transform: none; } }
+.composer .effects-toggle { color: #d8d6ff; }
+.composer .effects-toggle[aria-expanded="true"] { background: rgba(185, 183, 255, .2); }
+.composer-sheet.effects { padding-bottom: 12px; }
+.effects-tray { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 7px; padding: 3px 1px 5px; }
+.effects-tray button {
+  min-width: 0; min-height: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid rgba(255, 255, 255, .12); border-radius: 18px; color: #e9e8f5;
+  background: linear-gradient(155deg, rgba(255, 255, 255, .1), rgba(255, 255, 255, .035));
+}
+.effects-tray button[aria-pressed="true"] { border-color: rgba(210, 208, 255, .72); background: linear-gradient(150deg, rgba(185, 183, 255, .32), rgba(255, 126, 174, .13)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1); }
+.effects-tray .effect-glyph { display: grid; place-items: center; width: 35px; height: 30px; font-size: 23px; font-weight: 760; letter-spacing: -.07em; line-height: 1; }
+.effects-tray .effect-glyph.big { font-size: 31px; }
+.effects-tray .effect-glyph.small { font-size: 14px; }
+.effects-tray .effect-glyph.shake { animation: effect-shake .65s var(--native-spring) 1; }
+.effects-tray .effect-glyph.ripple { text-shadow: 0 0 0 #b9b7ff, 0 0 14px #b9b7ff99; }
+.effects-tray .effect-glyph.bloom { color: #ffd6e8; text-shadow: 0 0 16px #ff8fbe; }
+.effects-tray .effect-glyph.explode { color: #ffe7a8; text-shadow: 3px -4px 0 #ff8fbe55, -4px 3px 0 #b9b7ff55; }
+.effects-tray small { font-size: 10px; color: #c7c6d6; }
+.composer textarea.effect-preview-big { font-size: 21px; font-weight: 700; line-height: 1.25; }
+.composer textarea.effect-preview-small { font-size: 12px; letter-spacing: .01em; }
+
+/* Persisted bubble effects. Only the strict enum from lib/textEffects is used. */
+.bubble[class*="effect-"] { overflow: visible; }
+.bubble[class*="effect-"] .message-text { position: relative; isolation: isolate; display: inline-block; }
+.bubble.effect-big .message-text { font-size: clamp(24px, 4vw, 34px); font-weight: 760; line-height: 1.18; letter-spacing: -.055em; }
+.bubble.effect-small .message-text { font-size: 11px; line-height: 1.35; opacity: .88; }
+.bubble.effect-shake .message-text { animation: effect-shake .62s var(--native-spring) 1; }
+@keyframes effect-shake { 0%,100% { transform: translateX(0) rotate(0); } 18% { transform: translateX(-3px) rotate(-2deg); } 38% { transform: translateX(4px) rotate(2deg); } 58% { transform: translateX(-2px) rotate(-1deg); } 78% { transform: translateX(2px) rotate(1deg); } }
+.bubble.effect-ripple .message-text::before {
+  content: ""; position: absolute; z-index: -1; inset: -12px -16px; border-radius: 40%;
+  border: 2px solid rgba(200, 198, 255, .55); box-shadow: 0 0 0 10px rgba(185, 183, 255, .06);
+  animation: effect-ripple 1.1s ease-out 2; pointer-events: none;
+}
+@keyframes effect-ripple { from { opacity: .9; transform: scale(.62); } to { opacity: 0; transform: scale(1.28); } }
+.bubble.effect-bloom .message-text { animation: effect-bloom .85s var(--native-spring) 1; text-shadow: 0 0 18px rgba(255, 143, 190, .72), 0 0 36px rgba(185, 183, 255, .35); }
+@keyframes effect-bloom { 0% { filter: brightness(1); transform: scale(.98); } 45% { filter: brightness(1.35); transform: scale(1.035); } 100% { filter: brightness(1); transform: scale(1); } }
+.bubble.effect-explode .message-text::after {
+  content: ""; position: absolute; z-index: -1; inset: -34px; pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 32%, #ff8fbe 0 3px, transparent 4px),
+    radial-gradient(circle at 78% 22%, #b9b7ff 0 4px, transparent 5px),
+    radial-gradient(circle at 32% 78%, #ffe7a8 0 3px, transparent 4px),
+    radial-gradient(circle at 82% 74%, #8ce5bb 0 3px, transparent 4px),
+    radial-gradient(circle at 50% 12%, #ffffff 0 2px, transparent 3px),
+    radial-gradient(circle at 8% 68%, #ffffff 0 2px, transparent 3px);
+  background-size: 100% 100%; animation: effect-explode .9s ease-out 1 both; mix-blend-mode: screen;
+}
+@keyframes effect-explode { 0% { opacity: 0; transform: scale(.3) rotate(-8deg); } 35% { opacity: 1; } 100% { opacity: 0; transform: scale(1.45) rotate(7deg); } }
+
+/* Native phone behaviour, including the lower-chat / keyboard scroll bug. */
+@media(max-width:760px) {
+  html, body { height: 100%; overflow: hidden; }
+  .app-shell { position: relative; top: var(--app-offset, 0px); height: var(--app-height, 100dvh); }
+  .inbox { height: 100%; padding-bottom: calc(86px + env(safe-area-inset-bottom)); }
+  .conversation-list { flex: 1 1 auto; max-height: none; padding-bottom: 10px; }
+  .has-thread .chat-thread { display: flex; height: 100%; }
+  .chat-thread { height: 100%; }
+  .thread-scroll { flex: 1 1 auto; min-height: 0; }
+  .composer-wrap { flex: 0 0 auto; }
+  html[data-keyboard-open="true"] .app-shell { height: var(--app-height, 100dvh); }
+  html[data-keyboard-open="true"] .chat-shortcuts { display: none; }
+  .effects-tray { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media(prefers-reduced-motion:reduce) {
+  button, .call-action { transition: none !important; }
+  .call-screen .call-actions:not(.incoming), .composer-effect-chip, .bubble[class*="effect-"] .message-text,
+  .bubble[class*="effect-"] .message-text::before, .bubble[class*="effect-"] .message-text::after { animation: none !important; }
+}
+@media(prefers-reduced-transparency:reduce) {
+  .inbox-header, .thread-header, .rail, .modal, .composer, .composer-sheet, .pin-bar, .call-mini { backdrop-filter: none; -webkit-backdrop-filter: none; background: #1a1d28; }
+}
+html[data-data-saver="true"] .bubble[class*="effect-"] .message-text::before,
+html[data-data-saver="true"] .bubble[class*="effect-"] .message-text::after { display: none; }

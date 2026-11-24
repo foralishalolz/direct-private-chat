@@ -28,24 +28,72 @@ function acceptPush(data){return new Promise((resolve,reject)=>{
   tx.oncomplete=()=>{db.close();resolve(allowed);};tx.onerror=tx.onabort=()=>{db.close();reject(tx.error);};
  };
 });}
+// BroadcastChannel is used by the page to relay a push while a tab is open.
 self.addEventListener("push",event=>{
  let data;try{data=event.data?.json();}catch{return;}
+
  const valid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
- if(!data||!valid.test(data.userId||"")||!valid.test(data.conversationId||"")||!valid.test(data.messageId||"")||typeof data.timestamp!=="number"||!Number.isFinite(data.timestamp)||Date.now()-data.timestamp>3660000||data.timestamp-Date.now()>120000)return;
+ if(!data||!valid.test(data.userId||""))return;
+ if(data.kind==="missed_call"&&data.callId){
+  if(!valid.test(data.conversationId||"")||!valid.test(data.callId)||typeof data.timestamp!=="number"||!Number.isFinite(data.timestamp)||Date.now()-data.timestamp>86400000||data.timestamp-Date.now()>120000)return;
+  event.waitUntil((async()=>{
+   if(!await acceptPush({...data,messageId:"missed-call:"+data.callId}))return;
+   await self.registration.showNotification("Missed BitchAt call",{
+    body:"Open the chat to call back",icon:"/icon-192.png",badge:"/badge.png",
+    tag:"call:"+data.userId+":"+data.conversationId,renotify:false,
+    data:{userId:data.userId,conversationId:data.conversationId,callId:data.callId,kind:"missed_call"},
+   });
+  })().catch(()=>{}));
+  return;
+ }
+ if(data.kind==="call"&&data.callId){
+  // A ringing call is a live event, not a message: no staleness window beyond
+  // one minute, a call tag that replaced calls inherit, and buttons that can
+  // open the call screen for a microphone permission gesture.
+  if(!valid.test(data.conversationId||"")||!valid.test(data.callId)||typeof data.timestamp!=="number"||!Number.isFinite(data.timestamp)||Date.now()-data.timestamp>60000||data.timestamp-Date.now()>120000)return;
+  event.waitUntil((async()=>{
+   if(!await acceptPush({...data,messageId:"call:"+data.callId}))return;
+   await self.registration.showNotification("Incoming BitchAt call",{
+    body:"Open to answer",
+    icon:"/icon-192.png",badge:"/badge.png",
+    tag:"call:"+data.userId+":"+data.conversationId,renotify:true,
+    requireInteraction:true,silent:false,
+    vibrate:[300,120,300,120,300],
+    actions:[{action:"accept",title:"Open call"},{action:"decline",title:"Decline"}],
+    data:{userId:data.userId,conversationId:data.conversationId,callId:data.callId,kind:"call"},
+   });
+  })().catch(()=>{}));
+  return;
+ }
+ if(!valid.test(data.conversationId||"")||!valid.test(data.messageId||"")||typeof data.timestamp!=="number"||!Number.isFinite(data.timestamp)||Date.now()-data.timestamp>3660000||data.timestamp-Date.now()>120000)return;
  event.waitUntil((async()=>{
   if(!await acceptPush(data))return;
   await self.registration.showNotification("BitchAt",{body:"New message",icon:"/icon-192.png",badge:"/badge.png",tag:"bitchat:"+data.userId+":"+data.conversationId,data:{userId:data.userId,conversationId:data.conversationId,messageId:data.messageId}});
  })().catch(()=>{}));
 });
 
-
 self.addEventListener("notificationclick",event=>{
  event.notification.close();const data=event.notification.data||{};
  const valid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
  if(!valid.test(data.userId||"")||!valid.test(data.conversationId||""))return;
+ const callId=valid.test(data.callId||"")?data.callId:"";
  event.waitUntil((async()=>{
+  // Open the ringing screen or pass a decline intent to the app.
+  if(data.kind==="call"&&callId){
+   const action=event.action;
+   const url="/?call="+encodeURIComponent(callId)+"&chat="+encodeURIComponent(data.conversationId)+"&account="+encodeURIComponent(data.userId)+(action==="decline"?"&decline=1":action==="accept"?"&accept=1":"");
+   const windows=await self.clients.matchAll({type:"window",includeUncontrolled:true});
+   for(const client of windows){
+    if(new URL(client.url).origin!==self.location.origin)continue;
+    await client.focus();
+    client.postMessage({type:"bitchat-open-call",callId,conversationId:data.conversationId,userId:data.userId,action:action||"open"});
+    return;
+   }
+   await self.clients.openWindow(url);
+   return;
+  }
   const windows=await self.clients.matchAll({type:"window",includeUncontrolled:true});
   for(const client of windows){if(new URL(client.url).origin===self.location.origin){await client.focus();client.postMessage({type:"bitchat-open-chat",userId:data.userId,conversationId:data.conversationId});return;}}
   await self.clients.openWindow("/?chat="+encodeURIComponent(data.conversationId)+"&account="+encodeURIComponent(data.userId));
- })());
+ })().catch(()=>{}));
 });

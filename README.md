@@ -1,6 +1,16 @@
-# BitchAt 2.10
+# BitchAt 2.28
 
 Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
+
+## Version 2.28 — native glass, real calls and iOS text effects
+
+This is the full UI/feature remake, not a patch. The mature call subsystem is now part of this branch: private `call:<conversation>` WebRTC signaling, buffered ICE, caller-only renegotiation, Cloudflare TURN relay, ringing/connected/missed states, high-urgency call push, missed-call push, a full-screen iOS-style call sheet, and call-history cards. The ink-only chat sketch and shared board are included. The supplied Apple Messages and call-screen references are preserved under `design/references/`.
+
+The final `native-polish.css` layer gives every page a consistent system-font glass treatment, native emoji typography, spring press feedback, reduced-motion/transparency support, and correct keyboard-aware mobile scroll geometry. The lower-chat/scroll bug is fixed by using `--app-height` with `--app-offset`, explicit flexible scroll panes, and resetting the tucked-away tab dock when returning to the inbox.
+
+The composer now has one canonical tool per job, plus a real iOS-style text-effects tray (Big, Small, Shake, Ripple, Bloom, Explode). Effects are a strict enum, stored in `public.messages.text_effect`, preserved by the offline outbox, and constrained in SQL. See `docs/ios-native-polish.md` for design and verification notes. Apply the additive `20261124120000_ios_text_effects.sql` migration before deploying; call, push, realtime and TURN schema/functions are already installed on the connected project.
+
+The stale `public/sw.js` was removed. `public/sw-template.js` is the source of truth and `npm run build` generates the production `out/sw.js` with call and missed-call notification actions.
 
 ## Run
 
@@ -26,7 +36,7 @@ npm start
 
 ## Deploy
 
-This release is isolated on the `bitchat-production` branch. It includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. The old branch is preserved.
+This source tree includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. Deploy from the current working branch; do not assume the dashboard production branch is the source of the latest UI.
 
 In Vercel, import `foralishalolz/direct-private-chat`, set the production branch to `bitchat-production`, and use the repository root. Framework preset: **Other**. Install: `npm ci --no-fund`. Build: `npm run build`. Output: `out`. The app uses Next.js to generate static files; Vercel serves that export directly. The committed `vercel.json` explicitly sets `framework: null` (Other), overriding the dashboard preset. Using the Next.js adapter together with an `out` output override makes it look for `out/routes-manifest.json`, which is not part of a static export. The committed settings also preserve the generated service worker and browser security headers. The Vercel connection must be authorized for the team owning the project; source files cannot grant that access.
 
@@ -72,6 +82,22 @@ Slow sends remain visible immediately in the existing bounded IndexedDB outbox. 
 
 The inbox bell opens notification settings directly. Permission is requested only by tapping Message alerts; the existing Supabase Web Push queue and service worker handle background delivery. The browser checks cover opt-in, failure rollback, slow sends, modal gestures, reduced motion, data saver, couple matching, and permission boundaries. Physical-device notification delivery still requires supported OS/browser settings; mobile browser simulation does not verify the phone's notification center.
 
+## Version 2.12
+
+Calling, pinned messages, saved messages and a faster native shell.
+
+**Calls.** One-to-one audio calls over WebRTC. The media path is peer to peer (DTLS-SRTP) and nothing is recorded or stored. Signaling never goes client to client: `call_signal()` relays each offer/answer/ICE frame into the private `call:<conversation>` broadcast topic, and only a member of that conversation can read it. Call state itself lives in `public.calls` (ringing → active → ended/declined/missed/failed) with `start_call`, `answer_call`, `end_call` and `call_history`. A ringing call moves 90 seconds of silence to *missed*; a second call in the same chat is refused while one is ringing or active. Candidates that arrive before the callee answers are buffered and replayed, and a duplicate `ready` cannot produce a second offer.
+
+**Reaching a locked phone.** Ringing calls reuse the existing push queue with a `kind` column, separate call subscriptions per endpoint, a high-urgency 45-second payload and `Answer`/`Decline` actions. The service worker posts `bitchat-open-call`; a cold launch opens `/?call=…&chat=…&account=…&accept=1|decline=1`. The call payload carries ids only — no names, text or media.
+
+**Relay.** The `turn-credentials` Supabase Edge Function authenticates a current call participant, applies a per-user issuance limit, and requests short-lived credentials from Cloudflare using server-only `CLOUDFLARE_TURN_TOKEN_ID` and `CLOUDFLARE_TURN_API_TOKEN` secrets. Public STUN is also included. If issuance fails, the call visibly warns and attempts a direct connection. Profile → *Call relay* is an optional per-device override; its credentials stay on that device. Never place long-lived relay tokens in `NEXT_PUBLIC_*` variables.
+
+**Pins and saved messages.** Any message can be pinned (25 per conversation) with a pinned bar, paging and jump-to-message. *Save* keeps a message in `Saved` on this device only (IndexedDB, 300 newest, searchable, removable) — no new table, no upload.
+
+**Fixes and feel.** The emoji/tool tray now closes on every dismissal path (outside tap, Escape, send, switching tools, reply bar, focusing the field) instead of only via its own toggle. `formatDuration(NaN)` no longer renders `NaN:NaN`. Motion uses spring curves with edge-swipe back, pull-to-refresh, rail tuck-away on phones, and haptics on send, save and call actions.
+
+**Verification.** `npm run typecheck`, `npm test` (50 tests), `npm run build`, and the migration applied to the connected project. Relayed calls between two real phones on mobile data are **not** covered by CI and still need a manual check with a configured relay.
+
 ## Version 2.10
 
 The app was audited end to end and polished for a native feel without touching the button-critical design: aurora depth on the shell, inbox, auth card, thread header, composer surface, bubbles, modals and the empty state, a subtler selected-chat accent edge, and a rounded unread pill. Everything that drives buttons — the search bar, rail, composer (send/voice), filters, dropdowns, empty CTA — is unchanged from the verified 2.9 design. The PWA launch identity follows the new theme color. An end-to-end bug audit of auth, messages, inbox, realtime, outbox and offline storage confirmed the interactive paths; no logic was changed. No push/realtime behavior is altered.
@@ -81,7 +107,7 @@ The app was audited end to end and polished for a native feel without touching t
 The cleaned-up release builds on the 2.8 line without changing the database schema, Edge Functions, Web Push backend, or the Vercel static-export deployment model.
 
 - Next.js bumped from 16.3.8 to 16.4.6 (critical advisory GHSA-rhh4-g77r-r9qj and related fixes); CI audit gate now passes with zero known vulnerabilities. Lockfile regenerated.
-- New native-feel affordances: an install prompt (beforeinstallprompt + an iPhone share-sheet hint that persists its dismissal) and a live app-icon unread badge that mirrors the inbox unread count and clears when the tab is visible or the count is zero. Both are guarded no-ops where the platform does not support them.
+- New native-feel affordances: a Profile → Install app option (browser install when available and iPhone share-sheet guidance) and a live app-icon unread badge that mirrors the inbox unread count and clears when the tab is visible or the count is zero. Both are guarded no-ops where the platform does not support them.
 - The direct-private-chat Vercel project now carries explicit NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (plain, browser-safe) matching the committed config fallback; the empty URL variable was replaced rather than left dangling.
 - CI now runs the full BitchAt verification suite on this release branch as well.
 - Behavior, privacy boundaries, push delivery, realtime/outbox semantics and data retention of 2.8 are unchanged; the only intentional code changes are the two additive surfaces above.
@@ -145,3 +171,67 @@ For the existing connected database, the 20260928 migrations are already applied
 The new public tables have RLS enabled. Private payload/history tables intentionally have no client policies or table grants. The authenticated SECURITY DEFINER RPCs use an empty search path and check the caller's conversation membership and, where required, ownership or Pro status. The database linter flags those RPCs for review; their elevated execution is intentional. See [function review guidance](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable).
 
 The connected project's leaked-password protection setting is currently disabled. Review [Supabase password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection) before a wider public launch. This setting is separate from the app's minimum password length and registration rate limit.
+
+### 2.13: shared activities and audio calls
+
+The emoji drawer includes skin-tone variants and flags. A partner opening the games, makeout or drawing panel signals the other online session, which opens the matching panel. Delivery uses Supabase Realtime with an eight-second polling fallback; it requires both users to be signed in, and is not a background push notification. The drawing board allows either participant to draw, erase, undo and clear. Stroke-level server patches preserve concurrent edits to different strokes; conflicting edits to the same stroke are last-write-wins. Older clients still use whole-board saves, so both participants should refresh after an update.
+
+Calls use browser WebRTC with audio only. A TURN relay remains optional but is strongly recommended for restrictive networks; the built-in Cloudflare relay is used automatically unless Profile → Call relay has an override. Connection speed, audio quality and the ability to select a speaker depend on the network, browser, hardware and relay. No two-device call or drawing session is covered by the automated tests; verify on your own phones before relying on them.
+
+### 2.15: Feels and more shared games
+
+Feels messages can be edited before sending. The play screen includes memory, future, guess, emoji and after-dark prompt rounds using the same shared-answer game flow. After-dark prompts are intended for consenting adults; either person can end a round. Makeout taps are sent in serial batches instead of dropping taps above the RPC batch limit. As before, activity popups require an online session, and audio calls still depend on browser support and network conditions; configure a TURN relay for better connectivity on restrictive networks.
+
+### 2.16: A shared little world
+
+The Play sheet includes a shared pet for direct chats: either member can adopt, feed, play with, cuddle, or rename it. Opening the pet also opens it for the other person when they are online; the pet and counters are stored per conversation. The shared names list can hold baby-name ideas, pet names, or other future ideas; either member may add or remove names. Both features use member-only database policies and fall back to periodic refresh if realtime updates are missed. They do not represent actual pregnancies or medical advice.
+
+The mobile shell now uses the visible viewport without desktop padding, with a simpler inbox and a more compact audio-only call screen. Calls still require a configured TURN service for the best chance of connecting on restrictive networks; the current release uses a server-issued Cloudflare relay.
+
+### 2.17: Live play and listening
+
+Couple-specific pet, future-name, makeout and Us surfaces require both partners to enable couple mode. Existing chat history is not deleted; preset relationship-message suggestions are no longer presented. Regular calls, drawing and play remain available in direct chats.
+
+Live games include Four in a Row, a cooperative Garden and Tap Race. They use server-validated turns, and the race starts when both players are ready; its winner is the first tap received by the server, so network latency matters. Starting a game opens it for the other online participant. Shared drawing refreshes more frequently if realtime is interrupted. Instant photos can be decorated with an emoji and your own caption before sending.
+
+Listen together works with audio files or voice notes already sent in the direct chat (within the existing 24-hour media lifetime), not Spotify or other streaming catalogues. Both people must tap Join; either can play or pause for both. Playback is approximate and depends on network latency, device clocks, format support and browser autoplay restrictions. Minimise an audio call to use the listening or game sheet during the call; headphones can reduce echo. A TURN service is still recommended for calls behind restrictive networks.
+
+## 2.18 notes
+
+- Signed-in users can post text and photo stories visible to other signed-in users for 24 hours, except across blocks. Stories are not end-to-end encrypted. Authors can delete their own; signed photo URLs last up to a minute and the existing cleanup worker removes expired or deleted media. This first version does not support video, replies or story audience settings.
+- The private journal is reachable from profile and the chat menu; it supports editing, deletion, mood selection and searching loaded entries. It is not shared with the chat. Load older entries to include them in the local search.
+- The couple-only pet has shared, non-decaying level progress and a sparkle-catching mini-game. The pet artwork uses a layered, animated 3D-style scene, not a real 3D model. Starlines is a new two-person, turn-based game.
+- Listening uses audio uploaded in the chat, not Spotify or YouTube. Both people must join and playback can drift with latency or device clock skew. Catalog integrations and native streaming synchronization are not implemented.
+- Audio-call notification actions wait for the matching ring, candidates are replayed on retry, and stalled connections time out. Web audio routing is browser/OS controlled. TURN remains optional and must be configured separately. Real two-device tests are still needed.
+
+## 2.19 notes
+
+The messages-first home has a single story strip and a cleaner glass layout. In a mutually enabled couple chat, Reels opens a shared link collection. Either Pro member can add HTTPS links, and both members can browse or remove them. Each viewer controls their own playback; viewing is not synchronized. Open an embed intentionally, scroll the site where supported, and use the side arrows or swipe the side controls to change links. Sites may refuse embedding, sign-in or playback; use the external-link button when that happens. Third-party websites can see your IP when you load them. Only open links you trust, and don't paste private tokens or credentials. Embedded pages are sandboxed; no proxy bypasses the site's restrictions.
+
+## 2.20 notes
+
+People discovery no longer suggests profiles; search requires at least three characters. Chat attachments include a dedicated video picker (MP4, WebM and MOV, subject to browser codec support; 25 MB limit), and normal chat photos and videos can be opened in a full-screen viewer. Paste a public HTTPS Instagram reel, video or site link into chat; Pro members of a mutually enabled couple can add it to their shared sites from the message, or paste it directly into Reels. Partners browse independently. Embeds prevent pop-up windows and modal dialogs, but cannot remove ads inside third-party pages or guarantee sites will embed or function in the sandbox. Use the open-original button if a provider blocks embedding. A pasted link is shared as a link, not a downloaded copy, and the source controls its visibility and availability.
+
+## 2.21 notes
+
+The inbox has a more restrained iOS-inspired layout, and installation guidance opens only when requested in Profile. The attachment menu has a Link action that inserts a validated HTTPS link into the draft before sending. Draw together uses a full-screen shared canvas; completed and in-progress strokes are periodically saved, and either member can erase or undo. An offline or interrupted save may need retrying. In a direct chat, Music can upload audio, start a shared session, and let each person join; play/pause state is shared with periodic resynchronization. Browser autoplay, network conditions and device clock differences can affect playback, and audio stops locally when the panel closes. Chat audio is limited to 25 MB and 24 hours. Spotify and YouTube links can be shared, but their playback is not synchronized; provider embeds may restrict playback or display ads.
+
+## 2.22 notes
+
+The mobile login and messages home have been refreshed with a cleaner social-app layout, consistent touch targets and aligned controls. Existing account and inbox behavior is unchanged.
+
+## 2.23 notes
+
+Audio calls obtain short-lived Cloudflare TURN credentials through the authenticated, rate-limited `turn-credentials` Edge Function; a custom relay remains an optional device override. Signaling attempts an ICE restart after network changes, and the call can be minimized while navigating. The in-call listening drawer uses the existing shared uploaded-audio timeline (including play, pause and seek) and local voice/music volume controls. Synchronization is approximate, not beat-exact; direct stream URLs and transmission of mixed music over WebRTC are not implemented. Browser/OS audio routing and volume control support vary. The Cloudflare service and real two-phone calls still require live verification; local WebRTC tests do not establish mobile-carrier TURN reliability.
+
+## Messaging design
+
+The iOS-inspired home, chat, archive and motion decisions are documented in [docs/ios-messaging-redesign.md](docs/ios-messaging-redesign.md).
+
+## Calling diagnostics
+
+Audio calls wait for their private signaling subscription before negotiating. The authenticated `/api/turn-credentials/` endpoint is a same-origin Vercel rewrite to the Supabase Edge Function (the static local server proxies it too). Both GET with a `callId` query and POST with `{"callId":"…"}` require a signed-in participant in a current call. The server issues rate-limited Cloudflare TURN credentials; long-lived TURN keys and tokens remain only in Supabase secrets. Google STUN is retained even when TURN is present. A valid, explicitly saved custom TURN server overrides automatic TURN on that device.
+
+The call pill reports relay fetching, signaling/connection and the selected path where browser statistics expose it. Reconnection renegotiates ICE with the caller as offerer. If a crashed tab leaves a call marked active, the explicit **End previous call** action can end it for both participants before redialing. Closing a page stops local tracks immediately and sends a best-effort end request; browser or network failure may still interrupt that request.
+
+Uploaded music is played separately on each device, with synchronized play/pause/seek over shared state, independent local volume and voice ducking. It is not mixed into a WebRTC track, and timing is approximate. Notification acceptance opens the ringing screen; tap Accept there to grant microphone access in a page gesture. iOS autoplay and output selection vary by browser; users may need to tap to enable audio or use device controls. A successful local browser WebRTC test does not establish mobile-carrier TURN reachability; validate relay issuance and two physical devices on Wi-Fi and cellular before relying on calls.

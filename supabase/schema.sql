@@ -1689,7 +1689,7 @@ alter table public.reactions alter column conversation_id set not null;
 create index if not exists reactions_conversation_message on public.reactions(conversation_id,message_id);
 alter table public.reactions drop constraint if exists reactions_emoji_check;
 alter table public.reactions add constraint reactions_emoji_check check
-  (emoji=any(array['❤️','😂','🥺','🔥','😘','🫶','👍','👎','😍','🥹','😮','😢','😡','🤍','💯','🎉','✨','👀','🙈','🤗','😈','💋','💕','💀']));
+  (emoji=any(array['❤️','😂','🥺','🔥','😘','🫶','👍','👎','😍','🥹','😮','😢','😡','🤍','💯','🎉','✨','👀','🙈','🤗','😈','💋','💕','💀','🥰','😻','🫂','🌹','🍓','🧸','🍪','🌙','🌸','💌','💘','💞','🫦','😽','🎀','💓']));
 
 create or replace function private.reaction_conversation()
 returns trigger language plpgsql security invoker set search_path = '' as $$
@@ -1995,4 +1995,1545 @@ revoke all on function private.push_authorized(text), private.push_eligible(uuid
 revoke all on function public.push_server_config(text), public.store_push_vapid(text,text,text), public.claim_push_jobs(text), public.finish_push_job(text,uuid,uuid,uuid,uuid,integer) from public, anon, authenticated;
 grant execute on function public.push_server_config(text), public.store_push_vapid(text,text,text), public.claim_push_jobs(text), public.finish_push_job(text,uuid,uuid,uuid,uuid,integer) to service_role;
 select cron.schedule('bitchat-push-retry', '* * * * *', 'select private.wake_push_worker(true);');
+
+-- ---------------------------------------------------------------------------
+-- 2.12 Calling, pinned messages and ringing-call push.
+-- Mirrors supabase/migrations/20261123120000_calls_pins_native.sql.
+-- ---------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------
+-- 1. Pinned messages. One row per pinned message; capped per conversation.
+-- ---------------------------------------------------------------------------
+create table if not exists public.conversation_pins (
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  message_id uuid not null references public.messages(id) on delete cascade,
+  pinned_by uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key(conversation_id, message_id)
+);
+create index if not exists conversation_pins_recent on public.conversation_pins(conversation_id, created_at desc);
+alter table public.conversation_pins enable row level security;
+revoke all on public.conversation_pins from public, anon, authenticated;
+grant select on public.conversation_pins to authenticated;
+grant all on public.conversation_pins to service_role;
+drop policy if exists bitchat_pins_read on public.conversation_pins;
+create policy bitchat_pins_read on public.conversation_pins for select to authenticated
+  using(private.is_member(conversation_id));
+
+create or replace function public.pin_message(p_message uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me uuid := auth.uid(); row public.messages; conversation uuid; total integer;
+begin
+  select * into row from public.messages where id = p_message;
+  if row.id is null or me is null or not private.is_member(row.conversation_id) then
+    raise exception 'Message unavailable.';
+  end if;
+  conversation := row.conversation_id;
+  if row.kind not in ('message','sticker','miss') then raise exception 'This message cannot be pinned.'; end if;
+  select count(*) into total from public.conversation_pins where conversation_id = conversation;
+  if total >= 25 and not exists(select 1 from public.conversation_pins where conversation_id = conversation and message_id = p_message) then
+    raise exception 'Unpin something first — 25 pins is the limit.';
+  end if;
+  insert into public.conversation_pins(conversation_id, message_id, pinned_by)
+  values(conversation, p_message, me)
+  on conflict(conversation_id, message_id) do update set pinned_by = excluded.pinned_by, created_at = now();
+  perform realtime.send(jsonb_build_object('conversation_id', conversation, 'message_id', p_message, 'pinned', true), 'pins', 'room:'||conversation::text, true);
+  return jsonb_build_object('ok', true, 'message_id', p_message);
+end;
+$$;
+
+create or replace function public.unpin_message(p_message uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me uuid := auth.uid(); conversation uuid;
+begin
+  select conversation_id into conversation from public.messages where id = p_message;
+  if conversation is null or me is null or not private.is_member(conversation) then
+    raise exception 'Message unavailable.';
+  end if;
+  delete from public.conversation_pins where conversation_id = conversation and message_id = p_message;
+  perform realtime.send(jsonb_build_object('conversation_id', conversation, 'message_id', p_message, 'pinned', false), 'pins', 'room:'||conversation::text, true);
+  return jsonb_build_object('ok', true, 'message_id', p_message);
+end;
+$$;
+
+-- One round trip for the pin tray: newest 25 pins with their message bodies.
+create or replace function public.conversation_pins_list(p_conversation uuid)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(item order by pinned_at desc), '[]'::jsonb) from (
+    select p.created_at pinned_at, jsonb_build_object(
+      'message_id', m.id,
+      'user_id', m.user_id,
+      'content', m.content,
+      'media_url', m.media_url,
+      'media_kind', m.media_kind,
+      'kind', m.kind,
+      'created_at', m.created_at,
+      'pinned_by', p.pinned_by,
+      'pinned_at', p.created_at,
+      'author', (select jsonb_build_object('id', pr.id, 'username', pr.username, 'display_name', pr.display_name, 'avatar_url', pr.avatar_url)
+                 from public.profiles pr where pr.id = m.user_id)
+    ) as item
+    from public.conversation_pins p
+    join public.messages m on m.id = p.message_id
+    where p.conversation_id = p_conversation and private.is_member(p_conversation)
+    order by p.created_at desc
+    limit 25
+  ) rows;
+$$;
+
+revoke all on function public.pin_message(uuid), public.unpin_message(uuid), public.conversation_pins_list(uuid) from public, anon;
+grant execute on function public.pin_message(uuid), public.unpin_message(uuid), public.conversation_pins_list(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2. Calls. State lives here; SDP/ICE travel over a private broadcast topic.
+-- ---------------------------------------------------------------------------
+create table if not exists public.calls (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  caller uuid not null references public.profiles(id) on delete cascade,
+  callee uuid references public.profiles(id) on delete set null,
+  kind text not null check (kind in ('audio','video')),
+  status text not null default 'ringing' check (status in ('ringing','active','declined','missed','ended','failed')),
+  started_at timestamptz not null default now(),
+  answered_at timestamptz,
+  ended_at timestamptz,
+  ended_by uuid references public.profiles(id) on delete set null
+);
+create index if not exists calls_conversation on public.calls(conversation_id, started_at desc);
+create index if not exists calls_callee_ringing on public.calls(callee, started_at desc) where status = 'ringing';
+alter table public.calls enable row level security;
+revoke all on public.calls from public, anon, authenticated;
+grant select on public.calls to authenticated;
+grant all on public.calls to service_role;
+drop policy if exists bitchat_calls_read on public.calls;
+create policy bitchat_calls_read on public.calls for select to authenticated
+  using(caller = (select auth.uid()) or callee = (select auth.uid()) or private.is_member(conversation_id));
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'calls') then
+    alter publication supabase_realtime add table public.calls;
+  end if;
+end $$;
+
+create or replace function public.start_call(p_conversation uuid, p_kind text default 'audio')
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me uuid := auth.uid(); c public.conversations; other uuid; created public.calls;
+begin
+  if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  if p_kind is null or p_kind not in ('audio','video') then raise exception 'Choose a call type.'; end if;
+  select * into c from public.conversations where id = p_conversation;
+  if c.id is null or c.kind <> 'direct' then raise exception 'Calls are for one-to-one chats.'; end if;
+  other := case when c.member_a = me then c.member_b else c.member_a end;
+  if other is null then raise exception 'Conversation unavailable.'; end if;
+  -- Anything still ringing for more than 90 seconds is a missed call.
+  update public.calls set status = 'missed', ended_at = now()
+   where conversation_id = p_conversation and status = 'ringing' and started_at < now() - interval '90 seconds';
+  if exists(select 1 from public.calls where conversation_id = p_conversation and status in ('ringing','active')) then
+    raise exception 'A call is already in progress here.';
+  end if;
+  insert into public.calls(conversation_id, caller, callee, kind)
+  values(p_conversation, me, other, p_kind)
+  returning * into created;
+  perform realtime.send(
+    jsonb_build_object('call_id', created.id, 'conversation_id', p_conversation, 'caller', me, 'callee', other, 'kind', p_kind, 'status', 'ringing', 'started_at', created.started_at),
+    'call', 'call:'||p_conversation::text, true);
+  return to_jsonb(created);
+end;
+$$;
+
+create or replace function public.answer_call(p_call uuid, p_accept boolean default true)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); row public.calls;
+begin
+  select * into row from public.calls where id = p_call for update;
+  if row.id is null or me is null or row.callee <> me then raise exception 'Call unavailable.'; end if;
+  if row.status <> 'ringing' then raise exception 'This call already ended.'; end if;
+  if row.started_at < now() - interval '90 seconds' then
+    update public.calls set status = 'missed', ended_at = now() where id = p_call;
+    raise exception 'This call already ended.';
+  end if;
+  if coalesce(p_accept, true) then
+    update public.calls set status = 'active', answered_at = now() where id = p_call returning * into row;
+  else
+    update public.calls set status = 'declined', ended_at = now(), ended_by = me where id = p_call returning * into row;
+  end if;
+  perform realtime.send(jsonb_build_object('call_id', row.id, 'conversation_id', row.conversation_id, 'status', row.status, 'by', me), 'call', 'call:'||row.conversation_id::text, true);
+  return to_jsonb(row);
+end;
+$$;
+
+create or replace function public.end_call(p_call uuid)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); row public.calls; final text;
+begin
+  select * into row from public.calls where id = p_call for update;
+  if row.id is null or me is null or me not in (row.caller, row.callee) then raise exception 'Call unavailable.'; end if;
+  if row.status in ('ended','declined','missed','failed') then return to_jsonb(row); end if;
+  final := case when row.status = 'ringing' then 'missed' else 'ended' end;
+  update public.calls set status = final, ended_at = now(), ended_by = me where id = p_call returning * into row;
+  perform realtime.send(jsonb_build_object('call_id', row.id, 'conversation_id', row.conversation_id, 'status', final, 'by', me), 'call', 'call:'||row.conversation_id::text, true);
+  return to_jsonb(row);
+end;
+$$;
+
+-- SDP and ICE candidates are relayed server-side so clients cannot spoof a peer.
+create or replace function public.call_signal(p_call uuid, p_payload jsonb)
+returns boolean language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); row public.calls;
+begin
+  select * into row from public.calls where id = p_call;
+  if row.id is null or me is null or me not in (row.caller, row.callee) then raise exception 'Call unavailable.'; end if;
+  if row.status not in ('ringing','active') then return false; end if;
+  if p_payload is null or jsonb_typeof(p_payload) <> 'object' or length(p_payload::text) > 16000 then
+    raise exception 'Call signal too large.';
+  end if;
+  perform realtime.send(p_payload, 'signal', 'call:'||row.conversation_id::text, true);
+  return true;
+end;
+$$;
+
+create or replace function public.call_history(p_conversation uuid, p_limit integer default 40)
+returns jsonb language sql stable security definer set search_path = '' as $$
+  select coalesce(jsonb_agg(to_jsonb(c) order by c.started_at desc), '[]'::jsonb) from (
+    select id, conversation_id, caller, callee, kind, status, started_at, answered_at, ended_at,
+           greatest(0, coalesce(extract(epoch from (coalesce(ended_at, now()) - coalesce(answered_at, started_at))), 0))::integer as seconds
+    from public.calls
+    where conversation_id = p_conversation and private.is_member(p_conversation)
+    order by started_at desc
+    limit least(greatest(coalesce(p_limit, 40), 1), 100)
+  ) c;
+$$;
+
+revoke all on function public.start_call(uuid,text), public.answer_call(uuid,boolean), public.end_call(uuid), public.call_signal(uuid,jsonb), public.call_history(uuid,integer) from public, anon;
+grant execute on function public.start_call(uuid,text), public.answer_call(uuid,boolean), public.end_call(uuid), public.call_signal(uuid,jsonb), public.call_history(uuid,integer) to authenticated;
+
+-- Private broadcast topics for call signaling. The restrictive write gate in
+-- schema.sql only covers room: topics, and clients never insert here: every
+-- frame is relayed by call_signal(). Reads must be allowed for members.
+drop policy if exists bitchat_call_read on realtime.messages;
+create policy bitchat_call_read on realtime.messages for select to authenticated using(
+  extension = 'broadcast' and topic ~ '^call:[0-9a-f-]{36}$'
+  and private.is_member(case when topic ~ '^call:[0-9a-f-]{36}$' then substring(topic from 6)::uuid else null end));
+
+-- ---------------------------------------------------------------------------
+-- 3. Ringing calls wake the partner's phone.
+-- ---------------------------------------------------------------------------
+-- Calls reuse the chat push queue: same worker secret, VAPID keys and delivery
+-- function, with a `kind` flag so the worker sends a ringing payload instead of
+-- a new-message one. Ringing jobs expire after 45 seconds.
+-- One job row per ringing call, flagged so the worker builds a call payload.
+alter table private.push_jobs alter column message_id drop not null;
+alter table private.push_jobs add column if not exists call_id uuid references public.calls(id) on delete cascade;
+alter table private.push_jobs add column if not exists kind text not null default 'message';
+-- Subscriptions are per endpoint and kind so a phone can opt out of chat pushes
+-- while still ringing for calls, or the other way round.
+alter table private.push_subscriptions add column if not exists kind text not null default 'message';
+create unique index if not exists push_subscriptions_endpoint_kind on private.push_subscriptions(user_id, endpoint, kind);
+
+create or replace function public.register_push_subscription(p_endpoint text, p_p256dh text, p_auth text, p_kind text default 'message')
+returns void language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); existing private.push_subscriptions; wanted text := case when p_kind = 'call' then 'call' else 'message' end;
+begin
+  if me is null or not private.push_endpoint_valid(p_endpoint)
+    or p_p256dh is null or p_p256dh !~ '^[A-Za-z0-9_-]{87}$'
+    or p_auth is null or p_auth !~ '^[A-Za-z0-9_-]{22}$'
+    or get_byte(decode(translate(p_p256dh, '-_', '+/') || '=', 'base64'), 0) <> 4
+    then raise exception 'Notification subscription unavailable.' using errcode = '22023'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(me::text, 27));
+  delete from private.push_subscriptions where user_id = me and updated_at < now() - interval '180 days';
+  select * into existing from private.push_subscriptions where endpoint = p_endpoint and kind = wanted for update;
+  if existing.id is not null and existing.user_id <> me then
+    raise exception 'This device needs a new notification subscription.' using errcode = '42501';
+  end if;
+  if existing.id is null and (select count(*) from private.push_subscriptions where user_id = me) >= 10 then
+    raise exception 'Notification device limit reached.'; end if;
+  if existing.id is null then
+    insert into private.push_subscriptions(user_id, endpoint, p256dh, auth_secret, kind)
+    values(me, p_endpoint, p_p256dh, p_auth, wanted);
+  else
+    update private.push_subscriptions set p256dh = p_p256dh, auth_secret = p_auth, updated_at = clock_timestamp()
+     where id = existing.id and user_id = me;
+  end if;
+end;
+$$;
+revoke all on function public.register_push_subscription(text,text,text,text) from public, anon;
+grant execute on function public.register_push_subscription(text,text,text,text) to authenticated;
+
+create or replace function private.enqueue_call_push()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into private.push_jobs(subscription_id, conversation_id, message_id, call_id, kind)
+  select s.id, new.conversation_id, gen_random_uuid(), null::uuid, new.id, 'call'
+  from private.push_subscriptions s
+  where s.user_id = new.callee and s.kind = 'call'
+    and s.updated_at > now() - interval '180 days'
+    and not private.blocked(new.callee, new.caller)
+  on conflict(subscription_id, conversation_id) do update set
+    message_id = excluded.message_id, kind = 'call', call_id = excluded.call_id,
+    created_at = clock_timestamp(), next_attempt = clock_timestamp(), attempts = 0, lease = null, lease_until = null;
+  if found then
+    begin perform private.wake_push_worker(); exception when others then null; end;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists bitchat_enqueue_call_push on public.calls;
+create trigger bitchat_enqueue_call_push after insert on public.calls for each row execute function private.enqueue_call_push();
+
+-- Chat pushes keep going to message subscriptions only.
+-- Existing message subscriptions register with kind='message'; the client passes
+-- 'call' to add a second, call-only subscription on the same endpoint.
+create or replace function private.enqueue_push()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into private.push_jobs(subscription_id, conversation_id, message_id, call_id, kind)
+  select s.id, new.conversation_id, new.id::uuid, null::uuid, 'message' from private.push_subscriptions s join (
+    select c.member_a as user_id from public.conversations c where c.id = new.conversation_id and c.kind = 'direct'
+    union select c.member_b from public.conversations c where c.id = new.conversation_id and c.kind = 'direct'
+    union select cm.user_id from public.conversation_members cm where cm.conversation_id = new.conversation_id
+  ) recipients on recipients.user_id = s.user_id
+  where s.user_id <> new.user_id and s.updated_at > now() - interval '180 days' and s.kind = 'message'
+    and private.push_eligible(s.user_id, new.conversation_id, new.id)
+  on conflict(subscription_id, conversation_id) do update set
+    message_id = excluded.message_id, kind = 'message', call_id = null, created_at = clock_timestamp(),
+    next_attempt = clock_timestamp(), attempts = 0, lease = null, lease_until = null;
+  if found then
+    begin perform private.wake_push_worker(); exception when others then null; end;
+  end if;
+  return new;
+end;
+$$;
+
+drop function if exists public.claim_push_jobs(text);
+
+create function public.claim_push_jobs(p_secret text)
+returns table(subscription_id uuid, conversation_id uuid, message_id uuid, call_id uuid, user_id uuid, endpoint text, p256dh text, auth_secret text, lease uuid, kind text)
+language plpgsql security definer set search_path = '' as $$
+begin
+  if not coalesce(private.push_authorized(p_secret), false) then raise exception 'Unauthorized.' using errcode = '42501'; end if;
+  delete from private.push_subscriptions where updated_at < now() - interval '180 days';
+  -- A ringing call is only worth waking for ~45 seconds.
+  delete from private.push_jobs j where j.kind = 'call' and j.created_at < now() - interval '45 seconds';
+  delete from private.push_jobs j using private.push_subscriptions s
+    where s.id = j.subscription_id and (j.attempts >= 4 or (j.kind = 'message' and not private.push_eligible(s.user_id, j.conversation_id, j.message_id)));
+  delete from private.push_jobs j where j.created_at < now() - interval '1 hour';
+  return query with due as (
+    select j.subscription_id, j.conversation_id from private.push_jobs j
+    where j.next_attempt <= clock_timestamp() and (j.lease_until is null or j.lease_until < clock_timestamp())
+    order by j.next_attempt limit 40 for update skip locked
+  ), claimed as (
+    update private.push_jobs j set attempts = j.attempts + 1, lease = gen_random_uuid(), lease_until = clock_timestamp() + interval '90 seconds'
+    from due d where j.subscription_id = d.subscription_id and j.conversation_id = d.conversation_id
+    returning j.*
+  ) select j.subscription_id, j.conversation_id, j.message_id, j.call_id, s.user_id, s.endpoint, s.p256dh, s.auth_secret, j.lease, j.kind
+    from claimed j join private.push_subscriptions s on s.id = j.subscription_id;
+end;
+$$;
+revoke all on function public.claim_push_jobs(text) from public, anon, authenticated;
+grant execute on function public.claim_push_jobs(text) to service_role;
+
+notify pgrst, 'reload schema';
 commit;
+-- BitchAt 2.11 — couple extras. Additive only: nothing is dropped except
+-- emoji/mood check constraints, which are widened to match the new client lists.
+-- Every statement is idempotent so this can be replayed from the SQL editor.
+begin;
+
+-- ---------------------------------------------------------------------------
+-- 1. Pet names. pet_a is what member_a calls member_b (and vice versa).
+-- ---------------------------------------------------------------------------
+alter table public.conversations add column if not exists pet_a text;
+alter table public.conversations add column if not exists pet_b text;
+alter table public.conversations drop constraint if exists conversations_pet_length;
+alter table public.conversations add constraint conversations_pet_length check (
+  (pet_a is null or (char_length(btrim(pet_a)) between 1 and 24 and btrim(pet_a) !~ '[[:cntrl:]<>]')) and
+  (pet_b is null or (char_length(btrim(pet_b)) between 1 and 24 and btrim(pet_b) !~ '[[:cntrl:]<>]'))
+);
+
+create or replace function public.set_pet_name(p_conversation uuid, p_name text)
+returns text language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); cleaned text := nullif(btrim(coalesce(p_name, '')), ''); result text;
+begin
+  if me is null or not private.is_member(p_conversation) then
+    raise exception 'Conversation unavailable.';
+  end if;
+  if not exists(select 1 from public.conversations where id = p_conversation and kind = 'direct') then
+    raise exception 'Nicknames are for one-to-one chats.';
+  end if;
+  if cleaned is not null and (char_length(cleaned) > 24 or cleaned ~ '[[:cntrl:]<>]') then
+    raise exception 'Use 1–24 friendly characters.';
+  end if;
+  update public.conversations c set
+    pet_a = case when c.member_a = me then cleaned else c.pet_a end,
+    pet_b = case when c.member_b = me then cleaned else c.pet_b end
+  where c.id = p_conversation
+  returning case when c.member_a = me then c.pet_a else c.pet_b end into result;
+  return result;
+end;
+$$;
+revoke all on function public.set_pet_name(uuid, text) from public, anon;
+grant execute on function public.set_pet_name(uuid, text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 2. Wider mood + reaction palettes (kept in sync with lib/types.ts).
+-- ---------------------------------------------------------------------------
+alter table public.profiles drop constraint if exists profiles_mood_check;
+alter table public.profiles add constraint profiles_mood_check check (mood is null or mood = any(array[
+  '🥰','😊','🥺','😴','😔','😤','🤍','🫶','😻','🌸','🍓','🧸','🌙','✨','💌','😽'
+]));
+
+alter table public.journals drop constraint if exists journals_mood_check;
+alter table public.journals add constraint journals_mood_check check (mood is null or mood = any(array[
+  '🥰','😊','🥺','😴','😔','😤','🤍','🫶','😻','🌸','🍓','🧸','🌙','✨','💌','😽'
+]));
+
+alter table public.reactions drop constraint if exists reactions_emoji_check;
+alter table public.reactions add constraint reactions_emoji_check check (emoji = any(array[
+  '❤️','😂','🥺','🔥','😘','🫶','👍','👎','😍','🥹','😮','😢','😡','🤍','💯','🎉','✨','👀','🙈','🤗','😈','💋','💕','💀',
+  '🥰','😻','🫂','🌹','🍓','🧸','🍪','🌙','🌸','💌','💘','💞','🫦','😽','🎀','💓'
+]));
+
+-- ---------------------------------------------------------------------------
+-- 3. Digital makeout meter. One row per couple, written only through kiss().
+-- ---------------------------------------------------------------------------
+create table if not exists public.kiss_meter (
+  conversation_id uuid primary key references public.conversations(id) on delete cascade,
+  taps_a integer not null default 0 check (taps_a >= 0),
+  taps_b integer not null default 0 check (taps_b >= 0),
+  last_at timestamptz not null default now()
+);
+alter table public.kiss_meter enable row level security;
+revoke all on public.kiss_meter from public, anon, authenticated;
+grant select on public.kiss_meter to authenticated;
+grant all on public.kiss_meter to service_role;
+drop policy if exists bitchat_kiss_read on public.kiss_meter;
+create policy bitchat_kiss_read on public.kiss_meter for select to authenticated
+  using(private.is_member(conversation_id));
+
+create or replace function public.kiss(p_conversation uuid, p_count integer default 1)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me uuid := auth.uid();
+  taps integer := greatest(1, least(coalesce(p_count, 1), 12));
+  is_a boolean;
+  row public.kiss_meter;
+begin
+  if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  select c.member_a = me into is_a from public.conversations c where c.id = p_conversation and c.kind = 'direct';
+  if is_a is null then raise exception 'Makeout needs a one-to-one chat.'; end if;
+  insert into public.kiss_meter as k(conversation_id, taps_a, taps_b)
+  values(p_conversation, case when is_a then taps else 0 end, case when is_a then 0 else taps end)
+  on conflict(conversation_id) do update set
+    taps_a = k.taps_a + case when is_a then taps else 0 end,
+    taps_b = k.taps_b + case when is_a then 0 else taps end,
+    last_at = now()
+  returning * into row;
+  return jsonb_build_object('taps_a', row.taps_a, 'taps_b', row.taps_b, 'last_at', row.last_at);
+end;
+$$;
+revoke all on function public.kiss(uuid, integer) from public, anon;
+grant execute on function public.kiss(uuid, integer) to authenticated;
+
+do $$ begin
+  if not exists(select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+  if not exists(select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'kiss_meter') then
+    alter publication supabase_realtime add table public.kiss_meter;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 4. Memories: one round trip describing the shared story.
+-- Visible to the caller only after their own cleared marker, like chat.
+-- ---------------------------------------------------------------------------
+create or replace function public.couple_memories(p_conversation uuid)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare
+  me uuid := auth.uid();
+  since timestamptz;
+  fresh timestamptz := now() - interval '24 hours';
+  payload jsonb;
+begin
+  if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  since := private.visible_after(p_conversation);
+  select jsonb_build_object(
+    'started_at', (select min(m.created_at) from public.messages m
+      where m.conversation_id = p_conversation and m.created_at > since),
+    'total', (select count(*) from public.messages m
+      where m.conversation_id = p_conversation and m.created_at > since),
+    'mine', (select count(*) from public.messages m
+      where m.conversation_id = p_conversation and m.created_at > since and m.user_id = me),
+    'photos', (select count(*) from public.messages m
+      where m.conversation_id = p_conversation and m.created_at > since and m.media_url is not null),
+    'misses', (select count(*) from public.messages m
+      where m.conversation_id = p_conversation and m.created_at > since and m.kind = 'miss'),
+    'kisses', coalesce((select k.taps_a + k.taps_b from public.kiss_meter k where k.conversation_id = p_conversation), 0),
+    'first', (select jsonb_build_object(
+        'content', m.content, 'kind', m.kind, 'created_at', m.created_at, 'user_id', m.user_id, 'media_url', m.media_url)
+      from public.messages m
+      where m.conversation_id = p_conversation and m.created_at > since
+      order by m.created_at asc, m.id asc limit 1),
+    'recent', coalesce((select jsonb_agg(item order by at desc) from (
+        select jsonb_build_object('id', m.id, 'media_url', m.media_url, 'media_kind', m.media_kind,
+          'content', m.content, 'created_at', m.created_at) as item, m.created_at as at
+        from public.messages m
+        where m.conversation_id = p_conversation and m.created_at > greatest(since, fresh)
+          and (m.media_url is not null or m.kind in ('miss','sticker'))
+        order by m.created_at desc limit 9) rows), '[]'::jsonb)
+  ) into payload;
+  return payload;
+end;
+$$;
+revoke all on function public.couple_memories(uuid) from public, anon;
+grant execute on function public.couple_memories(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- 5. People discovery: suggestions and shareable @username lookups.
+-- ---------------------------------------------------------------------------
+create or replace function public.suggested_profiles()
+returns table(id uuid, username text, display_name text, avatar_url text, mood text, shared integer)
+language sql stable security definer set search_path = '' as $$
+  with me as (select auth.uid() as id)
+  select p.id, p.username, p.display_name, p.avatar_url, p.mood,
+    (select count(*)::int from public.conversation_members a
+      join public.conversation_members b on b.conversation_id = a.conversation_id
+      where a.user_id = p.id and b.user_id = (select id from me)) as shared
+  from public.profiles p
+  where (select id from me) is not null
+    and p.id <> (select id from me)
+    and not private.blocked((select id from me), p.id)
+  order by
+    (select count(*) from public.conversation_members a
+      join public.conversation_members b on b.conversation_id = a.conversation_id
+      where a.user_id = p.id and b.user_id = (select id from me)) desc,
+    (exists(select 1 from public.conversations c
+      where (c.member_a = p.id and c.member_b = (select id from me))
+         or (c.member_b = p.id and c.member_a = (select id from me)))) desc,
+    p.created_at desc
+  limit 12;
+$$;
+revoke all on function public.suggested_profiles() from public, anon;
+grant execute on function public.suggested_profiles() to authenticated;
+
+create or replace function public.profile_by_username(p_username text)
+returns table(id uuid, username text, display_name text, avatar_url text, mood text, is_pro boolean)
+language sql stable security definer set search_path = '' as $$
+  select p.id, p.username, p.display_name, p.avatar_url, p.mood, p.is_pro
+  from public.profiles p
+  where auth.uid() is not null
+    and p.username = lower(btrim(coalesce(p_username, '')))
+  limit 1;
+$$;
+revoke all on function public.profile_by_username(text) from public, anon;
+grant execute on function public.profile_by_username(text) to authenticated;
+
+notify pgrst, 'reload schema';
+commit;
+
+-- BitchAt 2.13 — live shared activities, shared drawing board, more games.
+-- Additive: new game types, two new tables, a couple of functions. Existing
+-- rows and policies are untouched. Every statement is re-runnable.
+begin;
+
+-- ---------------------------------------------------------------------------
+-- 1. More game types. The old check constraint only allowed three.
+-- ---------------------------------------------------------------------------
+alter table public.games drop constraint if exists games_game_type_check;
+alter table public.games add constraint games_game_type_check
+  check (game_type in ('question','either','tic_tac_toe','truth','dare','would_you','finish','this_or_that','kiss_dare'));
+
+-- ---------------------------------------------------------------------------
+-- 2. Shared activity session. One row per conversation: whoever opens a game,
+--    the makeout meter or a drawing board flips this row, and the partner's
+--    app (already subscribed to `activities`) gets a toast right away.
+-- ---------------------------------------------------------------------------
+create table if not exists public.shared_activity (
+  conversation_id uuid primary key references public.conversations(id) on delete cascade,
+  kind text not null check (kind in ('makeout','game','draw','wyr','kiss')),
+  ref_id uuid,
+  opened_by uuid not null references public.profiles(id) on delete cascade,
+  opened_at timestamptz not null default now(),
+  closed_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+alter table public.shared_activity enable row level security;
+revoke all on public.shared_activity from public, anon, authenticated;
+grant select on public.shared_activity to authenticated;
+grant all on public.shared_activity to service_role;
+drop policy if exists bitchat_activity_read on public.shared_activity;
+create policy bitchat_activity_read on public.shared_activity for select to authenticated
+  using(private.is_member(conversation_id));
+
+create or replace function public.open_activity(p_conversation uuid, p_kind text, p_ref uuid default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); row public.shared_activity;
+begin
+  if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  if p_kind is null or p_kind not in ('makeout','game','draw','wyr','kiss') then raise exception 'Unknown activity.'; end if;
+  insert into public.shared_activity as a(conversation_id, kind, ref_id, opened_by, opened_at, closed_at, updated_at)
+  values(p_conversation, p_kind, p_ref, me, now(), null, now())
+  on conflict(conversation_id) do update set
+    kind = excluded.kind, ref_id = excluded.ref_id, opened_by = excluded.opened_by,
+    opened_at = excluded.opened_at, closed_at = null, updated_at = now()
+  returning * into row;
+  return to_jsonb(row);
+end;
+$$;
+
+create or replace function public.close_activity(p_conversation uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  update public.shared_activity set closed_at = now(), updated_at = now()
+   where conversation_id = p_conversation and closed_at is null;
+end;
+$$;
+
+revoke all on function public.open_activity(uuid,text,uuid), public.close_activity(uuid) from public, anon;
+grant execute on function public.open_activity(uuid,text,uuid), public.close_activity(uuid) to authenticated;
+
+do $$ begin
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='shared_activity') then
+    alter publication supabase_realtime add table public.shared_activity;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 3. Shared drawing board. Strokes live in one row per conversation so both
+--    screens show the same canvas: whoever draws, edits or clears it, the
+--    partner sees it. Each stroke is {id, by, color, width, points[]}. The
+--    entire board is capped so a doodle cannot become an unbounded payload.
+-- ---------------------------------------------------------------------------
+create table if not exists public.drawing_board (
+  conversation_id uuid primary key references public.conversations(id) on delete cascade,
+  strokes jsonb not null default '[]'::jsonb,
+  closed boolean not null default false,
+  updated_by uuid references public.profiles(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+alter table public.drawing_board enable row level security;
+revoke all on public.drawing_board from public, anon, authenticated;
+grant select on public.drawing_board to authenticated;
+grant all on public.drawing_board to service_role;
+drop policy if exists bitchat_board_read on public.drawing_board;
+create policy bitchat_board_read on public.drawing_board for select to authenticated
+  using(private.is_member(conversation_id));
+
+-- Replace the whole stroke list. Undo, redo, erase-one and clear are all just
+-- a new list, which keeps the two screens convergent without merge conflicts.
+create or replace function public.save_board(p_conversation uuid, p_strokes jsonb, p_closed boolean default false)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); row public.drawing_board;
+begin
+  if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  if p_strokes is null or jsonb_typeof(p_strokes) <> 'array' then raise exception 'Drawing unavailable.'; end if;
+  if jsonb_array_length(p_strokes) > 400 or length(p_strokes::text) > 120000 then raise exception 'That drawing is too big.'; end if;
+  insert into public.drawing_board as b(conversation_id, strokes, closed, updated_by, updated_at)
+  values(p_conversation, p_strokes, coalesce(p_closed, false), me, now())
+  on conflict(conversation_id) do update set
+    strokes = excluded.strokes, closed = excluded.closed, updated_by = me, updated_at = now()
+  returning * into row;
+  return jsonb_build_object('conversation_id', row.conversation_id, 'strokes', row.strokes, 'closed', row.closed, 'updated_at', row.updated_at);
+end;
+$$;
+revoke all on function public.save_board(uuid,jsonb,boolean) from public, anon;
+grant execute on function public.save_board(uuid,jsonb,boolean) to authenticated;
+
+do $$ begin
+  if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='drawing_board') then
+    alter publication supabase_realtime add table public.drawing_board;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- 4. Bigger, warmer question decks. Per-couple mode gets romantic and flirty
+--    prompts; everything else gets friendlier ones. Never explicit.
+-- ---------------------------------------------------------------------------
+create or replace function public.start_game(p_conversation uuid, p_type text, p_custom text default null)
+returns public.games language plpgsql security definer set search_path = '' as $$
+declare result public.games; prompt text; a text; b text; pick integer; couple boolean; deck text[]; deck_a text[]; deck_b text[];
+begin
+  if not private.is_member(p_conversation) or not exists(select 1 from public.conversations where id = p_conversation and kind = 'direct')
+     or p_type is null or p_type not in ('question','either','tic_tac_toe','truth','dare','would_you','finish','this_or_that','kiss_dare') then
+    raise exception 'Game unavailable.';
+  end if;
+  perform 1 from public.conversations where id = p_conversation for update;
+  select * into result from public.games where conversation_id = p_conversation and ended_at is null limit 1;
+  if result.id is not null then return result; end if;
+  select (couple_a and couple_b) into couple from public.conversations where id = p_conversation;
+  if coalesce(couple, false) then
+    deck := array[
+      'What makes you feel most loved?','What is one tiny thing you miss about me?',
+      'Where would you steal a kiss from me?','What should our next date look like?',
+      'What is a dream you have not told me yet?','Which memory of us would you replay?',
+      'What is your favourite way to be comforted?','What is one thing you want us to do more often?',
+      'Describe our perfect lazy morning.','What was the moment you first felt a spark?',
+      'What would you whisper in my ear right now?','What is your favourite kind of surprise?',
+      'When did you last think about me today?','What smell reminds you of us?',
+      'What song is ours, and why?','What do you want me to do the next time we meet?',
+      'What is the sweetest thing I have ever said to you?','Where do you feel safest with me?',
+      'What is one promise you want to keep for us?','What do you daydream about when I am quiet?',
+      'What part of my laugh do you love?','What is something you have never told me?',
+      'How do you want to be kissed tonight?','What little thing do I do that gives you butterflies?',
+      'If we could pause one moment of us forever, which one?','What is your favourite nickname to call me?',
+      'What makes you want to hold my hand?','What is the best hug you have ever had from me?',
+      'What are you most excited to do with me this year?','What do you want to be when we are older?',
+      'What was the exact second you fell?','What do you want more of from me?',
+      'What is a tiny ritual only we have?','When do you feel most wanted?',
+      'What would you write on a postcard to me?','What do you miss when I am not around?',
+      'What is the most romantic thing I could do this week?','What is one word that is just ours?',
+      'What do you want me to remember about you?','What is your favourite place we have been alone?'
+    ];
+    deck_a := array['A cozy night in','A surprise kiss','Sunrise together','A handwritten note','Cooking together','A spontaneous trip',
+      'A slow dance in the kitchen','Staying in bed all day','A long voice note','A rainy afternoon','A surprise gift','Midnight snacks'];
+    deck_b := array['A night out dancing','A long hug','Stargazing together','A surprise date','Ordering our favourites','A perfectly planned trip',
+      'A film under a blanket','A walk with no destination','A playlist made for me','A drive with the windows down','A surprise letter','Breakfast in bed'];
+  else
+    deck := array[
+      'What is a skill you would love to learn?','What song is on repeat for you?',
+      'What is the funniest thing that happened this week?','Where would you go on a free plane ticket?',
+      'What is a small win you are proud of?','What always makes you laugh?',
+      'What is your most underrated favourite movie?','What should we try together next?',
+      'What is the best thing you ate this month?','What is your comfort show?',
+      'What would your perfect Sunday look like?','What is one app you could not live without?'
+    ];
+    deck_a := array['A cozy night in','Mountains','Sunrise','Texting','Cooking','A spontaneous trip','Tea','A road trip','Live music','Staying up late'];
+    deck_b := array['A night out','The beach','Stargazing','Voice notes','Ordering in','A planned trip','Coffee','A quiet night','A film at home','An early night'];
+  end if;
+  if p_custom is not null then
+    if not private.is_pro() or p_type not in ('question','truth','dare','finish') or length(btrim(p_custom)) not between 1 and 250 then
+      raise exception 'Custom question unavailable.';
+    end if;
+    prompt := btrim(p_custom);
+  elsif p_type in ('question','truth','dare','finish','kiss_dare') then
+    prompt := deck[1 + floor(random() * array_length(deck, 1))::int];
+    -- Dares should sound like dares, not questions.
+    if p_type in ('dare','kiss_dare') then
+      prompt := (array['Give me your best 10-second hug when we meet.','Send the photo you almost sent me.','Say my name like you mean it.','Tell me one thing you want to do to me.','Compliment me in three words.','Kiss me like you missed me.','Write what you would do if I were next to you.','Describe my eyes from memory.','Send me a voice note of your laugh.','Promise me something silly and keep it.'])[1 + floor(random() * 10)::int];
+    end if;
+    if p_type = 'finish' then
+      prompt := (array['The thing I want most tonight is…','If we were alone right now, I would…','My favourite thing about your body is…','I knew I loved you when…','The next time I see you, I will…','Something I have never said out loud:…'])[1 + floor(random() * 6)::int];
+    end if;
+  elsif p_type in ('either','would_you','this_or_that') then
+    pick := 1 + floor(random() * array_length(deck_a, 1))::int;
+    prompt := case p_type when 'would_you' then 'Would you rather?' when 'this_or_that' then 'This or that?' else 'This or that?' end;
+    a := deck_a[pick]; b := deck_b[pick];
+  else
+    prompt := 'Three in a row';
+  end if;
+  insert into public.games(conversation_id, created_by, game_type, question, option_a, option_b, next_player)
+  values(p_conversation, auth.uid(), p_type, prompt, a, b, auth.uid()) returning * into result;
+  return result;
+end;
+$$;
+revoke all on function public.start_game(uuid,text,text) from public, anon;
+grant execute on function public.start_game(uuid,text,text) to authenticated;
+
+-- answer_game only needs to accept the new choice-based types.
+create or replace function public.answer_game(p_id uuid, p_answer text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare g public.games;
+begin
+  select * into g from public.games where id = p_id for update;
+  if g.id is null or not private.is_member(g.conversation_id) or g.game_type = 'tic_tac_toe' or g.ended_at is not null then raise exception 'Game unavailable.'; end if;
+  if p_answer is null or length(btrim(p_answer)) not between 1 and 500
+     or (g.game_type in ('either','would_you','this_or_that') and p_answer not in (g.option_a, g.option_b)) then
+    raise exception 'Choose an answer.';
+  end if;
+  insert into private.game_answers(game_id, user_id, answer) values(p_id, auth.uid(), btrim(p_answer)) on conflict do nothing;
+  if (select count(*) from private.game_answers where game_id = p_id) = 2 then update public.games set ended_at = now() where id = p_id;
+  else update public.games set question = question where id = p_id; end if;
+end;
+$$;
+revoke all on function public.answer_game(uuid,text) from public, anon;
+grant execute on function public.answer_game(uuid,text) to authenticated;
+
+notify pgrst, 'reload schema';
+commit;
+-- Atomic stroke-level edits prevent unrelated simultaneous edits from being lost.
+begin;
+create or replace function public.edit_board(p_conversation uuid, p_upserts jsonb, p_remove jsonb)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); board public.drawing_board; item jsonb; result jsonb;
+begin
+  if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  if p_upserts is null or p_remove is null or jsonb_typeof(p_upserts) <> 'array' or jsonb_typeof(p_remove) <> 'array'
+    or jsonb_array_length(p_upserts) > 400 or jsonb_array_length(p_remove) > 400
+    or length(p_upserts::text) > 120000 or length(p_remove::text) > 20000 then raise exception 'Drawing unavailable.'; end if;
+  for item in select value from jsonb_array_elements(p_upserts) loop
+    if jsonb_typeof(item) <> 'object' or coalesce(item->>'id','') !~ '^[a-zA-Z0-9-]{1,64}$'
+      or coalesce(item->>'by','') !~ '^[a-zA-Z0-9-]{1,64}$'
+      or coalesce(item->>'color','') !~ '^#[0-9a-fA-F]{6}$'
+      or jsonb_typeof(item->'width') is distinct from 'number'
+      or jsonb_typeof(item->'points') is distinct from 'array' then raise exception 'Invalid stroke.'; end if;
+    if (item->>'width')::numeric not between 1 and 30 or jsonb_array_length(item->'points') not between 1 and 900
+      or exists (select 1 from jsonb_array_elements(item->'points') pt where jsonb_typeof(pt) is distinct from 'array'
+         or case when jsonb_typeof(pt) = 'array' then jsonb_array_length(pt) <> 2 else true end
+         or case when jsonb_typeof(pt) = 'array' and jsonb_array_length(pt) = 2 then
+           jsonb_typeof(pt->0) is distinct from 'number' or jsonb_typeof(pt->1) is distinct from 'number'
+         else false end)
+      then raise exception 'Invalid stroke.'; end if;
+    if exists (select 1 from jsonb_array_elements(item->'points') pt where (pt->>0)::numeric not between 0 and 1 or (pt->>1)::numeric not between 0 and 1) then raise exception 'Invalid point.'; end if;
+  end loop;
+  if exists(select 1 from jsonb_array_elements(p_remove) v where jsonb_typeof(v) <> 'string' or (v #>> '{}') !~ '^[a-zA-Z0-9-]{1,64}$') then raise exception 'Invalid stroke ID.'; end if;
+  insert into public.drawing_board(conversation_id, strokes, updated_by) values(p_conversation, '[]'::jsonb, me) on conflict (conversation_id) do nothing;
+  select * into board from public.drawing_board where conversation_id = p_conversation for update;
+  select coalesce(jsonb_agg(s.value order by s.ordinality), '[]'::jsonb) into result
+    from jsonb_array_elements(board.strokes) with ordinality s(value, ordinality)
+    where not exists(select 1 from jsonb_array_elements(p_remove) r where r #>> '{}' = s.value->>'id')
+      and not exists(select 1 from jsonb_array_elements(p_upserts) u where u->>'id' = s.value->>'id');
+  result := result || p_upserts;
+  if jsonb_array_length(result) > 400 or length(result::text) > 120000 then raise exception 'That drawing is too big.'; end if;
+  update public.drawing_board set strokes = result, updated_by = me, updated_at = clock_timestamp(), closed = false
+    where conversation_id = p_conversation returning * into board;
+  return jsonb_build_object('strokes', board.strokes, 'updated_at', board.updated_at);
+end;
+$$;
+revoke all on function public.edit_board(uuid,jsonb,jsonb) from public, anon;
+grant execute on function public.edit_board(uuid,jsonb,jsonb) to authenticated;
+
+-- Either participant can leave an abandoned game and start another.
+create or replace function public.end_game(p_id uuid)
+returns void language plpgsql security definer set search_path = '' as $$
+declare g public.games;
+begin
+  select * into g from public.games where id = p_id for update;
+  if g.id is null or auth.uid() is null or not private.is_member(g.conversation_id) then raise exception 'Game unavailable.'; end if;
+  update public.games set ended_at = now() where id = p_id and ended_at is null;
+end;
+$$;
+revoke all on function public.end_game(uuid) from public, anon;
+grant execute on function public.end_game(uuid) to authenticated;
+notify pgrst, 'reload schema';
+commit;
+-- Additional shared prompt games reuse the existing answer and realtime paths.
+begin;
+create or replace function public.start_prompt_game(p_conversation uuid, p_mode text)
+returns public.games language plpgsql security definer set search_path = '' as $$
+declare result public.games; deck text[]; prompt text;
+begin
+  if auth.uid() is null or not private.is_member(p_conversation)
+    or not exists(select 1 from public.conversations where id=p_conversation and kind='direct') then
+    raise exception 'Game unavailable.';
+  end if;
+  deck := case p_mode
+    when 'memory' then array['What was your first impression of me?','Which date would you relive?','What is a tiny moment with me you still think about?','What did we laugh about the hardest?','Which song reminds you of us?','What was our best late-night conversation?','When did you feel closest to me?','What is a photo of us you love?']
+    when 'future' then array['Where should we go together next?','What would a perfect weekend together look like?','What should we cook together?','What kind of home would feel like us?','What is a tradition you would like us to start?','What baby names do you like, if we ever want kids?','What small thing should we do together this week?','What is on your list for our next date?']
+    when 'guess' then array['What snack do you think I would pick right now?','What do you think my ideal date is?','Which song do you think I would choose for us?','What do you think makes me feel most loved?','What do you think I would order for us?','Guess the first place I would take you on a trip.','What do you think I miss most about you?','Guess what I would do with a free day together.']
+    when 'emoji' then array['Describe our first date in three emojis.','Describe our next date using only emojis.','Send three emojis that remind you of me.','Tell a story about us using five emojis.','Pick an emoji for our mood tonight.','Describe our dream holiday in emojis.','Choose an emoji for your favourite memory of us.','Give me an emoji clue for a surprise date.']
+    when 'spicy' then array['What kind of kiss are you in the mood for?','What would you whisper to me if we were alone?','What is something flirty you would like me to say?','What is your favourite way for me to tease you?','Where would you like a slow kiss?','What should our next private date feel like?','What makes you feel wanted?','What would you like more of when we are together?']
+    else null end;
+  if deck is null then raise exception 'Game unavailable.'; end if;
+  perform 1 from public.conversations where id=p_conversation for update;
+  select * into result from public.games where conversation_id=p_conversation and ended_at is null limit 1;
+  if result.id is not null then return result; end if;
+  prompt := deck[1 + floor(random()*array_length(deck,1))::int];
+  insert into public.games(conversation_id,created_by,game_type,question,next_player)
+    values(p_conversation,auth.uid(),'question',prompt,auth.uid()) returning * into result;
+  return result;
+end;
+$$;
+revoke all on function public.start_prompt_game(uuid,text) from public, anon;
+grant execute on function public.start_prompt_game(uuid,text) to authenticated;
+notify pgrst, 'reload schema';
+commit;
+begin;
+-- Pet is shared per direct conversation; no time decay or punitive streaks.
+create table if not exists public.couple_pet (
+  conversation_id uuid primary key references public.conversations(id) on delete cascade,
+  name text not null check (char_length(name) between 1 and 24),
+  species text not null check (species in ('cat','dog','bunny')),
+  feeds integer not null default 0 check (feeds between 0 and 1000000),
+  plays integer not null default 0 check (plays between 0 and 1000000),
+  cuddles integer not null default 0 check (cuddles between 0 and 1000000),
+  last_action text not null default 'adopt' check (last_action in ('adopt','feed','play','cuddle','rename')),
+  updated_by uuid references public.profiles(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+alter table public.couple_pet enable row level security;
+revoke all on public.couple_pet from public, anon, authenticated;
+grant select on public.couple_pet to authenticated;
+grant all on public.couple_pet to service_role;
+drop policy if exists couple_pet_read on public.couple_pet;
+create policy couple_pet_read on public.couple_pet for select to authenticated using(private.is_member(conversation_id));
+
+create or replace function public.care_couple_pet(p_conversation uuid, p_action text, p_name text default null, p_species text default null)
+returns public.couple_pet language plpgsql security definer set search_path = '' as $$
+declare result public.couple_pet; me uuid := auth.uid();
+begin
+  if me is null or not private.is_member(p_conversation) or not exists(select 1 from public.conversations where id=p_conversation and kind='direct') then raise exception 'Pet unavailable.'; end if;
+  if p_action is null or p_action not in ('adopt','feed','play','cuddle','rename') then raise exception 'Unknown action.'; end if;
+  if p_action in ('adopt','rename') and (p_name is null or char_length(btrim(p_name)) not between 1 and 24) then raise exception 'Choose a name between 1 and 24 characters.'; end if;
+  if p_action='adopt' then
+    if p_species is null or p_species not in ('cat','dog','bunny') then raise exception 'Choose a pet.'; end if;
+    insert into public.couple_pet(conversation_id,name,species,updated_by) values(p_conversation,btrim(p_name),p_species,me) on conflict(conversation_id) do nothing;
+  else
+    update public.couple_pet set name=case when p_action='rename' then btrim(p_name) else name end,
+      feeds=case when p_action='feed' then least(feeds+1,1000000) else feeds end,
+      plays=case when p_action='play' then least(plays+1,1000000) else plays end,
+      cuddles=case when p_action='cuddle' then least(cuddles+1,1000000) else cuddles end,
+      last_action=p_action,updated_by=me,updated_at=clock_timestamp()
+      where conversation_id=p_conversation;
+  end if;
+  select * into result from public.couple_pet where conversation_id=p_conversation;
+  if result.conversation_id is null then raise exception 'Adopt a pet first.'; end if;
+  return result;
+end $$;
+revoke all on function public.care_couple_pet(uuid,text,text,text) from public,anon;
+grant execute on function public.care_couple_pet(uuid,text,text,text) to authenticated;
+
+create table if not exists public.future_names (
+ id uuid primary key default gen_random_uuid(),
+ conversation_id uuid not null references public.conversations(id) on delete cascade,
+ name text not null check (char_length(name) between 1 and 40),
+ created_by uuid not null references public.profiles(id) on delete cascade,
+ created_at timestamptz not null default now()
+);
+create index if not exists future_names_conversation_idx on public.future_names(conversation_id,created_at);
+alter table public.future_names enable row level security;
+revoke all on public.future_names from public,anon,authenticated;
+grant select on public.future_names to authenticated;
+grant all on public.future_names to service_role;
+drop policy if exists future_names_read on public.future_names;
+create policy future_names_read on public.future_names for select to authenticated using(private.is_member(conversation_id));
+create or replace function public.change_future_name(p_conversation uuid,p_name text default null,p_remove uuid default null)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is null or not private.is_member(p_conversation) or not exists(select 1 from public.conversations where id=p_conversation and kind='direct') then raise exception 'List unavailable.'; end if;
+  perform 1 from public.conversations where id=p_conversation for update;
+  if p_remove is not null then delete from public.future_names where id=p_remove and conversation_id=p_conversation;
+  else
+    if p_name is null or char_length(btrim(p_name)) not between 1 and 40 then raise exception 'Enter a name of up to 40 characters.'; end if;
+    if (select count(*) from public.future_names where conversation_id=p_conversation)>=40 then raise exception 'The list is full.'; end if;
+    if not exists(select 1 from public.future_names where conversation_id=p_conversation and lower(name)=lower(btrim(p_name))) then
+      insert into public.future_names(conversation_id,name,created_by) values(p_conversation,btrim(p_name),auth.uid());
+    end if;
+  end if;
+end $$;
+revoke all on function public.change_future_name(uuid,text,uuid) from public,anon;
+grant execute on function public.change_future_name(uuid,text,uuid) to authenticated;
+
+alter table public.shared_activity drop constraint if exists shared_activity_kind_check;
+alter table public.shared_activity add constraint shared_activity_kind_check check(kind in ('makeout','game','draw','wyr','kiss','pet'));
+create or replace function public.open_activity(p_conversation uuid, p_kind text, p_ref uuid default null)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); row public.shared_activity;
+begin
+  if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  if p_kind is null or p_kind not in ('makeout','game','draw','wyr','kiss','pet') then raise exception 'Unknown activity.'; end if;
+  insert into public.shared_activity as a(conversation_id,kind,ref_id,opened_by,opened_at,closed_at,updated_at)
+  values(p_conversation,p_kind,p_ref,me,now(),null,now())
+  on conflict(conversation_id) do update set kind=excluded.kind,ref_id=excluded.ref_id,opened_by=excluded.opened_by,opened_at=excluded.opened_at,closed_at=null,updated_at=now()
+  returning * into row;
+  return to_jsonb(row);
+end $$;
+revoke all on function public.open_activity(uuid,text,uuid) from public,anon;
+grant execute on function public.open_activity(uuid,text,uuid) to authenticated;
+do $$ begin
+ if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='couple_pet') then alter publication supabase_realtime add table public.couple_pet; end if;
+ if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='future_names') then alter publication supabase_realtime add table public.future_names; end if;
+end $$;
+notify pgrst, 'reload schema';
+commit;
+begin;
+create or replace function private.is_couple(p_conversation uuid) returns boolean language sql stable security definer set search_path='' as $$
+ select private.is_member(p_conversation) and exists(select 1 from public.conversations c where c.id=p_conversation and c.kind='direct' and c.couple_a and c.couple_b);
+$$;
+revoke all on function private.is_couple(uuid) from public,anon;
+grant execute on function private.is_couple(uuid) to authenticated;
+drop policy if exists couple_pet_read on public.couple_pet;
+create policy couple_pet_read on public.couple_pet for select to authenticated using(private.is_couple(conversation_id));
+drop policy if exists future_names_read on public.future_names;
+create policy future_names_read on public.future_names for select to authenticated using(private.is_couple(conversation_id));
+create or replace function public.care_couple_pet(p_conversation uuid, p_action text, p_name text default null, p_species text default null)
+returns public.couple_pet language plpgsql security definer set search_path = '' as $$
+declare result public.couple_pet; me uuid := auth.uid();
+begin
+  if me is null or not private.is_couple(p_conversation) then raise exception 'Pet unavailable.'; end if;
+  if p_action is null or p_action not in ('adopt','feed','play','cuddle','rename') then raise exception 'Unknown action.'; end if;
+  if p_action in ('adopt','rename') and (p_name is null or char_length(btrim(p_name)) not between 1 and 24) then raise exception 'Choose a name between 1 and 24 characters.'; end if;
+  if p_action='adopt' then
+    if p_species is null or p_species not in ('cat','dog','bunny') then raise exception 'Choose a pet.'; end if;
+    insert into public.couple_pet(conversation_id,name,species,updated_by) values(p_conversation,btrim(p_name),p_species,me) on conflict(conversation_id) do nothing;
+  else
+    update public.couple_pet set name=case when p_action='rename' then btrim(p_name) else name end,
+      feeds=case when p_action='feed' then least(feeds+1,1000000) else feeds end,
+      plays=case when p_action='play' then least(plays+1,1000000) else plays end,
+      cuddles=case when p_action='cuddle' then least(cuddles+1,1000000) else cuddles end,
+      last_action=p_action,updated_by=me,updated_at=clock_timestamp()
+      where conversation_id=p_conversation;
+  end if;
+  select * into result from public.couple_pet where conversation_id=p_conversation;
+  if result.conversation_id is null then raise exception 'Adopt a pet first.'; end if;
+  return result;
+end $$;
+create or replace function public.change_future_name(p_conversation uuid,p_name text default null,p_remove uuid default null)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is null or not private.is_couple(p_conversation) then raise exception 'List unavailable.'; end if;
+  perform 1 from public.conversations where id=p_conversation for update;
+  if p_remove is not null then delete from public.future_names where id=p_remove and conversation_id=p_conversation;
+  else
+    if p_name is null or char_length(btrim(p_name)) not between 1 and 40 then raise exception 'Enter a name of up to 40 characters.'; end if;
+    if (select count(*) from public.future_names where conversation_id=p_conversation)>=40 then raise exception 'The list is full.'; end if;
+    if not exists(select 1 from public.future_names where conversation_id=p_conversation and lower(name)=lower(btrim(p_name))) then
+      insert into public.future_names(conversation_id,name,created_by) values(p_conversation,btrim(p_name),auth.uid());
+    end if;
+  end if;
+end $$;
+drop policy if exists bitchat_kiss_read on public.kiss_meter;
+create policy bitchat_kiss_read on public.kiss_meter for select to authenticated using(private.is_couple(conversation_id));
+create or replace function public.kiss(p_conversation uuid, p_count integer default 1)
+returns jsonb language plpgsql security definer set search_path = '' as $$
+declare
+  me uuid := auth.uid();
+  taps integer := greatest(1, least(coalesce(p_count, 1), 12));
+  is_a boolean;
+  row public.kiss_meter;
+begin
+  if me is null or not private.is_couple(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  select c.member_a = me into is_a from public.conversations c where c.id = p_conversation and c.kind = 'direct';
+  if is_a is null then raise exception 'Makeout needs a one-to-one chat.'; end if;
+  insert into public.kiss_meter as k(conversation_id, taps_a, taps_b)
+  values(p_conversation, case when is_a then taps else 0 end, case when is_a then 0 else taps end)
+  on conflict(conversation_id) do update set
+    taps_a = k.taps_a + case when is_a then taps else 0 end,
+    taps_b = k.taps_b + case when is_a then 0 else taps end,
+    last_at = now()
+  returning * into row;
+  return jsonb_build_object('taps_a', row.taps_a, 'taps_b', row.taps_b, 'last_at', row.last_at);
+end;
+$$;
+
+alter table public.shared_activity drop constraint if exists shared_activity_kind_check;
+alter table public.shared_activity add constraint shared_activity_kind_check check(kind in ('makeout','game','draw','wyr','kiss','pet','arcade','listen'));
+create or replace function public.open_activity(p_conversation uuid,p_kind text,p_ref uuid default null) returns jsonb language plpgsql security definer set search_path='' as $$
+declare me uuid:=auth.uid(); row public.shared_activity;
+begin
+ if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+ if p_kind is null or p_kind not in ('makeout','game','draw','wyr','kiss','pet','arcade','listen') then raise exception 'Unknown activity.'; end if;
+ if p_kind in ('makeout','kiss','pet') and not private.is_couple(p_conversation) then raise exception 'Both people must enable couple mode.'; end if;
+ insert into public.shared_activity as a(conversation_id,kind,ref_id,opened_by,opened_at,closed_at,updated_at) values(p_conversation,p_kind,p_ref,me,clock_timestamp(),null,clock_timestamp())
+ on conflict(conversation_id) do update set kind=excluded.kind,ref_id=excluded.ref_id,opened_by=excluded.opened_by,opened_at=excluded.opened_at,closed_at=null,updated_at=excluded.updated_at returning * into row;
+ return to_jsonb(row);
+end $$;
+
+notify pgrst,'reload schema';
+commit;
+begin;
+create table if not exists public.live_arcade (
+ conversation_id uuid primary key references public.conversations(id) on delete cascade,
+ round_id uuid not null default gen_random_uuid(), mode text not null check(mode in ('four','garden','race')),
+ board text not null, started_by uuid not null references public.profiles(id),
+ next_player uuid references public.profiles(id), last_player uuid references public.profiles(id),
+ winner uuid references public.profiles(id), finished boolean not null default false,
+ ready_a boolean not null default false, ready_b boolean not null default false, ready_at timestamptz, updated_at timestamptz not null default clock_timestamp()
+);
+alter table public.live_arcade enable row level security;
+revoke all on public.live_arcade from public,anon,authenticated;
+grant select on public.live_arcade to authenticated;
+grant all on public.live_arcade to service_role;
+drop policy if exists live_arcade_read on public.live_arcade;
+create policy live_arcade_read on public.live_arcade for select to authenticated using(private.is_member(conversation_id));
+create or replace function public.start_live_arcade(p_conversation uuid,p_mode text) returns public.live_arcade language plpgsql security definer set search_path='' as $$
+declare r public.live_arcade; me uuid:=auth.uid();
+begin
+ if me is null or not private.is_member(p_conversation) or not exists(select 1 from public.conversations where id=p_conversation and kind='direct' and member_a is not null and member_b is not null) or p_mode is null or p_mode not in ('four','garden','race') then raise exception 'Game unavailable.'; end if;
+ perform 1 from public.conversations where id=p_conversation for update;
+ select * into r from public.live_arcade where conversation_id=p_conversation;
+ if r.conversation_id is not null and not r.finished then raise exception 'End the current game first.'; end if;
+ insert into public.live_arcade as a(conversation_id,round_id,mode,board,started_by,next_player,last_player,winner,finished,ready_a,ready_b,ready_at,updated_at)
+ values(p_conversation,gen_random_uuid(),p_mode,repeat('-',case when p_mode='four' then 42 when p_mode='garden' then 16 else 1 end),me,case when p_mode='race' then null else me end,null,null,false,false,false,null,clock_timestamp())
+ on conflict(conversation_id) do update set round_id=excluded.round_id,mode=excluded.mode,board=excluded.board,started_by=excluded.started_by,next_player=excluded.next_player,last_player=null,winner=null,finished=false,ready_a=false,ready_b=false,ready_at=null,updated_at=excluded.updated_at returning * into r;
+ perform public.open_activity(p_conversation,'arcade');
+ return r;
+end $$;
+create or replace function public.play_live_arcade(p_conversation uuid,p_round uuid,p_action text,p_cell integer default null) returns public.live_arcade language plpgsql security definer set search_path='' as $$
+declare r public.live_arcade; me uuid:=auth.uid(); a uuid; b uuid; other uuid; token text; pos integer; rr integer; cc integer; dr integer; dc integer; k integer; win boolean:=false; line boolean;
+begin
+ if me is null or not private.is_member(p_conversation) then raise exception 'Game unavailable.'; end if;
+ select member_a,member_b into a,b from public.conversations where id=p_conversation and kind='direct';
+ if me is distinct from a and me is distinct from b then raise exception 'Game unavailable.'; end if;
+ other:=case when me=a then b else a end; token:=case when me=a then 'A' else 'B' end;
+ select * into r from public.live_arcade where conversation_id=p_conversation for update;
+ if r.conversation_id is null or r.finished or r.round_id is distinct from p_round then raise exception 'Game is over.'; end if;
+ if p_action='end' then r.finished:=true;
+ elsif r.mode='race' and p_action='ready' then
+  if me=a then r.ready_a:=true; else r.ready_b:=true; end if;
+  if r.ready_a and r.ready_b and r.ready_at is null then r.ready_at:=clock_timestamp()+interval '3 seconds'; end if;
+ elsif r.mode='race' and p_action='tap' then
+  if r.ready_at is null or clock_timestamp()<r.ready_at then raise exception 'Wait for GO.'; end if;
+  r.winner:=me; r.finished:=true; r.last_player:=me;
+ elsif r.mode='four' and p_action='move' then
+  if r.next_player<>me then raise exception 'Wait for your turn.'; end if;
+  if p_cell is null or p_cell<0 or p_cell>6 then raise exception 'Choose a column.'; end if;
+  pos:=null;
+  for rr in reverse 5..0 loop if substring(r.board from rr*7+p_cell+1 for 1)='-' then pos:=rr*7+p_cell+1; exit; end if; end loop;
+  if pos is null then raise exception 'Column is full.'; end if;
+  r.board:=overlay(r.board placing token from pos for 1); r.last_player:=me; r.next_player:=other;
+  for rr in 0..5 loop for cc in 0..6 loop
+   for dr in -1..1 loop for dc in 0..1 loop
+    if (dr<>0 or dc<>0) and rr+3*dr between 0 and 5 and cc+3*dc between 0 and 6 then
+     line:=true; for k in 0..3 loop if substring(r.board from (rr+k*dr)*7+cc+k*dc+1 for 1)<>token then line:=false; exit; end if; end loop;
+     if line then win:=true; end if;
+    end if;
+   end loop; end loop;
+  end loop; end loop;
+  if win then r.finished:=true; r.winner:=me; elsif position('-' in r.board)=0 then r.finished:=true; end if;
+ elsif r.mode='garden' and p_action='move' then
+  if r.next_player<>me then raise exception 'Wait for your turn.'; end if;
+  if p_cell is null or p_cell<0 or p_cell>15 or substring(r.board from p_cell+1 for 1)<>'-' then raise exception 'Choose an empty spot.'; end if;
+  r.board:=overlay(r.board placing token from p_cell+1 for 1);r.last_player:=me;r.next_player:=other;
+  if position('-' in r.board)=0 then r.finished:=true; end if;
+ else raise exception 'Unknown move.'; end if;
+ update public.live_arcade set board=r.board,next_player=r.next_player,last_player=r.last_player,winner=r.winner,finished=r.finished,ready_a=r.ready_a,ready_b=r.ready_b,ready_at=r.ready_at,updated_at=clock_timestamp() where conversation_id=p_conversation returning * into r;
+ return r;
+end $$;
+revoke all on function public.start_live_arcade(uuid,text),public.play_live_arcade(uuid,uuid,text,integer) from public,anon;
+grant execute on function public.start_live_arcade(uuid,text),public.play_live_arcade(uuid,uuid,text,integer) to authenticated;
+do $$ begin if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='live_arcade') then alter publication supabase_realtime add table public.live_arcade; end if; end $$;
+
+notify pgrst,'reload schema';
+commit;
+begin;
+-- A shared timeline referencing a chat audio message; no audio is copied.
+create table if not exists public.shared_listening (
+ conversation_id uuid primary key references public.conversations(id) on delete cascade,
+ message_id uuid not null references public.messages(id) on delete cascade,
+ playing boolean not null default false,
+ position double precision not null default 0 check(position>=0 and position<=86400),
+ changed_at timestamptz not null default clock_timestamp(),
+ changed_by uuid not null references public.profiles(id)
+);
+alter table public.shared_listening enable row level security;
+revoke all on public.shared_listening from public,anon,authenticated;
+grant select on public.shared_listening to authenticated;
+grant all on public.shared_listening to service_role;
+drop policy if exists shared_listening_read on public.shared_listening;
+create policy shared_listening_read on public.shared_listening for select to authenticated using(private.is_member(conversation_id));
+create or replace function public.control_listening(p_conversation uuid,p_action text,p_message uuid default null,p_position double precision default null) returns public.shared_listening language plpgsql security definer set search_path='' as $$
+declare r public.shared_listening; me uuid:=auth.uid();
+begin
+ if me is null or not private.is_member(p_conversation) or not exists(select 1 from public.conversations where id=p_conversation and kind='direct') then raise exception 'Listening unavailable.'; end if;
+ if p_action='start' then
+  if not exists(select 1 from public.messages m where m.id=p_message and m.conversation_id=p_conversation and m.media_kind='audio' and m.media_url is not null and m.created_at>clock_timestamp()-interval '24 hours' and m.created_at>private.visible_after(p_conversation)) then raise exception 'Audio unavailable.'; end if;
+  insert into public.shared_listening as s(conversation_id,message_id,playing,position,changed_at,changed_by) values(p_conversation,p_message,false,0,clock_timestamp(),me)
+  on conflict(conversation_id) do update set message_id=excluded.message_id,playing=false,position=0,changed_at=excluded.changed_at,changed_by=me returning * into r;
+  perform public.open_activity(p_conversation,'listen');
+ elsif p_action in ('play','pause') then
+  select * into r from public.shared_listening where conversation_id=p_conversation for update;
+  if r.message_id is null or r.message_id is distinct from p_message then raise exception 'Audio changed. Rejoin the session.'; end if;
+  if not exists(select 1 from public.messages m where m.id=r.message_id and m.conversation_id=p_conversation and m.media_kind='audio' and m.media_url is not null and m.created_at>clock_timestamp()-interval '24 hours' and m.created_at>private.visible_after(p_conversation)) then raise exception 'Audio unavailable.'; end if;
+  if p_position is null or p_position<0 or p_position>86400 or p_position::text in ('NaN','Infinity','-Infinity') then raise exception 'Invalid position.'; end if;
+  update public.shared_listening set playing=(p_action='play'),position=p_position,changed_at=clock_timestamp(),changed_by=me where conversation_id=p_conversation returning * into r;
+ else raise exception 'Unknown action.'; end if;
+ return r;
+end $$;
+revoke all on function public.control_listening(uuid,text,uuid,double precision) from public,anon;
+grant execute on function public.control_listening(uuid,text,uuid,double precision) to authenticated;
+do $$ begin if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='shared_listening') then alter publication supabase_realtime add table public.shared_listening; end if; end $$;
+
+notify pgrst,'reload schema';
+commit;
+begin;
+-- Public to signed-in users, except between people who have blocked each other.
+create table if not exists public.stories (
+ id uuid primary key default gen_random_uuid(),
+ user_id uuid not null references public.profiles(id) on delete cascade,
+ body text not null default '' check(char_length(body)<=280),
+ media_path text,
+ created_at timestamptz not null default clock_timestamp(),
+ expires_at timestamptz not null default (clock_timestamp()+interval '24 hours'),
+ deleted_at timestamptz,
+ check(length(btrim(body))>0 or media_path is not null)
+);
+create index if not exists stories_latest_idx on public.stories(created_at desc) where deleted_at is null;
+alter table public.stories enable row level security;
+revoke all on public.stories from public,anon,authenticated;
+grant select on public.stories to authenticated;
+grant all on public.stories to service_role;
+drop policy if exists stories_read on public.stories;
+create policy stories_read on public.stories for select to authenticated using(deleted_at is null and expires_at>now() and (user_id=auth.uid() or not private.blocked(auth.uid(),user_id)));
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values ('story-media','story-media',false,5242880,array['image/webp','image/jpeg','image/png']) on conflict(id) do update set public=false,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
+create or replace function private.story_media_read(p_name text) returns boolean language sql stable security definer set search_path='' as $$
+ select auth.uid() is not null and exists(select 1 from public.stories s where s.media_path=p_name and s.deleted_at is null and s.expires_at>now() and (s.user_id=auth.uid() or not private.blocked(auth.uid(),s.user_id)));
+$$;
+revoke all on function private.story_media_read(text) from public,anon;
+grant execute on function private.story_media_read(text) to authenticated;
+drop policy if exists story_media_read on storage.objects;
+create policy story_media_read on storage.objects for select to authenticated using(bucket_id='story-media' and private.story_media_read(name));
+drop policy if exists story_media_insert on storage.objects;
+create policy story_media_insert on storage.objects for insert to authenticated with check(bucket_id='story-media' and split_part(name,'/',1)=auth.uid()::text and name ~ '^[0-9a-f-]{36}/[0-9a-f-]{36}\.(webp|jpg|png)$');
+drop policy if exists story_media_read_gate on storage.objects;
+create policy story_media_read_gate on storage.objects as restrictive for select to authenticated using(bucket_id<>'story-media' or private.story_media_read(name));
+drop policy if exists story_media_insert_gate on storage.objects;
+create policy story_media_insert_gate on storage.objects as restrictive for insert to authenticated with check(bucket_id<>'story-media' or (split_part(name,'/',1)=auth.uid()::text and name ~ '^[0-9a-f-]{36}/[0-9a-f-]{36}\.(webp|jpg|png)$'));
+drop policy if exists story_media_update_gate on storage.objects;
+create policy story_media_update_gate on storage.objects as restrictive for update to authenticated using(bucket_id<>'story-media') with check(bucket_id<>'story-media');
+drop policy if exists story_media_delete_gate on storage.objects;
+create policy story_media_delete_gate on storage.objects as restrictive for delete to authenticated using(bucket_id<>'story-media');
+drop policy if exists story_media_anon_gate on storage.objects;
+create policy story_media_anon_gate on storage.objects as restrictive for all to anon using(bucket_id<>'story-media') with check(bucket_id<>'story-media');
+create or replace function public.post_story(p_body text default '',p_media text default null) returns public.stories language plpgsql security definer set search_path='' as $$
+declare me uuid:=auth.uid(); r public.stories; clean text:=btrim(coalesce(p_body,''));
+begin
+ if me is null then raise exception 'Sign in first.'; end if;
+ perform pg_advisory_xact_lock(hashtextextended(me::text,218));
+ if char_length(clean)>280 or (clean='' and p_media is null) then raise exception 'Add text or a photo.'; end if;
+ if (select count(*) from public.stories where user_id=me and created_at>now()-interval '24 hours')>=20 then raise exception 'Story limit reached for today.'; end if;
+ if p_media is not null and not exists(select 1 from storage.objects o where o.bucket_id='story-media' and o.name=p_media and split_part(o.name,'/',1)=me::text and o.created_at>now()-interval '1 hour' and not exists(select 1 from public.stories s where s.media_path=p_media)) then raise exception 'Photo unavailable.'; end if;
+ insert into public.stories(user_id,body,media_path) values(me,clean,p_media) returning * into r;
+ return r;
+end $$;
+create or replace function public.delete_story(p_id uuid) returns void language plpgsql security definer set search_path='' as $$
+begin
+ update public.stories set deleted_at=clock_timestamp() where id=p_id and user_id=auth.uid() and deleted_at is null;
+ if not found then raise exception 'Story unavailable.'; end if;
+end $$;
+revoke all on function public.post_story(text,text),public.delete_story(uuid) from public,anon;
+grant execute on function public.post_story(text,text),public.delete_story(uuid) to authenticated;
+-- Extend the existing storage worker; objects never bypass the Storage API.
+create or replace function public.get_media_cleanup_batch()
+returns table(bucket_id text,object_path text) language plpgsql security definer set search_path='' as $$
+begin
+  insert into private.media_cleanup_jobs(bucket_id,object_path)
+  select o.bucket_id,o.name from storage.objects o where
+    (o.bucket_id='chat-media' and o.created_at<now()-interval '24 hours') or
+    (o.bucket_id='instant-media' and (o.created_at<now()-interval '24 hours' or exists(select 1 from private.instant_payloads p where p.media_url=o.name and p.claimed_at is not null and not p.allow_replay))) or
+    (o.bucket_id='capsule-media' and (exists(select 1 from private.capsule_payloads p join public.capsules c on c.id=p.capsule_id where p.media_url=o.name and c.unlock_at<now()-interval '24 hours') or (o.created_at<now()-interval '24 hours' and not exists(select 1 from private.capsule_payloads p where p.media_url=o.name)))) or
+    (o.bucket_id='avatars' and o.created_at<now()-interval '24 hours' and not exists(select 1 from public.profiles p where p.avatar_url=o.name)) or
+    (o.bucket_id='story-media' and (exists(select 1 from public.stories s where s.media_path=o.name and (s.deleted_at is not null or s.expires_at<=now())) or (o.created_at<now()-interval '1 hour' and not exists(select 1 from public.stories s where s.media_path=o.name))))
+  limit 1000 on conflict do nothing;
+  delete from public.stories where created_at<now()-interval '48 hours';
+  return query select j.bucket_id,j.object_path from private.media_cleanup_jobs j order by j.attempts,j.created_at limit 100;
+end $$;
+notify pgrst,'reload schema';
+commit;
+begin;
+-- Expose only the public-facing identity of people with a visible story.
+create or replace function public.story_feed() returns table(id uuid,user_id uuid,body text,media_path text,created_at timestamptz,expires_at timestamptz,profiles jsonb) language sql stable security definer set search_path='' as $$
+ select s.id,s.user_id,s.body,s.media_path,s.created_at,s.expires_at,jsonb_build_object('id',p.id,'username',p.username,'display_name',p.display_name,'avatar_url',p.avatar_url,'mood',p.mood)
+ from public.stories s join public.profiles p on p.id=s.user_id
+ where auth.uid() is not null and s.deleted_at is null and s.expires_at>now() and (s.user_id=auth.uid() or not private.blocked(auth.uid(),s.user_id))
+ order by s.created_at desc,s.id desc limit 100;
+$$;
+revoke all on function public.story_feed() from public,anon;
+grant execute on function public.story_feed() to authenticated;
+notify pgrst,'reload schema';
+commit;
+begin;
+alter table public.live_arcade drop constraint if exists live_arcade_mode_check;
+alter table public.live_arcade add constraint live_arcade_mode_check check(mode in ('four','garden','race','grid'));
+create or replace function public.start_live_arcade(p_conversation uuid,p_mode text) returns public.live_arcade language plpgsql security definer set search_path='' as $$
+declare r public.live_arcade; me uuid:=auth.uid();
+begin
+ if me is null or not private.is_member(p_conversation) or not exists(select 1 from public.conversations where id=p_conversation and kind='direct' and member_a is not null and member_b is not null) or p_mode is null or p_mode not in ('four','garden','race','grid') then raise exception 'Game unavailable.'; end if;
+ perform 1 from public.conversations where id=p_conversation for update;
+ select * into r from public.live_arcade where conversation_id=p_conversation;
+ if r.conversation_id is not null and not r.finished then raise exception 'End the current game first.'; end if;
+ insert into public.live_arcade as a(conversation_id,round_id,mode,board,started_by,next_player,last_player,winner,finished,ready_a,ready_b,ready_at,updated_at)
+ values(p_conversation,gen_random_uuid(),p_mode,repeat('-',case when p_mode='four' then 42 when p_mode='garden' then 16 when p_mode='grid' then 25 else 1 end),me,case when p_mode='race' then null else me end,null,null,false,false,false,null,clock_timestamp())
+ on conflict(conversation_id) do update set round_id=excluded.round_id,mode=excluded.mode,board=excluded.board,started_by=excluded.started_by,next_player=excluded.next_player,last_player=null,winner=null,finished=false,ready_a=false,ready_b=false,ready_at=null,updated_at=excluded.updated_at returning * into r;
+ perform public.open_activity(p_conversation,'arcade');
+ return r;
+end $$;
+create or replace function public.play_live_arcade(p_conversation uuid,p_round uuid,p_action text,p_cell integer default null) returns public.live_arcade language plpgsql security definer set search_path='' as $$
+declare r public.live_arcade; me uuid:=auth.uid(); a uuid; b uuid; other uuid; token text; pos integer; rr integer; cc integer; dr integer; dc integer; k integer; win boolean:=false; line boolean;
+begin
+ if me is null or not private.is_member(p_conversation) then raise exception 'Game unavailable.'; end if;
+ select member_a,member_b into a,b from public.conversations where id=p_conversation and kind='direct';
+ if me is distinct from a and me is distinct from b then raise exception 'Game unavailable.'; end if;
+ other:=case when me=a then b else a end; token:=case when me=a then 'A' else 'B' end;
+ select * into r from public.live_arcade where conversation_id=p_conversation for update;
+ if r.conversation_id is null or r.finished or r.round_id is distinct from p_round then raise exception 'Game is over.'; end if;
+ if p_action='end' then r.finished:=true;
+ elsif r.mode='race' and p_action='ready' then
+  if me=a then r.ready_a:=true; else r.ready_b:=true; end if;
+  if r.ready_a and r.ready_b and r.ready_at is null then r.ready_at:=clock_timestamp()+interval '3 seconds'; end if;
+ elsif r.mode='race' and p_action='tap' then
+  if r.ready_at is null or clock_timestamp()<r.ready_at then raise exception 'Wait for GO.'; end if;
+  r.winner:=me; r.finished:=true; r.last_player:=me;
+ elsif r.mode='four' and p_action='move' then
+  if r.next_player<>me then raise exception 'Wait for your turn.'; end if;
+  if p_cell is null or p_cell<0 or p_cell>6 then raise exception 'Choose a column.'; end if;
+  pos:=null;
+  for rr in reverse 5..0 loop if substring(r.board from rr*7+p_cell+1 for 1)='-' then pos:=rr*7+p_cell+1; exit; end if; end loop;
+  if pos is null then raise exception 'Column is full.'; end if;
+  r.board:=overlay(r.board placing token from pos for 1); r.last_player:=me; r.next_player:=other;
+  for rr in 0..5 loop for cc in 0..6 loop
+   for dr in -1..1 loop for dc in 0..1 loop
+    if (dr<>0 or dc<>0) and rr+3*dr between 0 and 5 and cc+3*dc between 0 and 6 then
+     line:=true; for k in 0..3 loop if substring(r.board from (rr+k*dr)*7+cc+k*dc+1 for 1)<>token then line:=false; exit; end if; end loop;
+     if line then win:=true; end if;
+    end if;
+   end loop; end loop;
+  end loop; end loop;
+  if win then r.finished:=true; r.winner:=me; elsif position('-' in r.board)=0 then r.finished:=true; end if;
+ elsif r.mode='grid' and p_action='move' then
+  if r.next_player<>me then raise exception 'Wait for your turn.'; end if;
+  if p_cell is null or p_cell<0 or p_cell>24 or substring(r.board from p_cell+1 for 1)<>'-' then raise exception 'Choose an empty spot.'; end if;
+  r.board:=overlay(r.board placing token from p_cell+1 for 1);r.last_player:=me;r.next_player:=other;
+  for rr in 0..4 loop for cc in 0..4 loop
+   for dr in -1..1 loop for dc in 0..1 loop
+    if (dr<>0 or dc<>0) and rr+3*dr between 0 and 4 and cc+3*dc between 0 and 4 then
+     line:=true; for k in 0..3 loop if substring(r.board from (rr+k*dr)*5+cc+k*dc+1 for 1)<>token then line:=false; exit; end if; end loop;
+     if line then win:=true; end if;
+    end if;
+   end loop; end loop;
+  end loop; end loop;
+  if win then r.finished:=true;r.winner:=me; elsif position('-' in r.board)=0 then r.finished:=true; end if;
+ elsif r.mode='garden' and p_action='move' then
+  if r.next_player<>me then raise exception 'Wait for your turn.'; end if;
+  if p_cell is null or p_cell<0 or p_cell>15 or substring(r.board from p_cell+1 for 1)<>'-' then raise exception 'Choose an empty spot.'; end if;
+  r.board:=overlay(r.board placing token from p_cell+1 for 1);r.last_player:=me;r.next_player:=other;
+  if position('-' in r.board)=0 then r.finished:=true; end if;
+ else raise exception 'Unknown move.'; end if;
+ update public.live_arcade set board=r.board,next_player=r.next_player,last_player=r.last_player,winner=r.winner,finished=r.finished,ready_a=r.ready_a,ready_b=r.ready_b,ready_at=r.ready_at,updated_at=clock_timestamp() where conversation_id=p_conversation returning * into r;
+ return r;
+end $$;
+revoke all on function public.start_live_arcade(uuid,text),public.play_live_arcade(uuid,uuid,text,integer) from public,anon;
+grant execute on function public.start_live_arcade(uuid,text),public.play_live_arcade(uuid,uuid,text,integer) to authenticated;
+notify pgrst,'reload schema';
+commit;
+begin;
+create table if not exists public.couple_reels (
+ id uuid primary key default gen_random_uuid(),
+ conversation_id uuid not null references public.conversations(id) on delete cascade,
+ added_by uuid not null references public.profiles(id) on delete cascade,
+ url text not null check (char_length(url)<=2048),
+ created_at timestamptz not null default now()
+);
+create index if not exists couple_reels_order on public.couple_reels(conversation_id,created_at desc,id desc);
+alter table public.couple_reels enable row level security;
+revoke all on public.couple_reels from public,anon,authenticated;
+grant select on public.couple_reels to authenticated;
+grant all on public.couple_reels to service_role;
+drop policy if exists couple_reels_read on public.couple_reels;
+create policy couple_reels_read on public.couple_reels for select to authenticated using(private.is_couple(conversation_id));
+create or replace function public.add_couple_reel(p_conversation uuid,p_url text) returns public.couple_reels language plpgsql security definer set search_path='' as $$
+declare me uuid:=auth.uid(); value text:=btrim(coalesce(p_url,'')); host text; r public.couple_reels;
+begin
+ if me is null or not private.is_couple(p_conversation) then raise exception 'Reels unavailable.'; end if;
+ if not exists(select 1 from public.profiles where id=me and is_pro) then raise exception 'Pro is required to add links.'; end if;
+ if char_length(value)>2048 or value !~ '^https://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(/[^[:space:]<>]*)?$' then raise exception 'Use a valid HTTPS link.'; end if;
+ host:=lower(split_part(split_part(value,'/',3),'?',1));
+ if host !~ '^[a-z0-9-]+([.][a-z0-9-]+)+$' or host ~ '^[0-9.]+$' or host ~ '(^|[.])(localhost|local|internal)$' then raise exception 'Use a public website address.'; end if;
+ perform 1 from public.conversations where id=p_conversation for update;
+ if not private.is_couple(p_conversation) then raise exception 'Reels unavailable.'; end if;
+ if (select count(*) from public.couple_reels where conversation_id=p_conversation)>=100 then raise exception 'Remove a link to add more.'; end if;
+ insert into public.couple_reels(conversation_id,added_by,url) values(p_conversation,me,value) returning * into r;
+ return r;
+end $$;
+create or replace function public.remove_couple_reel(p_id uuid) returns void language plpgsql security definer set search_path='' as $$
+declare conversation uuid;
+begin
+ select conversation_id into conversation from public.couple_reels where id=p_id;
+ if conversation is null then raise exception 'Reel unavailable.'; end if;
+ perform 1 from public.conversations where id=conversation for update;
+ if not private.is_couple(conversation) then raise exception 'Reel unavailable.'; end if;
+ delete from public.couple_reels where id=p_id and conversation_id=conversation;
+end $$;
+revoke all on function public.add_couple_reel(uuid,text), public.remove_couple_reel(uuid) from public,anon;
+grant execute on function public.add_couple_reel(uuid,text), public.remove_couple_reel(uuid) to authenticated;
+do $$ begin if not exists(select 1 from pg_publication_tables where pubname='supabase_realtime' and schemaname='public' and tablename='couple_reels') then alter publication supabase_realtime add table public.couple_reels; end if; end $$;
+notify pgrst,'reload schema';
+commit;
+-- TURN issuance is limited per authenticated call participant, not per edge instance.
+create table if not exists private.turn_issuance_limits (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  window_start timestamptz not null default now(),
+  requests integer not null default 0
+);
+revoke all on private.turn_issuance_limits from public, anon, authenticated;
+
+create or replace function public.reserve_turn_credential(p_user uuid, p_call uuid)
+returns boolean language plpgsql security definer set search_path = '' as $$
+declare count_now integer;
+begin
+  if p_user is null or not exists (
+    select 1 from public.calls c where c.id = p_call and p_user in (c.caller, c.callee)
+      and (c.status = 'active' or (c.status = 'ringing' and c.started_at > now() - interval '90 seconds'))
+  ) then return false; end if;
+  insert into private.turn_issuance_limits (user_id,window_start,requests)
+  values (p_user,now(),1)
+  on conflict (user_id) do update set
+    window_start = case when private.turn_issuance_limits.window_start < now() - interval '1 hour' then now() else private.turn_issuance_limits.window_start end,
+    requests = case when private.turn_issuance_limits.window_start < now() - interval '1 hour' then 1 else private.turn_issuance_limits.requests + 1 end
+  returning requests into count_now;
+  return count_now <= 20;
+end;
+$$;
+revoke all on function public.reserve_turn_credential(uuid,uuid) from public, anon, authenticated;
+grant execute on function public.reserve_turn_credential(uuid,uuid) to service_role;
+-- Bind every broadcast to its actual authenticated sender and call. The old
+-- clients ignore callId, so this is backward-compatible with deployed builds.
+create or replace function public.call_signal(p_call uuid, p_payload jsonb)
+returns boolean language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); row public.calls;
+begin
+  select * into row from public.calls where id = p_call;
+  if row.id is null or me is null or me not in (row.caller, row.callee) then raise exception 'Call unavailable.'; end if;
+  if row.status not in ('ringing','active') then return false; end if;
+  if p_payload is null or jsonb_typeof(p_payload) <> 'object' or length(p_payload::text) > 16000 then
+    raise exception 'Call signal too large.';
+  end if;
+  perform realtime.send((p_payload - 'from' - 'callId') || jsonb_build_object('from', me, 'callId', row.id), 'signal', 'call:'||row.conversation_id::text, true);
+  return true;
+end;
+$$;
+-- Explicit recovery when a crashed tab left a call active. This is only
+-- invoked by a participant tapping the recovery action; it may end a real call.
+create or replace function public.end_open_call(p_conversation uuid)
+returns boolean language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); target uuid;
+begin
+  if me is null or not private.is_member(p_conversation) then raise exception 'Conversation unavailable.'; end if;
+  select c.id into target from public.calls c
+   where c.conversation_id = p_conversation and me in (c.caller,c.callee) and c.status in ('ringing','active')
+   order by c.started_at desc limit 1 for update;
+  if target is null then return false; end if;
+  perform public.end_call(target);
+  return true;
+end;
+$$;
+revoke all on function public.end_open_call(uuid) from public, anon;
+grant execute on function public.end_open_call(uuid) to authenticated;
+
+-- Repair call notification delivery and endpoint ownership.
+-- Call push registration and enqueueing must coexist with message pushes.
+-- A single browser endpoint can have both kinds, but never belong to two users.
+alter table private.push_subscriptions drop constraint if exists push_subscriptions_endpoint_key;
+create unique index if not exists push_subscriptions_endpoint_kind_global on private.push_subscriptions(endpoint, kind);
+
+create or replace function public.register_push_subscription(p_endpoint text, p_p256dh text, p_auth text, p_kind text default 'message')
+returns void language plpgsql security definer set search_path = '' as $$
+declare me uuid := auth.uid(); existing private.push_subscriptions; wanted text := case when p_kind = 'call' then 'call' else 'message' end;
+begin
+  if me is null or not private.push_endpoint_valid(p_endpoint)
+    or p_p256dh is null or p_p256dh !~ '^[A-Za-z0-9_-]{87}$'
+    or p_auth is null or p_auth !~ '^[A-Za-z0-9_-]{22}$'
+    or get_byte(decode(translate(p_p256dh, '-_', '+/') || '=', 'base64'), 0) <> 4
+    then raise exception 'Notification subscription unavailable.' using errcode = '22023'; end if;
+  perform pg_advisory_xact_lock(hashtextextended(me::text, 27));
+  perform pg_advisory_xact_lock(hashtextextended(p_endpoint, 28));
+  delete from private.push_subscriptions where user_id = me and updated_at < now() - interval '180 days';
+  if exists(select 1 from private.push_subscriptions where endpoint = p_endpoint and user_id <> me) then
+    raise exception 'This device needs a new notification subscription.' using errcode = '42501';
+  end if;
+  select * into existing from private.push_subscriptions where endpoint = p_endpoint and kind = wanted for update;
+  if existing.id is null and not exists(select 1 from private.push_subscriptions where user_id = me and endpoint = p_endpoint)
+     and (select count(distinct endpoint) from private.push_subscriptions where user_id = me) >= 10 then
+    raise exception 'Notification device limit reached.'; end if;
+  if existing.id is null then
+    insert into private.push_subscriptions(user_id, endpoint, p256dh, auth_secret, kind)
+    values(me, p_endpoint, p_p256dh, p_auth, wanted);
+  else
+    update private.push_subscriptions set p256dh = p_p256dh, auth_secret = p_auth, updated_at = clock_timestamp()
+     where id = existing.id and user_id = me;
+  end if;
+end;
+$$;
+-- Retain the original API for older clients, without relying on endpoint-only uniqueness.
+create or replace function public.register_push_subscription(p_endpoint text, p_p256dh text, p_auth text)
+returns void language sql security definer set search_path = '' as $$
+  select public.register_push_subscription(p_endpoint, p_p256dh, p_auth, 'message');
+$$;
+
+create or replace function private.enqueue_call_push()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  insert into private.push_jobs(subscription_id, conversation_id, message_id, call_id, kind)
+  select s.id, new.conversation_id, null::uuid, new.id, 'call'
+  from private.push_subscriptions s
+  where s.user_id = new.callee and s.kind = 'call'
+    and s.updated_at > now() - interval '180 days'
+    and not private.blocked(new.callee, new.caller)
+  on conflict(subscription_id, conversation_id) do update set
+    message_id = null, kind = 'call', call_id = excluded.call_id,
+    created_at = clock_timestamp(), next_attempt = clock_timestamp(), attempts = 0, lease = null, lease_until = null;
+  if found then
+    begin perform private.wake_push_worker(); exception when others then null; end;
+  end if;
+  return new;
+end;
+$$;
+
+-- Call jobs have no associated message; identify the lease with NULL-safe equality.
+create or replace function public.finish_push_job(p_secret text, p_subscription uuid, p_conversation uuid, p_message uuid, p_lease uuid, p_status integer)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if not coalesce(private.push_authorized(p_secret), false) then raise exception 'Unauthorized.' using errcode = '42501'; end if;
+  if p_status in (404, 410) then
+    delete from private.push_subscriptions s where s.id = p_subscription and exists(
+      select 1 from private.push_jobs j where j.subscription_id = s.id and j.conversation_id = p_conversation and j.message_id is not distinct from p_message and j.lease = p_lease);
+  elsif p_status between 200 and 299 or p_status in (400, 401, 403, 413) then
+    delete from private.push_jobs j where j.subscription_id = p_subscription and j.conversation_id = p_conversation and j.message_id is not distinct from p_message and j.lease = p_lease;
+  else
+    update private.push_jobs j set lease = null, lease_until = null, next_attempt = clock_timestamp() + (power(2, j.attempts) * interval '15 seconds')
+      where j.subscription_id = p_subscription and j.conversation_id = p_conversation and j.message_id is not distinct from p_message and j.lease = p_lease;
+  end if;
+end;
+$$;
+
+-- Cancel jobs waiting to be dispatched when the call is no longer ringing.
+create or replace function private.cancel_call_push()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  delete from private.push_jobs where kind = 'call' and call_id = new.id;
+  return new;
+end;
+$$;
+drop trigger if exists bitchat_cancel_call_push on public.calls;
+create trigger bitchat_cancel_call_push after update of status on public.calls
+for each row when (old.status = 'ringing' and new.status <> 'ringing') execute function private.cancel_call_push();
+notify pgrst, 'reload schema';
+-- The four-argument function defaults p_kind to message, so it also handles
+-- the old three-argument API without an ambiguous overload.
+drop function if exists public.register_push_subscription(text,text,text);
+notify pgrst, 'reload schema';
+-- Replace a pending ring with a privacy-preserving missed-call notification.
+-- A call subscription is separate from a message subscription, so this never
+-- consumes a chat message job. The existing queue lease prevents an old send
+-- from completing a newer job.
+create or replace function private.cancel_call_push()
+returns trigger language plpgsql security definer set search_path = '' as $$
+begin
+  delete from private.push_jobs where kind = 'call' and call_id = new.id;
+  if new.status = 'missed' and new.started_at > now() - interval '24 hours' and new.callee is not null and not private.blocked(new.callee, new.caller) then
+    insert into private.push_jobs(subscription_id, conversation_id, message_id, call_id, kind)
+    select s.id, new.conversation_id, null::uuid, new.id, 'missed_call'
+      from private.push_subscriptions s
+     where s.user_id = new.callee and s.kind = 'call' and s.updated_at > now() - interval '180 days'
+    on conflict(subscription_id, conversation_id) do update set
+      message_id = null, call_id = excluded.call_id, kind = excluded.kind,
+      created_at = clock_timestamp(), next_attempt = clock_timestamp(), attempts = 0, lease = null, lease_until = null;
+    if found then
+      begin perform private.wake_push_worker(); exception when others then null; end;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+-- A caller's tab can disappear without sending hangup. Expire abandoned
+-- ringing calls server-side so the callee still gets a missed-call record.
+create or replace function private.expire_ringing_calls()
+returns void language sql security definer set search_path = '' as $$
+  update public.calls set status = 'missed', ended_at = clock_timestamp()
+   where status = 'ringing' and started_at < clock_timestamp() - interval '90 seconds';
+$$;
+revoke all on function private.expire_ringing_calls() from public, anon, authenticated;
+select cron.schedule('bitchat-expire-calls', '* * * * *', 'select private.expire_ringing_calls();');
+
+-- iOS-style text effects: strict presentation metadata, never CSS or message text.
+alter table public.messages add column if not exists text_effect text;
+alter table public.messages drop constraint if exists messages_text_effect_check;
+alter table public.messages add constraint messages_text_effect_check
+  check (text_effect is null or text_effect in ('big','small','shake','ripple','bloom','explode'));
+comment on column public.messages.text_effect is
+  'Optional iOS-style presentation effect. Content, search and push payloads remain unchanged.';
+grant insert(text_effect), update(text_effect) on public.messages to authenticated;
+notify pgrst, 'reload schema';

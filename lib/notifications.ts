@@ -67,7 +67,10 @@ export async function enableNotifications(userId: string): Promise<void> {
       await current(userId, operation);
       const json = subscription.toJSON();
       if (!json.keys?.p256dh || !json.keys?.auth) throw new Error("Notification subscription unavailable.");
-      await rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys.p256dh, p_auth: json.keys.auth });
+      await rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys.p256dh, p_auth: json.keys.auth, p_kind: "message" });
+      // Separate rows share one browser endpoint so call and message jobs do
+      // not overwrite each other. Both follow this device's notification opt-in.
+      await rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys.p256dh, p_auth: json.keys.auth, p_kind: "call" });
       await current(userId, operation);
       await writePushState({ userId, enabled: true });
       await current(userId, operation);
@@ -126,7 +129,18 @@ export async function restoreNotifications(userId: string): Promise<void> {
     }
     const json = subscription.toJSON();
     await current(userId, operation);
-    const { error } = await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth }).abortSignal(AbortSignal.timeout(5000));
+    const { error } = await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth, p_kind: "message" }).abortSignal(AbortSignal.timeout(5000));
     if (error) throw error;
+    const { error: callError } = await db().rpc("register_push_subscription", { p_endpoint: subscription.endpoint, p_p256dh: json.keys?.p256dh, p_auth: json.keys?.auth, p_kind: "call" }).abortSignal(AbortSignal.timeout(5000));
+    if (callError) throw callError;
   });
+}
+
+/** Dismiss the OS ring once this device has opened the call screen. */
+export async function clearCallNotification(userId: string, conversationId: string): Promise<void> {
+  if (!("serviceWorker" in navigator)) return;
+  const reg = await navigator.serviceWorker.getRegistration();
+  for (const item of await reg?.getNotifications({tag: "call:" + userId + ":" + conversationId}) ?? []) {
+    if (item.data?.userId === userId && item.data?.conversationId === conversationId) item.close();
+  }
 }

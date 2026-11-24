@@ -1,0 +1,84 @@
+/* iOS-inspired messaging surfaces. Kept separate from feature styles so the
+   navigation, touch feedback and motion have one consistent visual language. */
+.inbox {
+  background:linear-gradient(160deg,#20202c,#171721 55%,#14131c);
+  border-color:#ffffff16;
+}
+.inbox-header h1 { font-size:30px; font-weight:750; letter-spacing:-.9px; }
+.inbox-header-actions .icon-button { color:#e2dbec; background:#ffffff0b; border:1px solid #ffffff0d; }
+.inbox-header-actions .new-chat-button { color:#e9c9ff; }
+.inbox-search .input-icon { background:#ffffff10; border-color:#ffffff09; border-radius:13px; }
+.inbox-filters { gap:6px; }
+.inbox-filters button { display:inline-flex; align-items:center; justify-content:center; gap:5px; border-radius:99px; font-weight:650; color:#c8c2d2; }
+.inbox-filters button.active { color:#fff; background:#ffffff20; border-color:#ffffff1c; }
+.inbox-group-actions button, .inbox-group-actions .saved-shortcut { border-radius:14px; background:#ffffff08; border-color:#ffffff0e; }
+.inbox-group-actions svg { color:#cfb9ed; flex:none; }
+.inbox-list-label { color:#f5f2f8; font-weight:700; }
+.conversation-item { position:relative; }
+.conversation-item .conversation { padding-right:47px; }
+.conversation-item .conversation strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.conversation-more { position:absolute; z-index:2; right:3px; top:50%; transform:translateY(-50%); width:40px; height:44px; display:grid; place-items:center; border-radius:12px; color:#aaa2b6; }
+.conversation-more:hover, .conversation-more:focus-visible { color:#fff; background:#ffffff12; }
+.conversation-item.actions-open .conversation-more, .conversation-item.swiping .conversation-more { visibility:hidden; }
+/* The foreground must be opaque while translated, otherwise the action icons
+   appear through names and previews in archived and normal chat lists. */
+.conversation-item.actions-open .conversation, .conversation-item.swiping .conversation { background:#1b1a25; }
+.conversation-actions { overflow:hidden; border-radius:0 14px 14px 0; }
+.conversation-actions button { gap:5px; font-weight:650; font-size:10px; }
+.chat-archive-action { background:#6b5f85; color:#fff; }
+.chat-delete-action { background:#b84058; color:#fff; }
+.archive-intro { display:flex; align-items:center; gap:12px; margin:3px 20px 8px; padding:13px; border:1px solid #ffffff12; border-radius:17px; background:#ffffff08; }
+.archive-intro-icon { display:grid; place-items:center; flex:none; width:42px; height:42px; color:#e3caff; border-radius:13px; background:#c5a4e925; }
+.archive-intro>span:last-child { min-width:0; display:flex; flex-direction:column; gap:3px; }
+.archive-intro strong { font-size:13px; color:#f6f1fa; }
+.archive-intro small { font-size:11px; line-height:1.35; color:#c2b9cb; }
+.empty-inbox { gap:9px; justify-content:center; text-align:center; }
+.empty-inbox-icon { margin-bottom:6px; border-radius:22px; background:#c6a8e51a; color:#d8bff0; }
+.empty-inbox>span:not(.empty-inbox-icon) { font-weight:650; color:#f0ebf4; }
+.empty-inbox small { max-width:230px; font-size:12px; line-height:1.4; color:#afa6b8; }
+.thread-header { background:#1a1824e8; border-color:#ffffff0b; }
+.thread-header .icon-button, .composer .icon-button { color:#d4cadd; }
+.thread-header .call-button { color:#e6c9f7; }
+.chat-shortcuts button { transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s ease; }
+.chat-shortcuts button:active { transform:scale(.95); }
+.message-row.new-arrival .bubble { animation:ios-message-arrive .26s cubic-bezier(.2,.8,.2,1) both; }
+.message-row.own.new-arrival .bubble { animation-name:ios-message-sent; }
+@keyframes ios-message-arrive { from { opacity:0; transform:translate3d(-7px,8px,0) scale(.97); } to { opacity:1; transform:none; } }
+@keyframes ios-message-sent { from { opacity:0; transform:translate3d(7px,8px,0) scale(.97); } to { opacity:1; transform:none; } }
+.message-reactions button { transition:transform .18s cubic-bezier(.2,.8,.2,1),background .18s ease; }
+.message-reactions button:active { transform:scale(1.14); }
+.composer { border-color:#ffffff1b; box-shadow:inset 0 1px 0 #ffffff0b; }
+.emoji-head { padding:4px 0 7px; }
+.emoji-tabs { padding:4px; gap:3px; border-radius:16px; background:#ffffff0a; }
+.emoji-tabs button { width:36px; height:36px; font-size:19px; }
+.emoji-tabs button[aria-pressed=true] { background:#d9baff33; box-shadow:inset 0 0 0 1px #e5c5ff38; }
+.emoji-section h4 { font-size:11px; color:#c8bcd2; letter-spacing:.06em; }
+.emoji-cell { min-width:0; font-family:"Apple Color Emoji","Segoe UI Emoji",sans-serif; border-radius:12px; }
+.emoji-cell:focus-visible, .emoji-tabs button:focus-visible, .conversation-more:focus-visible { outline:2px solid #e1c5ff; outline-offset:-2px; }
+.history-intro { margin:0 0 14px; color:#c2b9ca; font-size:13px; line-height:1.45; }
+.history-filter { background:#ffffff0a; border:1px solid #ffffff0a; }
+.history-card { background:#ffffff08; border:1px solid #ffffff0d; border-radius:17px; }
+.history-empty { display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; padding:32px 12px; }
+.history-empty>span { width:52px; height:52px; display:grid; place-items:center; border-radius:17px; background:#c6a8e51a; color:#d8bff0; }
+.history-empty .empty-label { margin:2px 0 0; color:#f0ebf4; font-weight:650; }
+.history-empty small { color:#afa6b8; font-size:12px; line-height:1.4; }
+@media(max-width:760px) {
+  .inbox { background:#111019; }
+  .inbox-header h1 { font-size:28px; letter-spacing:-.8px; }
+  .inbox-header-actions .icon-button { border:0; background:transparent; }
+  .inbox-filters button { border-radius:99px; }
+  .inbox-group-actions button,.inbox-group-actions .saved-shortcut { border-radius:13px; }
+  .conversation-item .conversation { min-height:76px; padding-right:46px; }
+  .rail { background:#191721eb; backdrop-filter:blur(22px) saturate(1.2); -webkit-backdrop-filter:blur(22px) saturate(1.2); }
+  .archive-intro { margin-left:20px; margin-right:20px; }
+}
+@media(max-width:760px) and (max-height:650px) { .archive-intro { padding:9px 11px; margin-bottom:4px; }.archive-intro-icon { width:38px; height:38px; } }
+@media(prefers-reduced-motion:reduce) {
+ .message-row.new-arrival .bubble { animation:none!important; }
+ .chat-shortcuts button,.message-reactions button,.emoji-cell,.emoji-tabs button { transition:none!important; }
+ .typing-dots i { animation:none!important; }
+}
+@media(prefers-reduced-transparency:reduce) { .thread-header,.rail { backdrop-filter:none; -webkit-backdrop-filter:none; background:#1b1923; } }
+html[data-data-saver=true] .message-row.new-arrival .bubble { animation:none!important; }
+/* Do not fade from transparent over the exposed swipe actions. */
+.conversation-item.actions-open .conversation { transition-property:transform,box-shadow; }

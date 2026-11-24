@@ -26,7 +26,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data: https://*.supabase.co; media-src 'self' blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co stun: turn: turns:; font-src 'self'; worker-src 'self'; frame-src https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
         }
       ]
     },
@@ -45,6 +45,10 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/api/turn-credentials/",
+      "destination": "https://llweydgvtpwgnslvgnqm.supabase.co/functions/v1/turn-credentials"
+    },
     {
       "source": "/u/:username/",
       "destination": "/u/"
