@@ -179,3 +179,35 @@ test('a stale call can be ended explicitly before retrying',async({page})=>{
  await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.getByRole('button',{name:'Call',exact:true}).click();
  await expect(page.getByText('A call is already in progress here.')).toBeVisible();await page.getByRole('button',{name:'End previous call'}).click();await expect.poll(()=>ended).toBe(1);await expect(page.getByRole('dialog',{name:'Call with Alex'})).toHaveCount(0);
 });
+
+test('chat sketch overlays the conversation and sends only transparent ink, with retry',async({page})=>{
+ await signedIn(page); let uploads=0; let png:Buffer|undefined; let sent:any=null;
+ await page.route('**/rest/v1/messages*',async route=>{if(route.request().method()==='POST')sent=route.request().postDataJSON();return route.fallback();});
+ await page.route('**/storage/v1/object/chat-media/**',async route=>{
+  uploads++; if(uploads===1)return route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({message:'Upload failed'})});
+  png=route.request().postDataBuffer() ?? undefined;
+  return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({Key:new URL(route.request().url()).pathname})});
+ });
+ await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();
+ await page.getByRole('button',{name:'Draw on chat'}).click();const dialog=page.getByRole('dialog',{name:'Draw on chat'});await expect(dialog).toBeVisible();
+ await expect(page.locator('.message-text').filter({hasText:'Hello'})).toBeVisible();
+ await expect(dialog.getByText('Only your drawing is sent, not the chat behind it.')).toBeVisible();
+ const canvas=dialog.getByLabel('Draw over conversation');const rect=await canvas.boundingBox();if(!rect)throw new Error('Canvas has no bounds');
+ const x=rect.x+rect.width*.45,y=rect.y+rect.height*.6;
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+40,y+25,{steps:5});await page.mouse.up();
+ await expect(dialog.getByRole('button',{name:'Undo drawing'})).toBeEnabled();await dialog.getByRole('button',{name:'Undo drawing'}).click();await expect(dialog.getByRole('button',{name:'Send drawing'})).toBeDisabled();
+ await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+40,y+25,{steps:5});await page.mouse.up();
+ await dialog.getByRole('button',{name:'Send drawing'}).click();await expect(dialog.getByRole('alert')).toBeVisible();await expect(dialog).toBeVisible();
+ await dialog.getByRole('button',{name:'Send drawing'}).click();await expect(dialog).toHaveCount(0);expect(uploads).toBe(2);expect(png).toBeTruthy();
+ const start=png!.indexOf(Buffer.from([137,80,78,71,13,10,26,10]));const end=png!.indexOf(Buffer.from('IEND'),start);expect(start).toBeGreaterThanOrEqual(0);expect(end).toBeGreaterThan(start);const image=png!.subarray(start,end+8);
+ const info=await page.evaluate(async data=>{const img=await createImageBitmap(await (await fetch('data:image/png;base64,'+data)).blob());const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d')!;ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,c.width,c.height).data;let ink=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])ink++;return {corner:pixels[3],ink,total:c.width*c.height};},image.toString('base64'));
+ expect(info.corner).toBe(0);expect(info.ink).toBeGreaterThan(0);expect(info.ink).toBeLessThan(info.total/10);
+ await expect.poll(()=>sent?.media_kind).toBe('image');expect(sent.content).toBe('Drawing');expect(sent.media_url).toMatch(new RegExp('^'+uid+'/'+cid+'/.*\\.png$'));
+ await expect(page.getByRole('button',{name:'Draw together'})).toBeVisible();
+});
+
+test('chat sketch protects unsent ink on close',async({page})=>{
+ await signedIn(page);await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.getByRole('button',{name:'Draw on chat'}).click();const dialog=page.getByRole('dialog',{name:'Draw on chat'});const canvas=dialog.getByLabel('Draw over conversation');const rect=await canvas.boundingBox();if(!rect)throw new Error('Canvas has no bounds');await page.mouse.click(rect.x+rect.width*.5,rect.y+rect.height*.6);
+ page.once('dialog',d=>d.dismiss());await dialog.getByRole('button',{name:'Close drawing'}).click();await expect(dialog).toBeVisible();
+ page.once('dialog',d=>d.accept());await page.keyboard.press('Escape');await expect(dialog).toHaveCount(0);await expect(page.getByRole('button',{name:'Draw on chat'})).toBeFocused();
+});
