@@ -40,7 +40,7 @@ npm start
 
 ## Deploy
 
-This source tree includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. Deploy from the current working branch; do not assume the dashboard production branch is the source of the latest UI. Version 2.29 is hosted at `https://bitchwyat.vercel.app`; see `docs/couple-3d-games.md` for the verified deployment record and `docs/ios-native-polish.md` for the 2.28 baseline.
+This source tree includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. Deploy from the current working branch; do not assume the dashboard production branch is the source of the latest UI. Version 2.29 is live from commit `361c267` at `https://bitchwyat.vercel.app` (Vercel production deployment `dpl_GSKbwKobVZvswo5Xg9oJu5LNYghY`, READY/PROMOTED). See `docs/couple-3d-games.md` for the verified deployment record and `docs/ios-native-polish.md` for the 2.28 baseline.
 
 In Vercel, import `foralishalolz/direct-private-chat`, set the production branch to `bitchat-production`, and use the repository root. Framework preset: **Other**. Install: `npm ci --no-fund`. Build: `npm run build`. Output: `out`. The app uses Next.js to generate static files; Vercel serves that export directly. The committed `vercel.json` explicitly sets `framework: null` (Other), overriding the dashboard preset. Using the Next.js adapter together with an `out` output override makes it look for `out/routes-manifest.json`, which is not part of a static export. The committed settings also preserve the generated service worker and browser security headers. The Vercel connection must be authorized for the team owning the project; source files cannot grant that access.
 

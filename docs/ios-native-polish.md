@@ -2,6 +2,8 @@
 
 The supplied references live in `design/references/`: Apple Messages group thread, iOS text-formatting tray, and the dark iOS call screen. They are design references only; no private screenshot is used as a runtime asset.
 
+Version 2.29 keeps this native/call baseline and adds the couple-themed 3D games documented in `docs/couple-3d-games.md`. Calls remain audio-only. The later production deployment is recorded in that document.
+
 ## What changed
 
 - Ported the mature call subsystem: private `call:<conversation>` signaling, early-ICE buffering, caller-only ICE restart, Cloudflare TURN, ringing and missed-call push jobs, call-sheet focus trap, wake lock, audio priming and call timeline cards.
@@ -19,7 +21,7 @@ This release is **audio-only**. The supplied dark call screen is used as the vis
 
 Run `npm run typecheck`, `npm test`, `npm run build`, and `npx playwright test`. The unit suite includes strict effect normalization, persistence through direct/optimistic sends, database constraint parity, and the scroll-geometry fix. Browser tests include a new text-effects round trip through the outbox.
 
-The connected Supabase project already has the call, realtime, push, and TURN schema/functions. The 2.28 additive migration only adds `messages.text_effect`; apply it before deploying. Cloudflare TURN secrets and VAPID Vault secrets were verified by name, not by value.
+The connected Supabase project already has the call, realtime, push, TURN and text-effect schema/functions; do not replay the 2.28 additive migration against it. Cloudflare TURN secrets and VAPID Vault secrets were verified by name, not by value.
 
 Version 2.28 was built and deployed from `arena/e5c8434f-direct-private-chat` commit `d666627`. Vercel production deployment `dpl_EEsJKVkTwU64JPVqD1VdMdbdGY2b` is READY/PROMOTED on `https://bitchwyat.vercel.app`. Live checks confirmed the login shell, `release.json` 2.28.0, `#0d1018` manifest colours, and the generated service worker containing `kind==="call"`, `kind==="missed_call"`, `bitchat-open-call`, and the one-minute ring expiry.
 

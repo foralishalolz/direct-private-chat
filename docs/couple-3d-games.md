@@ -48,3 +48,11 @@ The first connector migration recorded as `couple_3d_arcade` was an empty commen
 - `npx playwright test` — includes a mocked 3D start/collection test that forces the WebGL fallback and checks no page errors or horizontal overflow.
 
 Browser tests mock REST and Realtime. Physical-device checks still required: two phones on separate networks receiving each other's avatar positions, WebGL on older iOS devices, locked-screen activity pings, microphone/TURN calls and Web Push delivery. Calls remain audio-only; the 3D games do not enable video.
+
+## Verified production deployment
+
+Version 2.29.0 was built from `arena/e5c8434f-direct-private-chat` commit `361c267bd290ff8b5759914746f5fdf48f1a3010` and promoted as Vercel production deployment `dpl_GSKbwKobVZvswo5Xg9oJu5LNYghY` on `https://bitchwyat.vercel.app`. The connector reported `READY` / `PROMOTED` with the production alias assigned.
+
+Live checks on the production alias confirmed the BitchAt login shell, `release.json` exactly `{"name":"BitchAt","version":"2.29.0","release":"2026-11-24"}`, the standalone `#0d1018` web manifest, and the generated service worker retaining `kind==="call"`, `kind==="missed_call"` and `bitchat-open-call` handling. The connected Supabase project reported all of db, rest, realtime, auth and storage healthy. Remote checks confirmed `live_arcade_mode_check` includes `grid`, `shared_activity_kind_check` includes `arcade3d`, the 3D match table has member-only SELECT and no client write grants, and the three 3D RPCs are SECURITY DEFINER with `search_path=''`.
+
+A later docs-only commit may be pushed without changing the static output; the verified deployment above is the live app build. Physical-device checks and the boundaries in the previous section still apply.
