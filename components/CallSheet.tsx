@@ -144,6 +144,7 @@ export default function CallSheet({ c, session, remoteAudio, onClose, onUploadAu
         <Avatar profile={c.partner} group={c.kind === "group"} size={126}/>
         {c.partner?.mood && <span className="call-mood" aria-hidden="true">{c.partner.mood}</span>}
       </div>
+      <span className="call-eyebrow">{phase === "ringing" ? "INCOMING VOICE CALL" : connected ? "VOICE CALL" : "BitchAt AUDIO"}</span>
       <h1 className="call-name">{partnerName}</h1>
       <p className={"call-state " + (connected ? "live" : "")}>{label}</p>
       {phase === "connecting" && !session.fetchingRelay && <button className="call-audio-retry" onClick={session.retryConnection}>Retry connection</button>}

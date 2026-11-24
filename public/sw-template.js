@@ -34,6 +34,18 @@ self.addEventListener("push",event=>{
 
  const valid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
  if(!data||!valid.test(data.userId||""))return;
+ if(data.kind==="missed_call"&&data.callId){
+  if(!valid.test(data.conversationId||"")||!valid.test(data.callId)||typeof data.timestamp!=="number"||!Number.isFinite(data.timestamp)||Date.now()-data.timestamp>86400000||data.timestamp-Date.now()>120000)return;
+  event.waitUntil((async()=>{
+   if(!await acceptPush({...data,messageId:"missed-call:"+data.callId}))return;
+   await self.registration.showNotification("Missed BitchAt call",{
+    body:"Open the chat to call back",icon:"/icon-192.png",badge:"/badge.png",
+    tag:"call:"+data.userId+":"+data.conversationId,renotify:false,
+    data:{userId:data.userId,conversationId:data.conversationId,callId:data.callId,kind:"missed_call"},
+   });
+  })().catch(()=>{}));
+  return;
+ }
  if(data.kind==="call"&&data.callId){
   // A ringing call is a live event, not a message: no staleness window beyond
   // one minute, a call tag that replaced calls inherit, and buttons that can

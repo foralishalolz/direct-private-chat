@@ -1,5 +1,5 @@
 export type Point = [x: number, y: number];
-export type Stroke = { id: string; by: string; color: string; width: number; points: Point[] };
+export type Stroke = { id: string; by: string; color: string; width: number; points: Point[]; brush?: "pen" | "glow" };
 export type BoardEdit = { stroke: Stroke | null; version: number };
 
 /** Overlay unsaved stroke edits on the latest server snapshot. */

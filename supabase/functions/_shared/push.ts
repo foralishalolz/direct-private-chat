@@ -29,4 +29,7 @@ export function callPushPayload(job: Pick<PushJob, "user_id" | "conversation_id"
   });
 }
 
-export const isCallJob = (job: { kind?: string | null }) => job.kind === "call";
+export function missedCallPushPayload(job: Pick<PushJob, "user_id" | "conversation_id"> & { call_id: string }) {
+  return JSON.stringify({ userId: job.user_id, conversationId: job.conversation_id, callId: job.call_id, kind: "missed_call", timestamp: Date.now() });
+}
+export const isCallJob = (job: { kind?: string | null }) => job.kind === "call" || job.kind === "missed_call";
