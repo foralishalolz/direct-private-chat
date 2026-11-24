@@ -64,7 +64,7 @@ export default function ChatRoom({ profile, onProfile, onLogout }: {
   const [activityIntent, setActivityIntent] = useState<{ conversationId: string; tab: ActivityTab; sequence: number } | null>(null);
   const activity = useActivityPing(profile, items, (conversationId, kind: ActivityKind) => {
     setSelected(conversationId);
-    const tab = kind === "listen" ? "listen" : kind === "arcade" ? "arcade" : kind === "pet" ? "pet" : kind === "makeout" ? "makeout" : kind === "draw" ? "draw" : kind === "game" || kind === "wyr" ? "games" : kind === "kiss" ? "kiss" : "feels";
+    const tab = kind === "listen" ? "listen" : kind === "arcade" ? "arcade" : kind === "arcade3d" ? "arcade3d" : kind === "pet" ? "pet" : kind === "makeout" ? "makeout" : kind === "draw" ? "draw" : kind === "game" || kind === "wyr" ? "games" : kind === "kiss" ? "kiss" : "feels";
     setActivityIntent(current => ({ conversationId, tab, sequence: (current?.sequence ?? 0) + 1 }));
   });
   usePressFeedback();

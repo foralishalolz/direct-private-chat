@@ -1,6 +1,10 @@
-# BitchAt 2.28
+# BitchAt 2.29
 
-Next.js, TypeScript, Tailwind and Supabase. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
+Next.js, TypeScript, Tailwind, Supabase and locally bundled Three.js. This branch connects to the existing BitchAt Supabase project using its public browser key. Private storage and database access are enforced by row-level security. No administrator key is included.
+
+## Version 2.29 — couple-themed 3D worlds
+
+Three original procedural 3D multiplayer worlds are now inside **Play → 3D together**: Promise Orbits, Moonlit Garden and Starlight Rally. They were adapted from MIT-licensed open-source 3D multiplayer ideas on GitHub, not copied from a CDN or shipped as external assets. Three.js is bundled from npm into the static export; live positions use a bounded Supabase Realtime broadcast topic, while round creation, collection and scoring are server-authoritative RPCs. A WebGL-free heart-list fallback, touch controls, reduced-motion handling and partner activity pings are included. See `docs/couple-3d-games.md` for the research table, license notes, schema and verification boundaries.
 
 ## Version 2.28 — native glass, real calls and iOS text effects
 
@@ -8,7 +12,7 @@ This is the full UI/feature remake, not a patch. The mature call subsystem is no
 
 The final `native-polish.css` layer gives every page a consistent system-font glass treatment, native emoji typography, spring press feedback, reduced-motion/transparency support, and correct keyboard-aware mobile scroll geometry. The lower-chat/scroll bug is fixed by using `--app-height` with `--app-offset`, explicit flexible scroll panes, and resetting the tucked-away tab dock when returning to the inbox.
 
-The composer now has one canonical tool per job, plus a real iOS-style text-effects tray (Big, Small, Shake, Ripple, Bloom, Explode). Effects are a strict enum, stored in `public.messages.text_effect`, preserved by the offline outbox, and constrained in SQL. See `docs/ios-native-polish.md` for design and verification notes. Apply the additive `20261124120000_ios_text_effects.sql` migration before deploying; call, push, realtime and TURN schema/functions are already installed on the connected project.
+The composer now has one canonical tool per job, plus a real iOS-style text-effects tray (Big, Small, Shake, Ripple, Bloom, Explode). Effects are a strict enum, stored in `public.messages.text_effect`, preserved by the offline outbox, and constrained in SQL. See `docs/ios-native-polish.md` for design and verification notes. The additive text-effect and 3D-game migrations are already applied to the connected project; a new installation should use `supabase/schema.sql` or run the local migrations in order. Do not replay them blindly against the existing remote database, whose migration history uses different timestamps.
 
 The stale `public/sw.js` was removed. `public/sw-template.js` is the source of truth and `npm run build` generates the production `out/sw.js` with call and missed-call notification actions.
 
@@ -36,7 +40,7 @@ npm start
 
 ## Deploy
 
-This source tree includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. Deploy from the current working branch; do not assume the dashboard production branch is the source of the latest UI. Version 2.28 is live from commit `d666627` at `https://bitchwyat.vercel.app` (Vercel production deployment `dpl_EEsJKVkTwU64JPVqD1VdMdbdGY2b`).
+This source tree includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. Deploy from the current working branch; do not assume the dashboard production branch is the source of the latest UI. Version 2.29 is hosted at `https://bitchwyat.vercel.app`; see `docs/couple-3d-games.md` for the verified deployment record and `docs/ios-native-polish.md` for the 2.28 baseline.
 
 In Vercel, import `foralishalolz/direct-private-chat`, set the production branch to `bitchat-production`, and use the repository root. Framework preset: **Other**. Install: `npm ci --no-fund`. Build: `npm run build`. Output: `out`. The app uses Next.js to generate static files; Vercel serves that export directly. The committed `vercel.json` explicitly sets `framework: null` (Other), overriding the dashboard preset. Using the Next.js adapter together with an `out` output override makes it look for `out/routes-manifest.json`, which is not part of a static export. The committed settings also preserve the generated service worker and browser security headers. The Vercel connection must be authorized for the team owning the project; source files cannot grant that access.
 

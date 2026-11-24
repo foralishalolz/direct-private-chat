@@ -56,6 +56,51 @@ test("live four in a row starts and submits a column",async({page})=>{
  await page.goto('/');await page.getByRole('button',{name:/Alex.*Hello/}).click();await page.locator('.chat-shortcuts').getByRole('button',{name:'Play',exact:true}).click();await page.getByRole('button',{name:/Live games/}).click();await page.getByRole('button',{name:/Four in a row/}).click();await page.getByRole('button',{name:'Drop in column 1'}).click();await expect(page.getByText('Alex’s turn')).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
+test("couple 3D worlds start and collect a heart without external scripts",async({page})=>{
+ const errors:string[]=[];page.on("pageerror",e=>errors.push(e.message));
+ await page.addInitScript(()=>{
+  const original=HTMLCanvasElement.prototype.getContext;
+  (HTMLCanvasElement.prototype as any).getContext=function(type:string,...args:any[]){
+   if(String(type).startsWith("webgl"))return null;
+   return original.call(this,type as any,...args);
+  };
+ });
+ await signedIn(page);
+ type Heart={id:string;x:number;y:number;z:number;collected_by:string|null};
+ type Game={conversation_id:string;round_id:string;mode:string;items:Heart[];score_a:number;score_b:number;winner:null;finished:boolean;started_by:string;updated_at:string};
+ let game:Game|null=null;
+ const hearts:Heart[]=[{id:"h1",x:-7,y:2,z:-5,collected_by:null},{id:"h2",x:-2,y:4,z:-8,collected_by:null},{id:"h3",x:4,y:3,z:-7,collected_by:null},{id:"h4",x:8,y:2,z:-1,collected_by:null},{id:"h5",x:2,y:5,z:6,collected_by:null},{id:"h6",x:-6,y:3,z:7,collected_by:null}];
+ await page.route("**/rest/v1/**",async route=>{
+  const path=new URL(route.request().url()).pathname;
+  if(path.endsWith("/couple_3d_match"))return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(game)});
+  if(path.endsWith("/rpc/start_couple_3d")){
+   const data=route.request().postDataJSON();
+   game={conversation_id:cid,round_id:"55555555-5555-4555-8555-555555555555",mode:data.p_mode,items:hearts.map(h=>({...h})),score_a:0,score_b:0,winner:null,finished:false,started_by:uid,updated_at:new Date().toISOString()};
+   return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(game)});
+  }
+  if(path.endsWith("/rpc/submit_couple_3d")){
+   const data=route.request().postDataJSON();const current=game;
+   if(current&&data.p_action==="collect"){
+    const item=data.p_payload?.item;
+    current.items=current.items.map(heart=>heart.id===item?{...heart,collected_by:"a"}:heart);
+    current.score_a+=1;
+   }
+   return route.fulfill({status:200,contentType:"application/json",body:JSON.stringify(game)});
+  }
+  return route.fallback();
+ });
+ await page.goto("/");await page.getByRole("button",{name:/Alex.*Hello/}).click();
+ await page.locator(".chat-shortcuts").getByRole("button",{name:"Play",exact:true}).click();
+ await page.getByRole("button",{name:/3D together/}).click();
+ await expect(page.getByRole("heading",{name:"Little worlds for just us two"})).toBeVisible();
+ await page.getByRole("button",{name:/Promise Orbits/}).click();
+ await expect(page.getByRole("heading",{name:/Promise Orbits/})).toBeVisible();
+ await page.getByRole("button",{name:"Heart list"}).click();
+ await page.getByRole("button",{name:"Collect heart 1"}).click();
+ await expect(page.locator(".couple3d-scorebar")).toContainText("You 1");
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ expect(errors).toEqual([]);
+});
 test("stories disclose their audience and post text",async({page})=>{
  await signedIn(page);let stories:unknown[]=[];
  await page.route('**/rest/v1/**',async route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/rpc/story_feed'))return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(stories)});if(path.endsWith('/rpc/post_story')){const input=route.request().postDataJSON();stories=[{id:'story-1',user_id:uid,body:input.p_body,media_path:null,created_at:new Date().toISOString(),expires_at:new Date(Date.now()+86400000).toISOString(),profiles:profile}];return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(stories[0])});}return route.fallback();});

@@ -5,6 +5,7 @@ import "./skin.css";
 import "./redesign.css";
 import "./glass-refresh.css";
 import "./native-polish.css";
+import "./couple3d.css";
 export const metadata:Metadata={title:"BitchAt",description:"BitchAt",robots:{index:false,follow:false},icons:{icon:"/icon.svg",apple:"/apple-touch-icon.png"},manifest:"/manifest.webmanifest",appleWebApp:{capable:true,statusBarStyle:"black-translucent",title:"BitchAt"}};
 export const viewport:Viewport={width:"device-width",initialScale:1,viewportFit:"cover",interactiveWidget:"resizes-content",themeColor:"#0d1018"};
 export default function Layout({children}:{children:React.ReactNode}) {return <html lang="en"><body>{children}</body></html>;}

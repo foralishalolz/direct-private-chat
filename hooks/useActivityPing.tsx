@@ -5,7 +5,7 @@ import { db, rpc } from "@/lib/supabase";
 import { haptic } from "@/lib/haptics";
 import { label, title, type Conversation, type Profile } from "@/lib/types";
 
-export type ActivityKind = "makeout" | "game" | "draw" | "wyr" | "kiss" | "pet" | "arcade" | "listen";
+export type ActivityKind = "makeout" | "game" | "draw" | "wyr" | "kiss" | "pet" | "arcade" | "arcade3d" | "listen";
 
 const NAMES: Record<ActivityKind, { verb: string; icon: string }> = {
   makeout: { verb: "wants to make out", icon: "💋" },
@@ -14,6 +14,7 @@ const NAMES: Record<ActivityKind, { verb: string; icon: string }> = {
   wyr: { verb: "has a would-you-rather", icon: "🤔" },
   listen: { verb: "started listening together", icon: "🎵" },
   arcade: { verb: "started a live game", icon: "🎮" },
+  arcade3d: { verb: "opened a little 3D world for you two", icon: "🌌" },
   pet: { verb: "opened your pet", icon: "🐾" },
   kiss: { verb: "sent you a kiss", icon: "💞" },
 };
