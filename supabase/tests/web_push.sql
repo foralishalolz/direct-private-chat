@@ -37,7 +37,7 @@ declare a uuid := current_setting('bitchat.qa_a')::uuid; b uuid := current_setti
 begin
   select decrypted_secret into worker_secret from vault.decrypted_secrets where name = 'bitchat_push_worker_secret';
   assert (select count(*)=1 from private.push_subscriptions where user_id=b), 'Registration is idempotent.';
-  assert not has_function_privilege('anon','public.register_push_subscription(text,text,text)','EXECUTE'), 'Anonymous registration is denied.';
+  assert not has_function_privilege('anon','public.register_push_subscription(text,text,text,text)','EXECUTE'), 'Anonymous registration is denied.';
   assert not has_function_privilege('authenticated','public.push_server_config(text)','EXECUTE'), 'Server signing keys are not a browser RPC.';
   assert not has_table_privilege('authenticated','private.push_jobs','SELECT'), 'The queue is private.';
   assert public.push_server_config(repeat('0',64)) is null, 'Wrong worker credentials reveal nothing.';

@@ -3490,3 +3490,7 @@ drop trigger if exists bitchat_cancel_call_push on public.calls;
 create trigger bitchat_cancel_call_push after update of status on public.calls
 for each row when (old.status = 'ringing' and new.status <> 'ringing') execute function private.cancel_call_push();
 notify pgrst, 'reload schema';
+-- The four-argument function defaults p_kind to message, so it also handles
+-- the old three-argument API without an ambiguous overload.
+drop function if exists public.register_push_subscription(text,text,text);
+notify pgrst, 'reload schema';
