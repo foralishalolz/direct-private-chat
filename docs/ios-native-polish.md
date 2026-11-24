@@ -21,4 +21,6 @@ Run `npm run typecheck`, `npm test`, `npm run build`, and `npx playwright test`.
 
 The connected Supabase project already has the call, realtime, push, and TURN schema/functions. The 2.28 additive migration only adds `messages.text_effect`; apply it before deploying. Cloudflare TURN secrets and VAPID Vault secrets were verified by name, not by value.
 
-Physical-device verification remains necessary for OS notification permission, locked-screen ringing, microphone permission, and a two-phone call on mobile data; mocked browser tests cannot prove those platform behaviours.
+Version 2.28 was built and deployed from `arena/e5c8434f-direct-private-chat` commit `d666627`. Vercel production deployment `dpl_EEsJKVkTwU64JPVqD1VdMdbdGY2b` is READY/PROMOTED on `https://bitchwyat.vercel.app`. Live checks confirmed the login shell, `release.json` 2.28.0, `#0d1018` manifest colours, and the generated service worker containing `kind==="call"`, `kind==="missed_call"`, `bitchat-open-call`, and the one-minute ring expiry.
+
+Physical-device verification remains necessary for OS notification permission, locked-screen ringing, microphone permission, actual Cloudflare TURN credential generation, and a two-phone call on mobile data; mocked browser tests cannot prove those platform behaviours.

@@ -36,7 +36,7 @@ npm start
 
 ## Deploy
 
-This source tree includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. Deploy from the current working branch; do not assume the dashboard production branch is the source of the latest UI.
+This source tree includes the full Supabase schema, migrations, Edge Functions, Vercel configuration, and GitHub checks. Deploy from the current working branch; do not assume the dashboard production branch is the source of the latest UI. Version 2.28 is live from commit `d666627` at `https://bitchwyat.vercel.app` (Vercel production deployment `dpl_EEsJKVkTwU64JPVqD1VdMdbdGY2b`).
 
 In Vercel, import `foralishalolz/direct-private-chat`, set the production branch to `bitchat-production`, and use the repository root. Framework preset: **Other**. Install: `npm ci --no-fund`. Build: `npm run build`. Output: `out`. The app uses Next.js to generate static files; Vercel serves that export directly. The committed `vercel.json` explicitly sets `framework: null` (Other), overriding the dashboard preset. Using the Next.js adapter together with an `out` output override makes it look for `out/routes-manifest.json`, which is not part of a static export. The committed settings also preserve the generated service worker and browser security headers. The Vercel connection must be authorized for the team owning the project; source files cannot grant that access.
 
